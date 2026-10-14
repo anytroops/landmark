@@ -38,6 +38,11 @@ proto:
 proto-check: proto
 	git diff --exit-code -- gen/
 
+# Bounded fuzzing; FUZZTIME=5m make fuzz for a longer local run.
+FUZZTIME ?= 20s
+fuzz:
+	go test -run '^$$' -fuzz FuzzFromBytes -fuzztime $(FUZZTIME) ./internal/segment
+
 py-sync:
 	uv sync --quiet
 

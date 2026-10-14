@@ -110,3 +110,22 @@ Format: context, options, decision, consequences, date.
 - **Options:** (A) direct separable loop (w comparisons per cell per axis); (B) van Herk/Gil-Werman sliding max (~3 per cell for any w); (C) monotonic-queue sliding max.
 - **Decision:** B, with plain `>` instead of `math.Max` (values are finite, so its NaN and signed-zero handling is waste). Output is identical: the naive-2D test and exact FMA parity still pass.
 - **Consequences:** 89 ms to 25 ms per 30 s clip on the M4 Pro (BenchmarkFingerprint30s). Remaining profile: spectrogram ~52% (log10 ~23%, FFT ~17%), max filter ~29%. Stopped here: ingest is decode-bound, and query-path cost is better judged against Phase 4 latency numbers. Next lever if needed: run the 4 query shifts in parallel goroutines.
+
+## D19. Partition-local track ids in segments (2026-10-14)
+- **Context:** Tracks map to partitions by `global mod P`. Varint postings store track gaps; within one partition, global ids are P apart.
+- **Options:** global ids in segments; local ids (`global / P`), converted back on answer.
+- **Decision:** Local. Sean's pick. Header stores partition and n_partitions; `Segment.GlobalTrack(local) = local * P + partition`.
+- **Consequences:** Gaps ~P times smaller (about log2(P) fewer bits each). Changing P means rebuilding segments, which a mod-P scheme requires anyway. Size effect to be measured in B4 against a global-id build.
+
+## D20. Key lookup: sorted keys + binary search, flag reserved (2026-10-14)
+- **Context:** ~5,600 hash lookups per query (D15). At fma_large scale nearly all 2^24 possible keys exist, where a direct-addressed table (one u64 per possible key, ~134 MB) could be smaller and needs one probe instead of ~24.
+- **Options:** (A) binary search over sorted keys (brief); (B) direct table; (C) both, chosen per segment.
+- **Decision:** A for v1. Sean's pick. Flags bits 2-3 reserved for the lookup structure, so B can be added without a version bump; readers reject unknown values today.
+- **Consequences:** Decide B with Phase 4 latency data (cold and warm page cache), not estimates.
+
+## D21. Segment v1 implementation details (2026-10-14)
+- 32-byte header (magic, version, flags, n_keys, n_tracks, n_postings, partition, n_partitions); keys padded to 8 bytes so u64 offsets are aligned; CRC-32C footer (hardware-accelerated).
+- Reads go through `encoding/binary` on the mapped bytes, not `unsafe` casts to []uint32: portable, no alignment assumptions, bounds-checked. Revisit only with pprof evidence.
+- `FromBytes` validates every structural invariant (checksum, sizes, strictly increasing keys, monotonic offsets spanning the blob) so lookups can index safely; the varint decoder still range-checks every posting. Fuzzed: 47.5M executions locally without a panic; CI fuzzes 20 s per run.
+- Writes are atomic: temp file, fsync, rename. A crash never leaves a partial segment under the real name.
+- Postings in varint segments are not fully decoded at open, so a count mismatch with the header surfaces at lookup time as ErrCorrupt.
