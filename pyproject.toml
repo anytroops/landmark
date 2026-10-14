@@ -10,6 +10,8 @@ dependencies = [
     "soundfile",
     "pandas",
     "matplotlib",
+    "grpcio>=1.84.0",
+    "protobuf>=7.36.2",
 ]
 
 [dependency-groups]
@@ -23,6 +25,7 @@ package = false
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["gen"]
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -30,4 +33,4 @@ select = ["E", "F", "I", "B", "UP", "NPY"]
 
 [tool.pytest.ini_options]
 testpaths = ["prototype", "eval"]
-pythonpath = ["."]
+pythonpath = [".", "gen/python"]

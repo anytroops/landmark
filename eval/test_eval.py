@@ -101,3 +101,12 @@ def test_reencode_bitrates_differ() -> None:
     a, b = reencode(sig, "128k"), reencode(sig, "64k")
     n = min(len(a), len(b))
     assert not np.array_equal(a[:n], b[:n])
+
+
+def test_dense_tables_match_ingest_rules() -> None:
+    from eval.backends import dense_tables
+
+    manifest = {"indexed": [40, 10, 30, 20], "clusters": {"20": [20, 40, 999]}}
+    fma, cluster = dense_tables(manifest)
+    assert fma.tolist() == [10, 20, 30, 40]  # dense id = sorted position
+    assert cluster.tolist() == [0, 1, 2, 1]  # 40 joins 20's cluster; 999 not indexed

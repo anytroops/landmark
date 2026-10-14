@@ -7,3 +7,10 @@ plugins:
   - remote: buf.build/grpc/go
     out: gen
     opt: paths=source_relative
+  # Python stubs for the eval harness (eval/run_eval.py --shard).
+  - remote: buf.build/protocolbuffers/python
+    out: gen/python
+  - remote: buf.build/protocolbuffers/pyi
+    out: gen/python
+  - remote: buf.build/grpc/python
+    out: gen/python

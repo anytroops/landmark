@@ -20,17 +20,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from eval.backends import LocalBackend, ShardBackend, dense_tables
 from eval.degrade import add_noise, excerpt, reencode, speed
 from prototype import fingerprint as fp
 from prototype.audio import DecodeError, decode
 from prototype.build_index import machine_spec
 from prototype.fma import DATA_DIR, audio_path
-from prototype.index import Index
-from prototype.match import search
 
 ROOT = Path(__file__).resolve().parent.parent
 NEG_REPS = 2
-TOP_K = 5
 log = logging.getLogger("run_eval")
 
 Degrade = Callable[[np.ndarray, np.random.Generator], np.ndarray]
@@ -89,13 +87,20 @@ def main() -> None:
     ap.add_argument("--query-shifts", type=int, default=4, help="sub-hop query grids (D15)")
     ap.add_argument("--tag", default="", help="suffix for result file names, e.g. _shift4")
     ap.add_argument("--limit", type=int, default=0, help="first N tracks per label (debug)")
+    ap.add_argument(
+        "--shard", default="", help="host:port of a cmd/shard to query instead of the Python index"
+    )
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     manifest = json.loads(args.manifest.read_text())
     subset = manifest["meta"]["subset"]
-    index = Index.load(DATA_DIR / "index" / f"{args.manifest.stem}.npz")
-    dense_to_fma = index.fma_ids
+    dense_to_fma, dense_cluster = dense_tables(manifest)
+    if args.shard:
+        backend = ShardBackend(args.shard, dense_cluster)
+    else:
+        backend = LocalBackend(DATA_DIR / "index" / f"{args.manifest.stem}.npz")
+        assert np.array_equal(backend.index.fma_ids, dense_to_fma), "index and manifest disagree"
     cluster = {t: int(k) for k, members in manifest["clusters"].items() for t in members}
     lim = args.limit or None
     jobs = [
@@ -119,16 +124,15 @@ def main() -> None:
                     out_rows.append(r)
                     continue
                 s0 = time.perf_counter()
-                res = search(index, r.pop("hashes"), r.pop("times"), top_k=TOP_K)
+                hit = backend.search(r.pop("hashes"), r.pop("times"))
                 search_secs += time.perf_counter() - s0
-                c = res.candidates
-                top1 = int(dense_to_fma[c[0].track]) if c else -1
+                top1 = int(dense_to_fma[hit.top1_dense]) if hit.top1_dense >= 0 else -1
                 r.update(
                     top1_fma=top1,
-                    top1_score=c[0].score if c else 0,
-                    runner_up_score=res.runner_up,
-                    top1_offset=c[0].offset if c else 0,
-                    postings_scanned=res.postings_scanned,
+                    top1_score=hit.top1_score,
+                    runner_up_score=hit.runner_up,
+                    top1_offset=hit.top1_offset,
+                    postings_scanned=hit.postings_scanned,
                     correct=bool(
                         r["label"] == "pos"
                         and cluster.get(top1, top1) == cluster.get(r["fma_id"], r["fma_id"])
@@ -144,7 +148,8 @@ def main() -> None:
     meta = {
         "split": args.split, "seed": args.seed, "manifest": args.manifest.name,
         "conditions": args.conditions, "limit": args.limit,
-        "query_shifts": args.query_shifts, "tag": args.tag, "rows": len(df),
+        "query_shifts": args.query_shifts, "tag": args.tag,
+        "backend": f"shard {args.shard}" if args.shard else "python", "rows": len(df),
         "wall_seconds": round(time.perf_counter() - t0, 1),
         "mean_search_ms": round(1000 * search_secs / max(len(df), 1), 3),
         "machine": machine_spec(),
