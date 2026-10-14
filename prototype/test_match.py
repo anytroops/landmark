@@ -54,7 +54,7 @@ def test_save_load_roundtrip(tmp_path) -> None:
     path = tmp_path / "idx.npz"
     idx.save(path)
     got = Index.load(path)
-    for name in ("keys", "offsets", "track", "t", "fma_ids"):
+    for name in ("keys", "offsets", "track", "t", "fma_ids", "cluster"):
         assert np.array_equal(getattr(idx, name), getattr(got, name))
 
 
@@ -93,15 +93,33 @@ def test_end_to_end_identifies_excerpt_with_offset() -> None:
 
 
 @pytest.mark.parametrize(
-    ("scores", "t_abs", "t_ratio", "want"),
+    ("scores", "runner_up", "t_abs", "t_ratio", "want"),
     [
-        ([], 1, 1.0, False),
-        ([50], 10, 2.0, True),
-        ([50, 30], 10, 2.0, False),
-        ([50, 20], 10, 2.0, True),
-        ([8, 1], 10, 2.0, False),
+        ([], 0, 1, 1.0, False),
+        ([50], 0, 10, 2.0, True),
+        ([50, 30], 30, 10, 2.0, False),
+        ([50, 20], 20, 10, 2.0, True),
+        ([8, 1], 1, 10, 2.0, False),
+        ([50, 50], 3, 10, 2.0, True),  # second is a duplicate; runner-up is outside cluster
     ],
 )
-def test_accept(scores: list[int], t_abs: int, t_ratio: float, want: bool) -> None:
-    res = Result([Candidate(i, s, 0) for i, s in enumerate(scores)], 0)
+def test_accept(scores: list[int], runner_up: int, t_abs: int, t_ratio: float, want: bool) -> None:
+    res = Result([Candidate(i, s, 0) for i, s in enumerate(scores)], 0, runner_up)
     assert accept(res, t_abs, t_ratio) is want
+
+
+def test_runner_up_skips_duplicate_cluster() -> None:
+    rng = np.random.default_rng(0)
+    base = (rng.integers(0, 1 << 20, 400).astype(np.uint32), np.arange(400, dtype=np.uint32))
+    other = (rng.integers(0, 1 << 20, 400).astype(np.uint32), np.arange(400, dtype=np.uint32))
+    tracks = [base, base, other]  # tracks 0 and 1 are identical copies
+    q_h, q_t = base[0][100:200], base[1][100:200] - 100
+
+    plain = search(build(tracks, [10, 11, 12]), q_h, q_t)
+    assert plain.runner_up == 100  # the copy counts as a competitor
+    assert not accept(plain, t_abs=10, t_ratio=2.0)
+
+    dedup = search(build(tracks, [10, 11, 12], clusters=[[10, 11]]), q_h, q_t)
+    assert dedup.candidates[0].score == 100
+    assert dedup.runner_up < 10
+    assert accept(dedup, t_abs=10, t_ratio=2.0)

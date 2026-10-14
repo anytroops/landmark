@@ -110,6 +110,31 @@ def fingerprint(pcm: np.ndarray, p: Params = DEFAULT) -> tuple[np.ndarray, np.nd
     return pair(find_peaks(spectrogram(pcm, p), p), p)
 
 
+def fingerprint_query(
+    pcm: np.ndarray, n_shifts: int = 4, p: Params = DEFAULT
+) -> tuple[np.ndarray, np.ndarray]:
+    """Query-side fingerprint robust to sub-hop misalignment (D15).
+
+    A query starts at an arbitrary sample, so its STFT frame grid is offset from
+    the indexed track's by a fraction of a hop, which moves peaks by +/-1 frame
+    or bin and changes hashes. Fingerprint at `n_shifts` evenly spaced sub-hop
+    offsets and union the landmarks; one of the grids lands within hop/(2*n_shifts)
+    samples of the track's. Exact duplicate (hash, t) pairs are dropped so no
+    landmark votes twice. The index side is unchanged.
+    """
+    step = p.hop // n_shifts
+    hs, ts = [], []
+    for k in range(n_shifts):
+        h, t = fingerprint(pcm[k * step :], p)
+        hs.append(h)
+        ts.append(t)
+    h, t = np.concatenate(hs), np.concatenate(ts)
+    packed = np.unique((h.astype(np.uint64) << np.uint64(32)) | t.astype(np.uint64))
+    return (packed >> np.uint64(32)).astype(np.uint32), (packed & np.uint64(0xFFFFFFFF)).astype(
+        np.uint32
+    )
+
+
 def unpack(h: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     h = h.astype(np.int64)
     return h >> (F_BITS + DT_BITS), (h >> DT_BITS) & (N_BINS - 1), h & MAX_DT

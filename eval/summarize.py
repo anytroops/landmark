@@ -27,7 +27,8 @@ EXCLUDE_FROM_OBJECTIVE = ("speed_",)
 
 
 def accepted(df: pd.DataFrame, t_abs: int, t_ratio: float) -> np.ndarray:
-    second = np.maximum(df["top2_score"].to_numpy(), 1)
+    col = "runner_up_score" if "runner_up_score" in df else "top2_score"  # pre-D14 runs
+    second = np.maximum(df[col].to_numpy(), 1)
     s = df["top1_score"].to_numpy()
     return (s >= t_abs) & (s >= t_ratio * second)
 
@@ -101,10 +102,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-far", type=float, default=0.001)
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
 
     def load(split: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-        df = pd.read_csv(RES / f"queries_{split}_seed{args.seed}.csv.gz")
+        df = pd.read_csv(RES / f"queries_{split}_seed{args.seed}{args.tag}.csv.gz")
         errors = df[df["error"].notna()] if "error" in df else df.iloc[:0]
         return df.drop(errors.index), errors
 
@@ -118,9 +120,11 @@ def main() -> None:
         "skipped": {"val": len(val_err), "test": len(test_err)},
         "test": rows,
     }
-    (RES / f"summary_seed{args.seed}.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (RES / f"summary_seed{args.seed}{args.tag}.json").write_text(
+        json.dumps(summary, indent=2) + "\n"
+    )
     md = markdown(rows)
-    (RES / f"summary_seed{args.seed}.md").write_text(md + "\n")
+    (RES / f"summary_seed{args.seed}{args.tag}.md").write_text(md + "\n")
     print(json.dumps(summary["thresholds"]), json.dumps(summary["val"]), summary["skipped"])
     print(md)
 

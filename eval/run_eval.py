@@ -51,8 +51,8 @@ CONDITIONS: dict[str, tuple[float, Degrade]] = {
 }
 
 
-def _work(job: tuple[int, str, int, int, str, list[str]]) -> list[dict[str, object]]:
-    fma_id, label, rep, seed, subset, conds = job
+def _work(job: tuple[int, str, int, int, str, list[str], int]) -> list[dict[str, object]]:
+    fma_id, label, rep, seed, subset, conds, shifts = job
     try:
         pcm = decode(audio_path(fma_id, subset))
     except DecodeError as e:
@@ -69,7 +69,7 @@ def _work(job: tuple[int, str, int, int, str, list[str]]) -> list[dict[str, obje
             )
             continue
         q = degrade(clip, np.random.default_rng([seed, fma_id, rep, ci]))
-        h, t = fp.fingerprint(q)
+        h, t = fp.fingerprint_query(q, shifts)
         rows.append(
             {"fma_id": fma_id, "label": label, "rep": rep, "cond": name, "start": start,
              "n_landmarks": len(h), "hashes": h, "times": t}
@@ -86,6 +86,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=os.cpu_count())
     ap.add_argument("--conditions", nargs="*", default=list(CONDITIONS))
+    ap.add_argument("--query-shifts", type=int, default=4, help="sub-hop query grids (D15)")
+    ap.add_argument("--tag", default="", help="suffix for result file names, e.g. _shift4")
     ap.add_argument("--limit", type=int, default=0, help="first N tracks per label (debug)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -97,11 +99,11 @@ def main() -> None:
     cluster = {t: int(k) for k, members in manifest["clusters"].items() for t in members}
     lim = args.limit or None
     jobs = [
-        (f, "pos", 0, args.seed, subset, args.conditions)
+        (f, "pos", 0, args.seed, subset, args.conditions, args.query_shifts)
         for f in manifest[f"{args.split}_pos"][:lim]
     ]
     jobs += [
-        (f, "neg", r, args.seed, subset, args.conditions)
+        (f, "neg", r, args.seed, subset, args.conditions, args.query_shifts)
         for f in manifest[f"{args.split}_neg"][:lim]
         for r in range(NEG_REPS)
     ]
@@ -124,7 +126,7 @@ def main() -> None:
                 r.update(
                     top1_fma=top1,
                     top1_score=c[0].score if c else 0,
-                    top2_score=c[1].score if len(c) > 1 else 0,
+                    runner_up_score=res.runner_up,
                     top1_offset=c[0].offset if c else 0,
                     postings_scanned=res.postings_scanned,
                     correct=bool(
@@ -137,16 +139,17 @@ def main() -> None:
                 log.info("%d/%d tracks", i, len(jobs))
 
     df = pd.DataFrame(out_rows)
-    out = ROOT / "eval" / "results" / f"queries_{args.split}_seed{args.seed}.csv.gz"
+    out = ROOT / "eval" / "results" / f"queries_{args.split}_seed{args.seed}{args.tag}.csv.gz"
     df.sort_values(["label", "fma_id", "rep", "cond"]).to_csv(out, index=False)
     meta = {
         "split": args.split, "seed": args.seed, "manifest": args.manifest.name,
-        "conditions": args.conditions, "limit": args.limit, "rows": len(df),
+        "conditions": args.conditions, "limit": args.limit,
+        "query_shifts": args.query_shifts, "tag": args.tag, "rows": len(df),
         "wall_seconds": round(time.perf_counter() - t0, 1),
         "mean_search_ms": round(1000 * search_secs / max(len(df), 1), 3),
         "machine": machine_spec(),
     }  # fmt: skip
-    out.with_name(f"queries_{args.split}_seed{args.seed}.meta.json").write_text(
+    out.with_name(f"queries_{args.split}_seed{args.seed}{args.tag}.meta.json").write_text(
         json.dumps(meta, indent=2) + "\n"
     )
     log.info(

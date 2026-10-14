@@ -79,3 +79,15 @@ Format: context, options, decision, consequences, date.
 - **Options:** include all conditions; exclude speed; optimize a single anchor condition (e.g. SNR 5 dB).
 - **Decision:** Exclude speed conditions from the objective; pooled val FAR <= 0.1%. Grid: t_abs 2-60, t_ratio {1, 1.25, 1.5, 2, 2.5, 3, 4}.
 - **Consequences:** Result on seed 0: t_abs 12, t_ratio 2.5. Speed accuracy at threshold is reported but not optimized for. Changing the condition set changes thresholds; rerun summarize after any change.
+
+## D14. Acceptance ratio ignores the top-1's duplicate cluster (2026-10-14)
+- **Context:** Every clean positive that was correct but rejected had a duplicate in the index as runner-up (one exact 778/778 tie). The ratio test read agreement between copies as ambiguity.
+- **Options:** (A) ship duplicate clusters with the index; ratio compares top-1 to the best track outside its cluster; (B) drop the ratio test, absolute threshold only; (C) accept the loss.
+- **Decision:** A. Sean's pick. `Index.cluster` maps each dense id to its cluster representative; `Result.runner_up` is the best score outside the top-1's cluster.
+- **Consequences:** The serving path needs cluster ids alongside the segments (Phase 2/3: store in the track metadata SQLite, not in segments). Clusters come from `eval/dedupe.py`, so ingest must run dedupe before serving. Measured effect: see D15 ablation.
+
+## D15. Multi-shift query fingerprinting (2026-10-14)
+- **Context:** A query starts at an arbitrary sample, so its STFT grid is offset from the track's by a fraction of a hop; peaks move by +/-1 frame or bin and hashes change.
+- **Options:** (A) fingerprint the query at n sub-hop offsets (hop/n apart) and union the landmarks; (B) coarser hash quantization (drop a bit of dt and f); (C) defer.
+- **Decision:** A with n = 4 (64-sample steps). Sean's pick. Index side unchanged. Exact duplicate (hash, t) pairs are dropped so nothing votes twice.
+- **Consequences:** ~4x query landmarks, so more postings scanned and more search time per query: measure in Phase 4 latency benchmarks. Votes from different grids can split between offsets d and d+1; if that limits the gain, add +/-1 offset tolerance to scoring. The Go port must implement this on the query path. Measured effect: [TBD], ablation runs tagged `_d14` (shifts 1) and `_d14_shift4` (shifts 4).

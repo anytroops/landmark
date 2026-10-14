@@ -3,6 +3,10 @@
 For each query landmark (h, tq) and each posting (track, tdb) under h, vote
 for (track, tdb - tq). A track's score is its largest vote count: the number
 of landmarks that agree on one time alignment.
+
+The runner-up for the acceptance ratio is the best track outside the top-1's
+duplicate cluster (D14): a duplicate scoring as high as the original is
+agreement, not ambiguity.
 """
 
 from dataclasses import dataclass
@@ -26,6 +30,7 @@ class Candidate:
 class Result:
     candidates: list[Candidate]  # descending score
     postings_scanned: int
+    runner_up: int = 0  # best score outside the top-1's duplicate cluster
 
 
 def gather(index: Index, hashes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -64,13 +69,14 @@ def search(index: Index, hashes: np.ndarray, times: np.ndarray, top_k: int = 10)
         Candidate(int(tracks[i]), int(counts[i]), int((pairs[i] & 0xFFFFFFFF) - _OFF_BIAS))
         for i in top
     ]
-    return Result(cands, len(post))
+    outside = index.cluster[tracks] != index.cluster[tracks[top[0]]]
+    runner_up = int(counts[outside].max()) if outside.any() else 0
+    return Result(cands, len(post), runner_up)
 
 
 def accept(result: Result, t_abs: int, t_ratio: float) -> bool:
-    """Accept top-1 if its score clears t_abs and beats the runner-up by t_ratio."""
+    """Accept top-1 if it clears t_abs and beats the out-of-cluster runner-up by t_ratio."""
     if not result.candidates:
         return False
     best = result.candidates[0].score
-    second = result.candidates[1].score if len(result.candidates) > 1 else 0
-    return best >= t_abs and best >= t_ratio * max(second, 1)
+    return best >= t_abs and best >= t_ratio * max(result.runner_up, 1)

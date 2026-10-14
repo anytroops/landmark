@@ -76,3 +76,34 @@ def test_hop_aligned_shift_preserves_hashes_and_shifts_times() -> None:
     b = set(zip(h1.tolist(), t1.astype(np.int64).tolist(), strict=True))
     jaccard = len(a & b) / len(a | b)
     assert jaccard > 0.9
+
+
+def test_fingerprint_query_one_shift_equals_plain() -> None:
+    x = noise_clip(5)
+    h0, t0 = fp.fingerprint(x)
+    h1, t1 = fp.fingerprint_query(x, n_shifts=1)
+    assert set(zip(h0.tolist(), t0.tolist(), strict=True)) == set(
+        zip(h1.tolist(), t1.tolist(), strict=True)
+    )
+
+
+def test_fingerprint_query_recovers_sub_hop_offset() -> None:
+    # Index a track, query an excerpt starting mid-hop: multi-shift should
+    # recover more of the track's landmarks than a single grid.
+    p = fp.DEFAULT
+    x = noise_clip(12, seed=3)
+    track = set(zip(*(a.tolist() for a in fp.fingerprint(x, p)), strict=True))
+    start = 100 * p.hop + 3 * p.hop // 4 + 5  # off the grid by ~3/4 hop
+    q = x[start:]
+    k_frames = start // p.hop
+
+    def recovered(h: np.ndarray, t: np.ndarray) -> int:
+        # Each query landmark at t maps to track frame t + k or t + k + 1.
+        return sum(
+            (hh, tt + k_frames) in track or (hh, tt + k_frames + 1) in track
+            for hh, tt in zip(h.tolist(), t.tolist(), strict=True)
+        )
+
+    single = recovered(*fp.fingerprint(q, p))
+    multi = recovered(*fp.fingerprint_query(q, 4, p))
+    assert multi > single

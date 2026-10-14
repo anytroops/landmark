@@ -92,7 +92,7 @@ def main() -> None:
     fp_secs = time.perf_counter() - t0
 
     ok_ids = sorted(results)
-    index = build([results[f][:2] for f in ok_ids], ok_ids)
+    index = build([results[f][:2] for f in ok_ids], ok_ids, list(manifest["clusters"].values()))
     out = DATA_DIR / "index" / f"{args.manifest.stem}.npz"
     out.parent.mkdir(parents=True, exist_ok=True)
     index.save(out)
