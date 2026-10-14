@@ -1,15 +1,15 @@
 # Progress
 
-## Current phase: 1 (Python prototype), core done; open decisions below
+## Current phase: 1 complete; next is Phase 2 (Go port)
 
 ## Done
 - 2026-10-14: Phase 0. Repo, toolchain, CI green, compose stack, fma_metadata + fma_small downloaded, SHA1 verified, extracted (7zip; unzip fails on FMA), zips deleted.
 - 2026-10-14: Phase 1. Fingerprinter (D9, D10), sorted-array index and vectorized matcher (D11), duplicate-aware splits (D12), eval harness with 11 conditions and Wilson CIs, threshold calibration (D13). Results in `docs/EVAL.md`. Golden vectors for 20 tracks in `testdata/golden/`.
+- 2026-10-14: D14 (duplicate-aware ratio test) and D15 (4-shift queries) implemented and measured; interview Q&A for fingerprinter + matcher logged.
 
 ## Next
-- Sean: pick the acceptance-rule fix for duplicates, and whether to address sub-hop misalignment now or after the Go port.
-- Sean: answer the 3 interview questions on fingerprinter + matcher (log in INTERVIEW_NOTES.md).
-- Phase 2: Go `internal/audio` + `internal/fingerprint`, parity test against `testdata/golden/` (Jaccard >= 0.98).
+- Optional: make D9 peak selection shift-invariant (rank within a window centered on each peak). Core change, needs Sean's pick.
+- Phase 2: Go `internal/audio` + `internal/fingerprint` (including multi-shift query path), parity test against `testdata/golden/` (Jaccard >= 0.98).
 
 ## Blockers
 - None.
