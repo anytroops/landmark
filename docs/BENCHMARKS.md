@@ -7,7 +7,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | [TBD] |
 | B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
 | B3 | Failure-injection timeline around a replica kill | [TBD] |
-| B4 | Index size: raw vs encoded, bytes per posting | [TBD] |
+| B4 | Index size: raw vs encoded, bytes per posting | fma_small done (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | [TBD] |
 
 ## Fingerprint throughput, Go vs Python (Phase 2)
@@ -23,3 +23,21 @@ Same 200 fma_small tracks (5,997 s of audio), decoded before timing, so only fin
 - 12-worker Python runs last ~0.6-0.8 s, so they are noisy; treat the all-cores comparison as "about equal".
 - Neither scales 12x: 4 of the 12 cores are efficiency cores.
 - Go's case is not raw single-core speed. It is no Python process in the serving path, cheap goroutine concurrency, and one static binary. The query path (4 shifts, D15) can also run its shifts in parallel goroutines.
+
+## B4: index size on fma_small (Phase 2)
+
+6,997 tracks, 29,727,683 postings (identical count to the Python index, `eval/results/index_stats_splits_small_seed0.json`). Built by `cmd/ingest` at commit 5c3d71f (clean). Global-id sizes come from rewriting the local-id segments (`bench/b4remap`, commit ce6c110), since postings are identical. Raw: `bench/results/b4_*.json`.
+
+| Config | Total bytes | Bytes per posting | Key + offset tables share |
+|---|---|---|---|
+| P=1, fixed 8 B postings | 270,977,892 | 9.115 | 12% |
+| P=1, varint | 133,957,295 | 4.506 | 25% |
+| P=4, varint, local ids | 185,103,763 | 6.227 | 46% |
+| P=4, varint, global ids | | 6.472 (+3.9%) | |
+| P=8, varint, local ids | 222,882,828 | 7.497 | 56% |
+| P=8, varint, global ids | | 7.848 (+4.7%) | |
+
+- Varint encoding halves the index (9.12 to 4.51 B/posting at P=1).
+- Local ids (D19) save 3.9-4.7% over global ids, smaller than the "a byte per posting" estimate.
+- **Per-key overhead grows with P.** Every partition stores its own copy of most keys (2.76M keys at P=1, 10.3M summed over 8 partitions), each costing 4 B key + 8 B offset. At P=8, 56% of bytes are lookup tables. Candidate fixes (not decided): u32 offsets (a segment's postings blob is far below 4 GiB), or delta-coded keys with a sparse in-memory key index.
+- Implication for D20: at P=8 a partition holds ~1.3M of 16.7M possible keys (~8% dense), so a direct table (16.7M x 8 B = 134 MB per segment) would be several times larger here. Recheck at fma_large density.
