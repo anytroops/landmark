@@ -90,6 +90,9 @@ func (s *Segment) key(i uint64) uint32 { return binary.LittleEndian.Uint32(s.key
 
 func (s *Segment) offset(i uint64) uint64 { return binary.LittleEndian.Uint64(s.offsets[8*i:]) }
 
+// Key returns the i-th hash in sorted order, for 0 <= i < NKeys().
+func (s *Segment) Key(i int) uint32 { return s.key(uint64(i)) }
+
 // NKeys returns the number of distinct hashes.
 func (s *Segment) NKeys() int { return int(s.hdr.NKeys) }
 

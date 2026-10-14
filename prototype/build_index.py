@@ -68,6 +68,9 @@ def machine_spec() -> dict[str, object]:
         "cores": os.cpu_count(),
         "python": platform.python_version(),
         "commit": sh(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"]),
+        "power": (
+            lambda o: "ac" if "AC Power" in o else "battery" if "Battery Power" in o else "unknown"
+        )(sh(["pmset", "-g", "batt"])),
         # Code or inputs changed since the commit. Result folders are outputs that
         # earlier pipeline steps rewrite, so they are excluded.
         "dirty": sh(

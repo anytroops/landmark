@@ -29,5 +29,19 @@ func Machine(root string) map[string]string {
 		"go":     runtime.Version(),
 		"commit": sh("git", "-C", root, "rev-parse", "--short", "HEAD"),
 		"dirty":  fmt.Sprint(dirty != ""),
+		// macOS throttles hard on battery; timings taken there are not comparable.
+		"power": powerSource(sh),
+	}
+}
+
+func powerSource(sh func(string, ...string) string) string {
+	out := sh("pmset", "-g", "batt")
+	switch {
+	case strings.Contains(out, "AC Power"):
+		return "ac"
+	case strings.Contains(out, "Battery Power"):
+		return "battery"
+	default:
+		return "unknown"
 	}
 }
