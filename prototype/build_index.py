@@ -68,7 +68,22 @@ def machine_spec() -> dict[str, object]:
         "cores": os.cpu_count(),
         "python": platform.python_version(),
         "commit": sh(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"]),
-        "dirty": sh(["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"])
+        # Code or inputs changed since the commit. Result folders are outputs that
+        # earlier pipeline steps rewrite, so they are excluded.
+        "dirty": sh(
+            [
+                "git",
+                "-C",
+                str(ROOT),
+                "status",
+                "--porcelain",
+                "--untracked-files=no",
+                "--",
+                ".",
+                ":(exclude)eval/results",
+                ":(exclude)bench/results",
+            ]
+        )
         != "",
     }
 
