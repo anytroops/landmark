@@ -20,6 +20,8 @@ jobs:
         run: buf lint
       - name: generated code is up to date
         run: make proto-check
+      - name: install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: go vet
         run: go vet ./...
       - uses: golangci/golangci-lint-action@v8

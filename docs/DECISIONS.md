@@ -7,6 +7,7 @@ Format: context, options, decision, consequences, date.
 - **Options:** Go, C++, Rust, Python.
 - **Decision:** Go. Default infra language, painless gRPC (C++ gRPC builds are a time sink), fast to learn from C. Python stays for the prototype and eval.
 - **Consequences:** Learning curve on Go idioms and concurrency; GC pauses become a tail-latency factor to measure.
+- **Revisited 2026-10-14:** After the Python prototype worked, considered keeping fingerprinting in Python and writing only the serving path in Go (saves the port), or all Python. Kept all Go: lower end-to-end demo latency (no Python hop on uploads), a measured Go-vs-Python fingerprint speedup, cross-implementation parity as a correctness story, one toolchain. Sean prioritized end result over time.
 
 ## D2. Document partitioning by track (2026-10-14)
 - **Context:** Index for fma_large (~480M postings estimated) must be split across shards.
