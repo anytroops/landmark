@@ -13,15 +13,14 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/fingerprint"
+	"github.com/anytroops/landmark/internal/runinfo"
 )
 
 type result struct {
@@ -54,7 +53,7 @@ func main() {
 	log.Printf("decoded %d tracks, %.0f s of audio", len(pcms), secs)
 
 	res := result{Lang: "go", Tracks: len(pcms), AudioSeconds: secs, ManifestFirst: *n,
-		QueryShifts: 1, Machine: machineSpec(*root)}
+		QueryShifts: 1, Machine: runinfo.Machine(*root)}
 	res.Landmarks = countLandmarks(pcms)
 	for _, workers := range []int{1, runtime.NumCPU()} {
 		for rep := 0; rep < *reps; rep++ {
@@ -133,24 +132,4 @@ func timeWorkers(pcms [][]float32, workers int) float64 {
 		slowest = max(slowest, d)
 	}
 	return slowest.Seconds()
-}
-
-func machineSpec(root string) map[string]string {
-	sh := func(name string, args ...string) string {
-		out, err := exec.Command(name, args...).Output()
-		if err != nil {
-			return "unknown"
-		}
-		return strings.TrimSpace(string(out))
-	}
-	dirty := sh("git", "-C", root, "status", "--porcelain", "--untracked-files=no", "--",
-		".", ":(exclude)eval/results", ":(exclude)bench/results")
-	return map[string]string{
-		"os":     runtime.GOOS + "/" + runtime.GOARCH,
-		"cpu":    sh("sysctl", "-n", "machdep.cpu.brand_string"),
-		"cores":  fmt.Sprint(runtime.NumCPU()),
-		"go":     runtime.Version(),
-		"commit": sh("git", "-C", root, "rev-parse", "--short", "HEAD"),
-		"dirty":  fmt.Sprint(dirty != ""),
-	}
 }
