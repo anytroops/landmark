@@ -35,6 +35,26 @@ def _work(args: tuple[int, str]) -> tuple[int, np.ndarray | None, np.ndarray | N
     return fma_id, h, t, len(pcm) / SAMPLE_RATE, ""
 
 
+def fingerprint_tracks(
+    ids: list[int], subset: str, workers: int | None
+) -> tuple[dict[int, tuple[np.ndarray, np.ndarray, float]], list[dict[str, object]]]:
+    """Fingerprint tracks in parallel. Returns ({fma_id: (hashes, t1, seconds)}, failures)."""
+    results: dict[int, tuple[np.ndarray, np.ndarray, float]] = {}
+    failures: list[dict[str, object]] = []
+    with Pool(workers) as pool:
+        for i, (fid, h, t, dur, err) in enumerate(
+            pool.imap_unordered(_work, [(f, subset) for f in ids], chunksize=16), 1
+        ):
+            if h is None:
+                log.warning("decode failed: %s", err)
+                failures.append({"fma_id": fid, "error": err})
+            else:
+                results[fid] = (h, t, dur)
+            if i % 1000 == 0:
+                log.info("%d/%d fingerprinted", i, len(ids))
+    return results, failures
+
+
 def machine_spec() -> dict[str, object]:
     def sh(cmd: list[str]) -> str:
         try:
@@ -68,19 +88,7 @@ def main() -> None:
     ids = manifest["indexed"][: args.limit or None]
 
     t0 = time.perf_counter()
-    results: dict[int, tuple[np.ndarray, np.ndarray, float]] = {}
-    failures: list[dict[str, object]] = []
-    with Pool(args.workers) as pool:
-        for i, (fid, h, t, dur, err) in enumerate(
-            pool.imap_unordered(_work, [(f, subset) for f in ids], chunksize=16), 1
-        ):
-            if h is None:
-                log.warning("decode failed: %s", err)
-                failures.append({"fma_id": fid, "error": err})
-            else:
-                results[fid] = (h, t, dur)
-            if i % 1000 == 0:
-                log.info("%d/%d fingerprinted", i, len(ids))
+    results, failures = fingerprint_tracks(ids, subset, args.workers)
     fp_secs = time.perf_counter() - t0
 
     ok_ids = sorted(results)

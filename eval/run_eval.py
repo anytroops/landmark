@@ -94,6 +94,7 @@ def main() -> None:
     subset = manifest["meta"]["subset"]
     index = Index.load(DATA_DIR / "index" / f"{args.manifest.stem}.npz")
     dense_to_fma = index.fma_ids
+    cluster = {t: int(k) for k, members in manifest["clusters"].items() for t in members}
     lim = args.limit or None
     jobs = [
         (f, "pos", 0, args.seed, subset, args.conditions)
@@ -126,7 +127,10 @@ def main() -> None:
                     top2_score=c[1].score if len(c) > 1 else 0,
                     top1_offset=c[0].offset if c else 0,
                     postings_scanned=res.postings_scanned,
-                    correct=bool(r["label"] == "pos" and top1 == r["fma_id"]),
+                    correct=bool(
+                        r["label"] == "pos"
+                        and cluster.get(top1, top1) == cluster.get(r["fma_id"], r["fma_id"])
+                    ),
                 )
                 out_rows.append(r)
             if i % 200 == 0:

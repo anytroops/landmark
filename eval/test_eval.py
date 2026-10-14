@@ -30,19 +30,30 @@ def test_wilson_rejects_bad_input(k: int, n: int) -> None:
 
 
 def test_splits_are_disjoint_and_deterministic() -> None:
-    ids = list(range(100, 200))
-    a = make_splits(ids, seed=0, n_neg=20, n_val_pos=10, n_test_pos=10)
-    b = make_splits(ids, seed=0, n_neg=20, n_val_pos=10, n_test_pos=10)
-    assert a == b
+    groups = [[i] for i in range(100, 190)] + [[200, 201], [202, 203, 204], [205, 206]]
+    a = make_splits(groups, seed=0, n_neg=20, n_val_pos=10, n_test_pos=10)
+    assert a == make_splits(groups, seed=0, n_neg=20, n_val_pos=10, n_test_pos=10)
+    assert make_splits(groups, seed=1, n_neg=20, n_val_pos=10, n_test_pos=10) != a
     indexed = set(a["indexed"])
     neg = set(a["val_neg"]) | set(a["test_neg"])
-    assert len(indexed) == 80
     assert not indexed & neg
+    assert indexed | neg == {t for g in groups for t in g}
     assert not set(a["val_neg"]) & set(a["test_neg"])
     assert not set(a["val_pos"]) & set(a["test_pos"])
-    assert set(a["val_pos"]) <= indexed
-    assert set(a["test_pos"]) <= indexed
-    assert make_splits(ids, seed=1, n_neg=20, n_val_pos=10, n_test_pos=10) != a
+    assert set(a["val_pos"]) | set(a["test_pos"]) <= indexed
+    assert len(a["val_pos"]) == len(a["test_pos"]) == 10
+
+
+def test_splits_keep_clusters_together() -> None:
+    groups = [[i] for i in range(100, 160)] + [[i, i + 1, i + 2] for i in range(300, 360, 3)]
+    for seed in range(5):
+        s = make_splits(groups, seed=seed, n_neg=30, n_val_pos=10, n_test_pos=10)
+        side = {t: k for k in ("indexed", "val_neg", "test_neg") for t in s[k]}
+        for g in groups:
+            assert len({side[t] for t in g}) == 1
+        pos = s["val_pos"] + s["test_pos"]
+        for g in groups:
+            assert sum(t in pos for t in g) <= 1
 
 
 @pytest.mark.parametrize("snr_db", [15.0, 5.0, 0.0])
