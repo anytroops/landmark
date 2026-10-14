@@ -1,6 +1,6 @@
 # Progress
 
-## Current phase: 2 complete (latency numbers pending AC power); next is Phase 3
+## Current phase: 3 (distributed): coordinator, replication, cluster, load generator done; official runs pending AC power
 
 ## Done
 - 2026-10-14: Phase 0. Repo, toolchain, CI green, compose stack, fma_metadata + fma_small downloaded, SHA1 verified, extracted (7zip; unzip fails on FMA), zips deleted.
@@ -11,10 +11,12 @@
 - 2026-10-14 (Phase 2): Go matcher with exact Python parity (D22). Shard server with fixed matcher pool and load shedding (D23), health, metrics, pprof. identify CLI: first end-to-end identification over gRPC on fma_small.
 
 - 2026-10-14 (Phase 2 done): eval harness drives the live Go shard over gRPC (`--shard`); test split through the Go stack is identical to Python on all 21,978 rows.
+- 2026-10-14 (Phase 3): shard Info RPC + index manifest; cluster config; coordinator with per-attempt timeouts (D24), outlier ejection (D25), identity verification (D26), mutation-tested; Docker cluster (2x2); open-loop loadgen with failure injection; B3 script. Battery smoke run: kill -9 of a replica at 50 qps kept 100% success, one slow request (~115 ms).
 
 ## Next
-- Benchmark matcher and shard latency once on AC power (pprof first, per D22).
-- Phase 3 (coordinator, replication): suggest xhigh effort for the fan-out/failover work.
+- On AC power: official B3 run (`bench/scripts/b3_failover.sh`), matcher/shard pprof, then Phase 4 benchmarks.
+- Grafana dashboard JSON (identify latency, partial rate, per-replica availability, attempts by outcome).
+- Scale up: fma_medium (22 GiB zip, needs Sean's OK), then fma_large (needs ~186 GB: external disk or cloud VM).
 - Decide on per-key overhead (u32 offsets, compressed keys); see B4 notes.
 - Optional: make D9 peak selection shift-invariant (rank within a window centered on each peak). Core change, needs Sean's pick.
 
@@ -27,6 +29,8 @@
 - Some fma_small clips are shorter than the 10 s excerpt; one track per split was skipped. Count them before Phase 4 eval.
 
 ## Gotchas
+- A `kill -9`'d container's IP disappears, so in-flight requests to it hang instead of failing fast; per-attempt timeouts (D24) are what bound the damage.
+- Compose: several services sharing one image tag must not all `build:` it (parallel builds collide); one builds, the rest `pull_policy: never`.
 - Benchmarks on battery are throttled ~3x on this laptop (single decode 0.33 s vs 0.10 s). Run metadata now records `power`; only use `ac` runs for timing claims.
 - Never gate a commit on `make test | tail`: the pipe returns tail's status, so failures slip through (it happened once: 5744ed0 pushed a failing test). Run `make test && make lint && git commit`, with output to a file if it must be short.
 - zsh: an unmatched glob is an error and stops an `&&` chain (use `rm -f -- path` with exact names, or `setopt null_glob`).
