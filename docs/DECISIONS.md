@@ -141,3 +141,21 @@ Format: context, options, decision, consequences, date.
 - **Options:** (A) new Matcher per request (GC churn from multi-MB buffers, no overload protection); (B) pooled Matchers, unlimited concurrency; (C) fixed pool of Workers Matchers; a request waits for one until its deadline or MaxQueueWait, else is rejected.
 - **Decision:** C. Sean's pick. Workers defaults to the core count, MaxQueueWait to 100 ms. Waiting past MaxQueueWait returns RESOURCE_EXHAUSTED (shed load); the caller's own deadline expiring first returns DEADLINE_EXCEEDED.
 - **Consequences:** Bounded CPU contention and no per-query garbage. Phase 4 should show it: under overload, accepted-request p99 stays flat while the reject rate rises. The coordinator must treat RESOURCE_EXHAUSTED as "try the other replica". Also: graceful shutdown waits for in-flight searches before unmapping the segment (unmapping under a reader is a segfault), and skips the unmap after a forced stop.
+
+## D24. Coordinator retries: per-attempt timeout, then the other replica (2026-10-14)
+- **Context:** A crashed replica fails fast (connection reset), but a hung one (frozen, overloaded, partitioned) holds the request until the deadline, which would make its partition miss every query routed to it.
+- **Options:** (A) whole budget to one attempt, retry only fast errors; (B) first attempt gets half the remaining budget when another replica exists, then the other replica gets the rest; (C) hedged requests.
+- **Decision:** B. Sean's pick. Never retry INVALID_ARGUMENT (fails on every replica) or when the query's own deadline has passed. Skip attempts with under 5 ms left. Replica choice: fewest in-flight requests, random among ties.
+- **Consequences:** A hung replica costs a query about half the deadline instead of its partition. Hedging (C) stays the Phase 6 stretch, to be measured against B on p99. Mutation-tested: removing the split makes the hung-replica test return partial answers.
+
+## D25. Failure detection: health polling plus outlier ejection (2026-10-14)
+- **Context:** Between health polls, traffic keeps hitting a dead replica.
+- **Options:** (A) health polling only; (B) polling plus ejection after consecutive request failures.
+- **Decision:** B. Sean's pick. Defaults: poll every 1 s (250 ms timeout), eject after 3 consecutive failures for at least 5 s, reinstate on a passing health check after that. RESOURCE_EXHAUSTED does not count: ejecting an overloaded replica pushes its load onto its partner and cascades. If every replica of a partition is unavailable, verified ones are still tried ("panic mode"), since health state can lag. A replica reporting NOT_SERVING (draining) gets no traffic.
+- **Consequences:** Reaction to failure is milliseconds at high QPS rather than up to a poll interval. Mutation-tested: counting overload as failure ejects a merely busy replica.
+
+## D26. Replica identity verification (2026-10-14)
+- **Context:** Replication is file copying with no consensus (D4). A replica serving a stale or different segment would give different answers depending on routing, silently.
+- **Options:** (A) trust the config; (B) shards report segment identity (Info RPC: partition, n_partitions, CRC-32C) and the coordinator uses only replicas matching index.json.
+- **Decision:** B. Sean's pick. Verified every health round, so a replica restarted with a different file drops out within one poll. A Search response claiming the wrong partition unverifies the replica immediately. Unverified replicas are never used, not even in panic mode: a partial answer beats a wrong one.
+- **Consequences:** Rolling out a new index needs a deliberate switch (new index.json and config), which is the right shape for versioned deploys later. Mutation-tested.
