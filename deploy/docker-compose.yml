@@ -1,25 +1,60 @@
-# Local cluster. Phase 0: observability stack only.
-# Phase 3 adds shard replicas (P x RF) and the coordinator.
+# Local cluster: 2 partitions x 2 replicas, a coordinator, Prometheus, Grafana.
+#
+#   INDEX=p2_varint docker compose -f deploy/docker-compose.yml up -d --build
+#
+# INDEX names a directory under data/segments built by:
+#   bin/ingest -out data/segments/p2_varint -partitions 2
+#
+# Caveat for benchmarks: every container shares one machine (and, inside the
+# Colima VM, one page cache), so replicas do not duplicate memory and P
+# shards compete for the same cores. Label single-host results as such.
 name: landmark
 
+# Only shard-0a builds the image; the rest reuse it (parallel builds of one
+# tag collide).
+x-shard: &shard
+  image: landmark-shard:dev
+  pull_policy: never
+  volumes: ["../data/segments/${INDEX:-p2_varint}:/index:ro"]
+  restart: "no" # failure tests kill replicas on purpose; do not resurrect them
+
 services:
+  shard-0a:
+    <<: *shard
+    build: {context: .., dockerfile: deploy/Dockerfile, args: {CMD: shard}}
+    pull_policy: build
+    command: ["-segment", "/index/part-000.lmrk", "-listen", ":7001", "-admin", ":9101"]
+  shard-0b:
+    <<: *shard
+    command: ["-segment", "/index/part-000.lmrk", "-listen", ":7001", "-admin", ":9101"]
+  shard-1a:
+    <<: *shard
+    command: ["-segment", "/index/part-001.lmrk", "-listen", ":7001", "-admin", ":9101"]
+  shard-1b:
+    <<: *shard
+    command: ["-segment", "/index/part-001.lmrk", "-listen", ":7001", "-admin", ":9101"]
+
+  coordinator:
+    build: {context: .., dockerfile: deploy/Dockerfile, args: {CMD: coordinator}}
+    image: landmark-coordinator:dev
+    command: ["-config", "/etc/landmark/cluster.json", "-listen", ":7000", "-admin", ":9100"]
+    volumes:
+      - "./cluster.p2.json:/etc/landmark/cluster.json:ro"
+      - "../data/segments/${INDEX:-p2_varint}:/index:ro"
+    ports: ["127.0.0.1:7000:7000"] # gRPC only; admin ports stay inside the network
+    depends_on: [shard-0a, shard-0b, shard-1a, shard-1b]
+
   prometheus:
     image: prom/prometheus:v3.5.0
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "9090:9090"
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes: ["./prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["127.0.0.1:9090:9090"]
 
   grafana:
     image: grafana/grafana:12.1.0
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      - prometheus
+    volumes: ["./grafana/provisioning:/etc/grafana/provisioning:ro"]
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [prometheus]

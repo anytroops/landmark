@@ -4,7 +4,8 @@
 //	identify -shard localhost:7001 -catalog data/segments/p1_varint/catalog.json \
 //	    -start 7.3 -duration 10 song.mp3
 //
-// Phase 2 talks to one shard directly; the coordinator replaces that in Phase 3.
+// With -coordinator it asks the whole cluster (fan-out, failover, merge);
+// with -shard it asks one shard directly.
 package main
 
 import (
@@ -31,7 +32,8 @@ type catalogTrack struct {
 }
 
 func main() {
-	addr := flag.String("shard", "localhost:7001", "shard gRPC address")
+	addr := flag.String("shard", "", "shard gRPC address (query one partition directly)")
+	coordAddr := flag.String("coordinator", "", "coordinator gRPC address (query the cluster)")
 	catalogPath := flag.String("catalog", "", "catalog.json written by ingest (required)")
 	startSec := flag.Float64("start", 0, "excerpt start, seconds")
 	durSec := flag.Float64("duration", 10, "excerpt length, seconds (0 = whole file)")
@@ -41,9 +43,16 @@ func main() {
 	tRatio := flag.Float64("t-ratio", 1.0, "minimum top / runner-up ratio")
 	timeout := flag.Duration("timeout", 2*time.Second, "end-to-end deadline")
 	flag.Parse()
-	if flag.NArg() != 1 || *catalogPath == "" {
-		fmt.Fprintln(os.Stderr, "usage: identify -catalog catalog.json [flags] audio-file")
+	if flag.NArg() != 1 || *catalogPath == "" || (*addr == "") == (*coordAddr == "") {
+		fmt.Fprintln(os.Stderr, "usage: identify -catalog catalog.json (-shard addr | -coordinator addr) [flags] audio-file")
 		os.Exit(2)
+	}
+	if *coordAddr != "" {
+		if err := runCoordinator(*coordAddr, *catalogPath, flag.Arg(0), *startSec, *durSec, *shifts, *timeout); err != nil {
+			fmt.Fprintln(os.Stderr, "identify:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if err := run(*addr, *catalogPath, flag.Arg(0), *startSec, *durSec, *shifts, uint32(*tAbs), *tRatio, *timeout); err != nil {
 		fmt.Fprintln(os.Stderr, "identify:", err)
@@ -121,6 +130,58 @@ func run(addr, catalogPath, file string, startSec, durSec float64, shifts int, t
 		verdict, catalog[top.Track].FMAID, top.Score, runnerUp, float64(top.Offset)*256/audio.SampleRate)
 	for i, c := range cands[:min(5, len(cands))] {
 		fmt.Printf("  %d. fma_id %-7d score %d\n", i+1, catalog[c.Track].FMAID, c.Score)
+	}
+	return nil
+}
+
+// runCoordinator asks the cluster; acceptance happens in the coordinator.
+func runCoordinator(addr, catalogPath, file string, startSec, durSec float64, shifts int, timeout time.Duration) error {
+	catalog, err := loadCatalog(catalogPath)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	pcm, err := audio.Decode(ctx, file, audio.SampleRate)
+	if err != nil {
+		return err
+	}
+	lo := min(int(startSec*audio.SampleRate), len(pcm))
+	hi := len(pcm)
+	if durSec > 0 {
+		hi = min(lo+int(durSec*audio.SampleRate), len(pcm))
+	}
+	lms := fingerprint.New(fingerprint.DefaultParams()).FingerprintQuery(pcm[lo:hi], shifts)
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", addr, err)
+	}
+	defer func() { _ = conn.Close() }()
+	req := &landmarkv1.IdentifyRequest{TopK: 5, Landmarks: make([]*landmarkv1.Landmark, len(lms))}
+	for i, l := range lms {
+		req.Landmarks[i] = &landmarkv1.Landmark{Hash: l.Hash, T: l.T}
+	}
+	t0 := time.Now()
+	resp, err := landmarkv1.NewCoordinatorServiceClient(conn).Identify(ctx, req)
+	if err != nil {
+		return fmt.Errorf("identify: %w", err)
+	}
+	fmt.Printf("%d landmarks; identify %v; partitions %d/%d%s\n", len(lms), time.Since(t0).Round(time.Millisecond),
+		resp.GetPartitionsResponded(), resp.GetPartitionsTotal(), map[bool]string{true: " (PARTIAL)", false: ""}[resp.GetPartial()])
+	verdict := "NO MATCH"
+	if resp.GetMatched() {
+		verdict = "MATCH"
+	}
+	for i, c := range resp.GetCandidates() {
+		fma := -1
+		if int(c.GetTrackId()) < len(catalog) {
+			fma = catalog[c.GetTrackId()].FMAID
+		}
+		if i == 0 {
+			fmt.Printf("%s: fma_id %d (score %d, offset %.2f s)\n", verdict, fma, c.GetScore(), float64(c.GetOffset())*256/audio.SampleRate)
+		}
+		fmt.Printf("  %d. fma_id %-7d score %d\n", i+1, fma, c.GetScore())
 	}
 	return nil
 }

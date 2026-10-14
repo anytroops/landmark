@@ -46,8 +46,9 @@ fuzz:
 py-sync:
 	uv sync --quiet
 
+# INDEX selects data/segments/<INDEX> (default p2_varint, matching deploy/cluster.p2.json).
 cluster-up:
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --build
 
 cluster-down:
 	$(COMPOSE) down
