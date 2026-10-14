@@ -1,6 +1,6 @@
 # Progress
 
-## Current phase: 2 (Go core, single node): nearly done
+## Current phase: 2 complete (latency numbers pending AC power); next is Phase 3
 
 ## Done
 - 2026-10-14: Phase 0. Repo, toolchain, CI green, compose stack, fma_metadata + fma_small downloaded, SHA1 verified, extracted (7zip; unzip fails on FMA), zips deleted.
@@ -10,8 +10,9 @@
 - 2026-10-14 (Phase 2): Segment format v1 (D19-D21): atomic writer, mmap reader, fuzzed (47.5M local execs, 20 s in CI). Go `cmd/ingest` builds per-partition segments; posting count matches Python exactly. B4 on fma_small recorded.
 - 2026-10-14 (Phase 2): Go matcher with exact Python parity (D22). Shard server with fixed matcher pool and load shedding (D23), health, metrics, pprof. identify CLI: first end-to-end identification over gRPC on fma_small.
 
+- 2026-10-14 (Phase 2 done): eval harness drives the live Go shard over gRPC (`--shard`); test split through the Go stack is identical to Python on all 21,978 rows.
+
 ## Next
-- Phase 2 done criterion: eval through the Go shard matching Python accuracy. Plan: add a `--shard host:port` backend to `eval/run_eval.py` (Python gRPC stubs via buf) so the same harness drives the live system; reuse it for the coordinator in Phase 3.
 - Benchmark matcher and shard latency once on AC power (pprof first, per D22).
 - Phase 3 (coordinator, replication): suggest xhigh effort for the fan-out/failover work.
 - Decide on per-key overhead (u32 offsets, compressed keys); see B4 notes.

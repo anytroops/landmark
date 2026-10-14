@@ -37,6 +37,10 @@ Sources: `summary_seed0.json` (baseline), `summary_seed0_d14.json`, `summary_see
 
 **D15 paired test** (`eval/results/compare_seed0_d14_vs_d14_shift4.md`, exact McNemar on identical queries): every noise condition moves the same direction, but only white_snr5_10s reaches p < 0.05 (9 vs 1 discordant, p = 0.02); SNR 0 is 21 vs 12 (p = 0.16). Read it as a consistent ~1 point gain at low SNR that n = 1,000 cannot pin down, for 2x search time.
 
+## Go system parity (Phase 2 done criterion)
+
+The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
+
 ## Phase 1 baseline (fma_small, seed 0, no tag)
 
 
