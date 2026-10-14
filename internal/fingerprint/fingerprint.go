@@ -173,32 +173,71 @@ func FindPeaks(s Spectrogram, p Params) []Peak {
 
 // maxFilter is scipy.ndimage.maximum_filter(size=(sizeT, sizeF),
 // mode="constant", cval=-inf). Max over a rectangle is separable, so filter
-// along f, then along t: (sizeT + sizeF) comparisons per cell instead of
-// sizeT * sizeF, with an identical result.
+// along f, then along t, each with maxFilter1D. Sizes must be odd.
 func maxFilter(s Spectrogram, sizeT, sizeF int) []float64 {
-	rows := make([]float64, len(s.Data))
-	hf := sizeF / 2
-	for t := 0; t < s.Frames; t++ {
-		for f := 0; f < NBins; f++ {
-			m := math.Inf(-1)
-			for k := max(0, f-hf); k <= min(NBins-1, f+hf); k++ {
-				m = math.Max(m, s.Data[t*NBins+k])
-			}
-			rows[t*NBins+f] = m
-		}
-	}
+	tmp := make([]float64, len(s.Data))
 	out := make([]float64, len(s.Data))
-	ht := sizeT / 2
-	for t := 0; t < s.Frames; t++ {
-		for f := 0; f < NBins; f++ {
-			m := math.Inf(-1)
-			for k := max(0, t-ht); k <= min(s.Frames-1, t+ht); k++ {
-				m = math.Max(m, rows[k*NBins+f])
-			}
-			out[t*NBins+f] = m
-		}
+	sc := newMaxScratch(max(s.Frames, NBins), max(sizeT, sizeF))
+	for t := 0; t < s.Frames; t++ { // along f: contiguous rows
+		maxFilter1D(s.Data, tmp, t*NBins, 1, NBins, sizeF/2, sc)
+	}
+	for f := 0; f < NBins; f++ { // along t: stride NBins
+		maxFilter1D(tmp, out, f, NBins, s.Frames, sizeT/2, sc)
 	}
 	return out
+}
+
+type maxScratch struct{ pad, g, r []float64 }
+
+func newMaxScratch(n, w int) *maxScratch {
+	m := n + 2*w
+	return &maxScratch{make([]float64, m), make([]float64, m), make([]float64, m)}
+}
+
+// maxFilter1D writes the max over [i-h, i+h] (out of range = -inf) for the n
+// elements src[off], src[off+stride], ... into dst at the same positions.
+//
+// van Herk/Gil-Werman: split the -inf-padded sequence into blocks of width
+// w = 2h+1, take running maxes forward (g) and backward (r) within each
+// block. Any width-w window spans at most two blocks, so its max is
+// max(r[start], g[end]): about 3 comparisons per element for any w, versus w
+// for the direct loop. Plain > comparisons: values are finite (dB of
+// |X| + 1e-10), so math.Max's NaN and signed-zero handling is unneeded.
+func maxFilter1D(src, dst []float64, off, stride, n, h int, sc *maxScratch) {
+	w := 2*h + 1
+	m := n + 2*h
+	m += (w - m%w) % w // round up to whole blocks
+	pad, g, r := sc.pad[:m], sc.g[:m], sc.r[:m]
+	negInf := math.Inf(-1)
+	for i := range pad {
+		pad[i] = negInf
+	}
+	for i := 0; i < n; i++ {
+		pad[h+i] = src[off+i*stride]
+	}
+	for b := 0; b < m; b += w {
+		g[b] = pad[b]
+		for i := b + 1; i < b+w; i++ {
+			g[i] = g[i-1]
+			if pad[i] > g[i] {
+				g[i] = pad[i]
+			}
+		}
+		r[b+w-1] = pad[b+w-1]
+		for i := b + w - 2; i >= b; i-- {
+			r[i] = r[i+1]
+			if pad[i] > r[i] {
+				r[i] = pad[i]
+			}
+		}
+	}
+	for i := 0; i < n; i++ {
+		v := r[i] // window over pad[i .. i+w-1] is centered on element i
+		if g[i+w-1] > v {
+			v = g[i+w-1]
+		}
+		dst[off+i*stride] = v
+	}
 }
 
 // Pair hashes each anchor with its next Fanout peaks satisfying

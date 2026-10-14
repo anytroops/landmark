@@ -104,3 +104,9 @@ Format: context, options, decision, consequences, date.
 - **Options:** (A) switch Python to float64 and regenerate golden vectors; (B) keep Python float32, accept the brief's Jaccard >= 0.98 bar.
 - **Decision:** A. Sean's pick. Parity target tightened: any mismatch beyond FFT rounding is a bug.
 - **Consequences:** Python spectrogram memory doubles (~5 MB per 30 s clip, irrelevant). Dedupe, splits, index, eval, and golden vectors are regenerated; accuracy change from the precision switch is measured (tag `_f64`).
+
+## D18. Go max filter: van Herk/Gil-Werman, plain comparisons (2026-10-14)
+- **Context:** First Go-vs-Python throughput run: Go was ~5x slower than numpy/scipy on one core (89 ms vs ~18 ms per 30 s clip). pprof: max filter 77% of CPU, half of that inside `math.Max`; the FFT was ~4%.
+- **Options:** (A) direct separable loop (w comparisons per cell per axis); (B) van Herk/Gil-Werman sliding max (~3 per cell for any w); (C) monotonic-queue sliding max.
+- **Decision:** B, with plain `>` instead of `math.Max` (values are finite, so its NaN and signed-zero handling is waste). Output is identical: the naive-2D test and exact FMA parity still pass.
+- **Consequences:** 89 ms to 25 ms per 30 s clip on the M4 Pro (BenchmarkFingerprint30s). Remaining profile: spectrogram ~52% (log10 ~23%, FFT ~17%), max filter ~29%. Stopped here: ingest is decode-bound, and query-path cost is better judged against Phase 4 latency numbers. Next lever if needed: run the 4 query shifts in parallel goroutines.
