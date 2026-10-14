@@ -58,6 +58,11 @@ class ShardBackend:
         self._timeout = timeout_s
 
     def search(self, hashes: np.ndarray, times: np.ndarray) -> Hit:
+        if len(hashes) == 0:
+            # Silent excerpts fingerprint to nothing. The shard rejects empty
+            # queries as INVALID_ARGUMENT, so answer "no match" locally, as the
+            # Python matcher does.
+            return Hit(-1, 0, 0, 0, 0)
         req = self._pb.SearchRequest(
             top_k=SHARD_TOP_K,
             landmarks=[

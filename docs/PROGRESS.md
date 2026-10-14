@@ -27,6 +27,8 @@
 
 ## Gotchas
 - Benchmarks on battery are throttled ~3x on this laptop (single decode 0.33 s vs 0.10 s). Run metadata now records `power`; only use `ac` runs for timing claims.
+- Never gate a commit on `make test | tail`: the pipe returns tail's status, so failures slip through (it happened once: 5744ed0 pushed a failing test). Run `make test && make lint && git commit`, with output to a file if it must be short.
+- zsh: an unmatched glob is an error and stops an `&&` chain (use `rm -f -- path` with exact names, or `setopt null_glob`).
 - `pgrep -f` inside a wait loop matches the loop's own command line; wait on a PID or a file instead.
 - FMA zips need 7zip (`7zz x`), not unzip.
 - MP3 at 11,025 Hz caps at 64 kbps; degradations encode at 44.1 kHz.
