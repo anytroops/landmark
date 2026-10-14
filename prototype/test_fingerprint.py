@@ -107,3 +107,19 @@ def test_fingerprint_query_recovers_sub_hop_offset() -> None:
     single = recovered(*fp.fingerprint(q, p))
     multi = recovered(*fp.fingerprint_query(q, 4, p))
     assert multi > single
+
+
+def test_synthetic_golden_is_current() -> None:
+    # Fails if the fingerprinter changed without `python -m prototype.golden`,
+    # which would leave the Go parity test checking against stale vectors.
+    import json
+    from dataclasses import asdict
+    from pathlib import Path
+
+    from prototype.golden import synthetic_signal
+
+    g = json.loads((Path(__file__).parent.parent / "testdata/golden/synthetic.json").read_text())
+    assert g["params"] == asdict(fp.DEFAULT)
+    h, t = fp.fingerprint(synthetic_signal(g["n_samples"]))
+    assert h.tolist() == g["hashes"]
+    assert t.tolist() == g["times"]

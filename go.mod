@@ -3,6 +3,7 @@ module github.com/anytroops/landmark
 go 1.27.2
 
 require (
+	gonum.org/v1/gonum v0.17.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
