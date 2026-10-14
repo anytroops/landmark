@@ -249,6 +249,137 @@ func (x *SearchResponse) GetPostingsScanned() uint64 {
 	return 0
 }
 
+type InfoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InfoRequest) Reset() {
+	*x = InfoRequest{}
+	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InfoRequest) ProtoMessage() {}
+
+func (x *InfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InfoRequest.ProtoReflect.Descriptor instead.
+func (*InfoRequest) Descriptor() ([]byte, []int) {
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{4}
+}
+
+// InfoResponse identifies the segment a shard serves, so the coordinator can
+// refuse replicas whose index differs from the cluster's (D26).
+type InfoResponse struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId uint32                 `protobuf:"varint,1,opt,name=partition_id,json=partitionId,proto3" json:"partition_id,omitempty"`
+	NPartitions uint32                 `protobuf:"varint,2,opt,name=n_partitions,json=nPartitions,proto3" json:"n_partitions,omitempty"`
+	NTracks     uint32                 `protobuf:"varint,3,opt,name=n_tracks,json=nTracks,proto3" json:"n_tracks,omitempty"`
+	NKeys       uint64                 `protobuf:"varint,4,opt,name=n_keys,json=nKeys,proto3" json:"n_keys,omitempty"`
+	NPostings   uint64                 `protobuf:"varint,5,opt,name=n_postings,json=nPostings,proto3" json:"n_postings,omitempty"`
+	// CRC-32C footer of the segment file: its content identity.
+	SegmentCrc32C uint32 `protobuf:"fixed32,6,opt,name=segment_crc32c,json=segmentCrc32c,proto3" json:"segment_crc32c,omitempty"`
+	FormatVersion uint32 `protobuf:"varint,7,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InfoResponse) Reset() {
+	*x = InfoResponse{}
+	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InfoResponse) ProtoMessage() {}
+
+func (x *InfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InfoResponse.ProtoReflect.Descriptor instead.
+func (*InfoResponse) Descriptor() ([]byte, []int) {
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *InfoResponse) GetPartitionId() uint32 {
+	if x != nil {
+		return x.PartitionId
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetNPartitions() uint32 {
+	if x != nil {
+		return x.NPartitions
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetNTracks() uint32 {
+	if x != nil {
+		return x.NTracks
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetNKeys() uint64 {
+	if x != nil {
+		return x.NKeys
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetNPostings() uint64 {
+	if x != nil {
+		return x.NPostings
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetSegmentCrc32C() uint32 {
+	if x != nil {
+		return x.SegmentCrc32C
+	}
+	return 0
+}
+
+func (x *InfoResponse) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
 type IdentifyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Landmarks     []*Landmark            `protobuf:"bytes,1,rep,name=landmarks,proto3" json:"landmarks,omitempty"`
@@ -259,7 +390,7 @@ type IdentifyRequest struct {
 
 func (x *IdentifyRequest) Reset() {
 	*x = IdentifyRequest{}
-	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -271,7 +402,7 @@ func (x *IdentifyRequest) String() string {
 func (*IdentifyRequest) ProtoMessage() {}
 
 func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -284,7 +415,7 @@ func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifyRequest.ProtoReflect.Descriptor instead.
 func (*IdentifyRequest) Descriptor() ([]byte, []int) {
-	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{4}
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *IdentifyRequest) GetLandmarks() []*Landmark {
@@ -315,7 +446,7 @@ type IdentifyResponse struct {
 
 func (x *IdentifyResponse) Reset() {
 	*x = IdentifyResponse{}
-	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -327,7 +458,7 @@ func (x *IdentifyResponse) String() string {
 func (*IdentifyResponse) ProtoMessage() {}
 
 func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -340,7 +471,7 @@ func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifyResponse.ProtoReflect.Descriptor instead.
 func (*IdentifyResponse) Descriptor() ([]byte, []int) {
-	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{5}
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *IdentifyResponse) GetCandidates() []*Candidate {
@@ -398,7 +529,17 @@ const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"candidates\x18\x01 \x03(\v2\x16.landmark.v1.CandidateR\n" +
 	"candidates\x12!\n" +
 	"\fpartition_id\x18\x02 \x01(\rR\vpartitionId\x12)\n" +
-	"\x10postings_scanned\x18\x03 \x01(\x04R\x0fpostingsScanned\"[\n" +
+	"\x10postings_scanned\x18\x03 \x01(\x04R\x0fpostingsScanned\"\r\n" +
+	"\vInfoRequest\"\xf3\x01\n" +
+	"\fInfoResponse\x12!\n" +
+	"\fpartition_id\x18\x01 \x01(\rR\vpartitionId\x12!\n" +
+	"\fn_partitions\x18\x02 \x01(\rR\vnPartitions\x12\x19\n" +
+	"\bn_tracks\x18\x03 \x01(\rR\anTracks\x12\x15\n" +
+	"\x06n_keys\x18\x04 \x01(\x04R\x05nKeys\x12\x1d\n" +
+	"\n" +
+	"n_postings\x18\x05 \x01(\x04R\tnPostings\x12%\n" +
+	"\x0esegment_crc32c\x18\x06 \x01(\aR\rsegmentCrc32c\x12%\n" +
+	"\x0eformat_version\x18\a \x01(\rR\rformatVersion\"[\n" +
 	"\x0fIdentifyRequest\x123\n" +
 	"\tlandmarks\x18\x01 \x03(\v2\x15.landmark.v1.LandmarkR\tlandmarks\x12\x13\n" +
 	"\x05top_k\x18\x02 \x01(\rR\x04topK\"\xdc\x01\n" +
@@ -409,9 +550,10 @@ const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"\amatched\x18\x02 \x01(\bR\amatched\x12\x18\n" +
 	"\apartial\x18\x03 \x01(\bR\apartial\x121\n" +
 	"\x14partitions_responded\x18\x04 \x01(\rR\x13partitionsResponded\x12)\n" +
-	"\x10partitions_total\x18\x05 \x01(\rR\x0fpartitionsTotal2Q\n" +
+	"\x10partitions_total\x18\x05 \x01(\rR\x0fpartitionsTotal2\x8e\x01\n" +
 	"\fShardService\x12A\n" +
-	"\x06Search\x12\x1a.landmark.v1.SearchRequest\x1a\x1b.landmark.v1.SearchResponse2]\n" +
+	"\x06Search\x12\x1a.landmark.v1.SearchRequest\x1a\x1b.landmark.v1.SearchResponse\x12;\n" +
+	"\x04Info\x12\x18.landmark.v1.InfoRequest\x1a\x19.landmark.v1.InfoResponse2]\n" +
 	"\x12CoordinatorService\x12G\n" +
 	"\bIdentify\x12\x1c.landmark.v1.IdentifyRequest\x1a\x1d.landmark.v1.IdentifyResponseB:Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1b\x06proto3"
 
@@ -427,14 +569,16 @@ func file_landmark_v1_landmark_proto_rawDescGZIP() []byte {
 	return file_landmark_v1_landmark_proto_rawDescData
 }
 
-var file_landmark_v1_landmark_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_landmark_v1_landmark_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_landmark_v1_landmark_proto_goTypes = []any{
 	(*Landmark)(nil),         // 0: landmark.v1.Landmark
 	(*Candidate)(nil),        // 1: landmark.v1.Candidate
 	(*SearchRequest)(nil),    // 2: landmark.v1.SearchRequest
 	(*SearchResponse)(nil),   // 3: landmark.v1.SearchResponse
-	(*IdentifyRequest)(nil),  // 4: landmark.v1.IdentifyRequest
-	(*IdentifyResponse)(nil), // 5: landmark.v1.IdentifyResponse
+	(*InfoRequest)(nil),      // 4: landmark.v1.InfoRequest
+	(*InfoResponse)(nil),     // 5: landmark.v1.InfoResponse
+	(*IdentifyRequest)(nil),  // 6: landmark.v1.IdentifyRequest
+	(*IdentifyResponse)(nil), // 7: landmark.v1.IdentifyResponse
 }
 var file_landmark_v1_landmark_proto_depIdxs = []int32{
 	0, // 0: landmark.v1.SearchRequest.landmarks:type_name -> landmark.v1.Landmark
@@ -442,11 +586,13 @@ var file_landmark_v1_landmark_proto_depIdxs = []int32{
 	0, // 2: landmark.v1.IdentifyRequest.landmarks:type_name -> landmark.v1.Landmark
 	1, // 3: landmark.v1.IdentifyResponse.candidates:type_name -> landmark.v1.Candidate
 	2, // 4: landmark.v1.ShardService.Search:input_type -> landmark.v1.SearchRequest
-	4, // 5: landmark.v1.CoordinatorService.Identify:input_type -> landmark.v1.IdentifyRequest
-	3, // 6: landmark.v1.ShardService.Search:output_type -> landmark.v1.SearchResponse
-	5, // 7: landmark.v1.CoordinatorService.Identify:output_type -> landmark.v1.IdentifyResponse
-	6, // [6:8] is the sub-list for method output_type
-	4, // [4:6] is the sub-list for method input_type
+	4, // 5: landmark.v1.ShardService.Info:input_type -> landmark.v1.InfoRequest
+	6, // 6: landmark.v1.CoordinatorService.Identify:input_type -> landmark.v1.IdentifyRequest
+	3, // 7: landmark.v1.ShardService.Search:output_type -> landmark.v1.SearchResponse
+	5, // 8: landmark.v1.ShardService.Info:output_type -> landmark.v1.InfoResponse
+	7, // 9: landmark.v1.CoordinatorService.Identify:output_type -> landmark.v1.IdentifyResponse
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
 	4, // [4:4] is the sub-list for extension extendee
 	0, // [0:4] is the sub-list for field type_name
@@ -463,7 +609,7 @@ func file_landmark_v1_landmark_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_landmark_v1_landmark_proto_rawDesc), len(file_landmark_v1_landmark_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

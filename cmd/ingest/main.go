@@ -144,6 +144,7 @@ func run(ctx context.Context, cfg config) error {
 		DecodeFailures: failures, AudioSeconds: audioSecs, FingerprintWallSeconds: fpSecs,
 		Machine: runinfo.Machine("."),
 	}
+	manifest := IndexManifest{NPartitions: nParts, NTracks: len(ids)}
 	for p := range nParts {
 		nTracks := (uint32(len(ids)) + nParts - 1 - p) / nParts // dense ids d < N with d mod P == p
 		meta := segment.Meta{Partition: p, NPartitions: nParts, NTracks: nTracks, Encoding: cfg.encoding}
@@ -160,9 +161,11 @@ func run(ctx context.Context, cfg config) error {
 		if err != nil {
 			return fmt.Errorf("reopen partition %d: %w", p, err)
 		}
+		crc := fmt.Sprintf("%08x", seg.Checksum())
 		stats.Segments = append(stats.Segments, segStats{
-			Partition: p, Path: path, Keys: seg.NKeys(), Postings: n, Bytes: seg.SizeBytes(),
+			Partition: p, Path: path, Keys: seg.NKeys(), Postings: n, Bytes: seg.SizeBytes(), CRC32C: crc,
 		})
+		manifest.Segments = append(manifest.Segments, ManifestEntry{Partition: p, File: filepath.Base(path), CRC32C: crc})
 		stats.TotalBytes += seg.SizeBytes()
 		stats.TotalPostings += n
 		_ = seg.Close()
@@ -172,6 +175,11 @@ func run(ctx context.Context, cfg config) error {
 
 	if err := writeJSON(filepath.Join(cfg.out, "catalog.json"), catalog); err != nil {
 		return err
+	}
+	if !cfg.globalIDs { // global-id builds are for size measurement only, never served
+		if err := writeJSON(filepath.Join(cfg.out, "index.json"), manifest); err != nil {
+			return err
+		}
 	}
 	if err := writeJSON(filepath.Join(cfg.out, "ingest_stats.json"), stats); err != nil {
 		return err
@@ -265,6 +273,22 @@ type segStats struct {
 	Keys      int    `json:"keys"`
 	Postings  int    `json:"postings"`
 	Bytes     int    `json:"bytes"`
+	CRC32C    string `json:"crc32c"`
+}
+
+// IndexManifest (index.json) describes a built index: one segment per
+// partition and its checksum. The coordinator checks replicas against it (D26).
+type IndexManifest struct {
+	NPartitions uint32          `json:"n_partitions"`
+	NTracks     int             `json:"n_tracks"`
+	Segments    []ManifestEntry `json:"segments"`
+}
+
+// ManifestEntry is one partition's segment.
+type ManifestEntry struct {
+	Partition uint32 `json:"partition"`
+	File      string `json:"file"`
+	CRC32C    string `json:"crc32c"` // 8 hex digits
 }
 
 type ingestStats struct {

@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ShardService_Search_FullMethodName = "/landmark.v1.ShardService/Search"
+	ShardService_Info_FullMethodName   = "/landmark.v1.ShardService/Info"
 )
 
 // ShardServiceClient is the client API for ShardService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ShardServiceClient interface {
 	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
+	Info(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoResponse, error)
 }
 
 type shardServiceClient struct {
@@ -47,11 +49,22 @@ func (c *shardServiceClient) Search(ctx context.Context, in *SearchRequest, opts
 	return out, nil
 }
 
+func (c *shardServiceClient) Info(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (*InfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InfoResponse)
+	err := c.cc.Invoke(ctx, ShardService_Info_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ShardServiceServer is the server API for ShardService service.
 // All implementations must embed UnimplementedShardServiceServer
 // for forward compatibility.
 type ShardServiceServer interface {
 	Search(context.Context, *SearchRequest) (*SearchResponse, error)
+	Info(context.Context, *InfoRequest) (*InfoResponse, error)
 	mustEmbedUnimplementedShardServiceServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedShardServiceServer struct{}
 
 func (UnimplementedShardServiceServer) Search(context.Context, *SearchRequest) (*SearchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Search not implemented")
+}
+func (UnimplementedShardServiceServer) Info(context.Context, *InfoRequest) (*InfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Info not implemented")
 }
 func (UnimplementedShardServiceServer) mustEmbedUnimplementedShardServiceServer() {}
 func (UnimplementedShardServiceServer) testEmbeddedByValue()                      {}
@@ -104,6 +120,24 @@ func _ShardService_Search_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ShardService_Info_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ShardServiceServer).Info(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ShardService_Info_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ShardServiceServer).Info(ctx, req.(*InfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ShardService_ServiceDesc is the grpc.ServiceDesc for ShardService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +148,10 @@ var ShardService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Search",
 			Handler:    _ShardService_Search_Handler,
+		},
+		{
+			MethodName: "Info",
+			Handler:    _ShardService_Info_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

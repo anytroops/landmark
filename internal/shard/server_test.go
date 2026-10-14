@@ -182,3 +182,18 @@ func TestConcurrentSearchesAgree(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestInfoReportsSegmentIdentity(t *testing.T) {
+	srv := newServer(t, Config{Workers: 1, MaxQueueWait: time.Second})
+	client := startServer(t, srv)
+	held := <-srv.pool // Info must answer even with every worker busy
+	defer func() { srv.pool <- held }()
+	info, err := client.Info(context.Background(), &landmarkv1.InfoRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.GetPartitionId() != 1 || info.GetNPartitions() != 2 || info.GetNTracks() != 4 ||
+		info.GetNPostings() != 25 || info.GetSegmentCrc32C() != srv.seg.Checksum() || info.GetFormatVersion() != 1 {
+		t.Fatalf("Info = %v", info)
+	}
+}

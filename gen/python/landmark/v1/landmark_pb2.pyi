@@ -42,6 +42,28 @@ class SearchResponse(_message.Message):
     postings_scanned: int
     def __init__(self, candidates: _Optional[_Iterable[_Union[Candidate, _Mapping]]] = ..., partition_id: _Optional[int] = ..., postings_scanned: _Optional[int] = ...) -> None: ...
 
+class InfoRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class InfoResponse(_message.Message):
+    __slots__ = ("partition_id", "n_partitions", "n_tracks", "n_keys", "n_postings", "segment_crc32c", "format_version")
+    PARTITION_ID_FIELD_NUMBER: _ClassVar[int]
+    N_PARTITIONS_FIELD_NUMBER: _ClassVar[int]
+    N_TRACKS_FIELD_NUMBER: _ClassVar[int]
+    N_KEYS_FIELD_NUMBER: _ClassVar[int]
+    N_POSTINGS_FIELD_NUMBER: _ClassVar[int]
+    SEGMENT_CRC32C_FIELD_NUMBER: _ClassVar[int]
+    FORMAT_VERSION_FIELD_NUMBER: _ClassVar[int]
+    partition_id: int
+    n_partitions: int
+    n_tracks: int
+    n_keys: int
+    n_postings: int
+    segment_crc32c: int
+    format_version: int
+    def __init__(self, partition_id: _Optional[int] = ..., n_partitions: _Optional[int] = ..., n_tracks: _Optional[int] = ..., n_keys: _Optional[int] = ..., n_postings: _Optional[int] = ..., segment_crc32c: _Optional[int] = ..., format_version: _Optional[int] = ...) -> None: ...
+
 class IdentifyRequest(_message.Message):
     __slots__ = ("landmarks", "top_k")
     LANDMARKS_FIELD_NUMBER: _ClassVar[int]

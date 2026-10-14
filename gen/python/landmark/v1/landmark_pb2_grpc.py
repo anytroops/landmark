@@ -19,12 +19,23 @@ class ShardServiceStub:
                 request_serializer=landmark_dot_v1_dot_landmark__pb2.SearchRequest.SerializeToString,
                 response_deserializer=landmark_dot_v1_dot_landmark__pb2.SearchResponse.FromString,
                 _registered_method=True)
+        self.Info = channel.unary_unary(
+                '/landmark.v1.ShardService/Info',
+                request_serializer=landmark_dot_v1_dot_landmark__pb2.InfoRequest.SerializeToString,
+                response_deserializer=landmark_dot_v1_dot_landmark__pb2.InfoResponse.FromString,
+                _registered_method=True)
 
 
 class ShardServiceServicer:
     """Missing associated documentation comment in .proto file."""
 
     def Search(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Info(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -37,6 +48,11 @@ def add_ShardServiceServicer_to_server(servicer, server):
                     servicer.Search,
                     request_deserializer=landmark_dot_v1_dot_landmark__pb2.SearchRequest.FromString,
                     response_serializer=landmark_dot_v1_dot_landmark__pb2.SearchResponse.SerializeToString,
+            ),
+            'Info': grpc.unary_unary_rpc_method_handler(
+                    servicer.Info,
+                    request_deserializer=landmark_dot_v1_dot_landmark__pb2.InfoRequest.FromString,
+                    response_serializer=landmark_dot_v1_dot_landmark__pb2.InfoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -66,6 +82,33 @@ class ShardService:
             '/landmark.v1.ShardService/Search',
             landmark_dot_v1_dot_landmark__pb2.SearchRequest.SerializeToString,
             landmark_dot_v1_dot_landmark__pb2.SearchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Info(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/landmark.v1.ShardService/Info',
+            landmark_dot_v1_dot_landmark__pb2.InfoRequest.SerializeToString,
+            landmark_dot_v1_dot_landmark__pb2.InfoResponse.FromString,
             options,
             channel_credentials,
             insecure,

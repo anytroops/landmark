@@ -30,8 +30,24 @@ message SearchResponse {
   uint64 postings_scanned = 3;
 }
 
+message InfoRequest {}
+
+// InfoResponse identifies the segment a shard serves, so the coordinator can
+// refuse replicas whose index differs from the cluster's (D26).
+message InfoResponse {
+  uint32 partition_id = 1;
+  uint32 n_partitions = 2;
+  uint32 n_tracks = 3;
+  uint64 n_keys = 4;
+  uint64 n_postings = 5;
+  // CRC-32C footer of the segment file: its content identity.
+  fixed32 segment_crc32c = 6;
+  uint32 format_version = 7;
+}
+
 service ShardService {
   rpc Search(SearchRequest) returns (SearchResponse);
+  rpc Info(InfoRequest) returns (InfoResponse);
 }
 
 message IdentifyRequest {

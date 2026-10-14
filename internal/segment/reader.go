@@ -108,6 +108,15 @@ func (s *Segment) Partition() (uint32, uint32) { return s.hdr.Partition, s.hdr.N
 // Encoding returns the postings encoding.
 func (s *Segment) Encoding() Encoding { return s.hdr.encoding() }
 
+// Checksum returns the CRC-32C stored in the footer: the segment's content
+// identity. Two files with the same checksum (and size) hold the same index.
+func (s *Segment) Checksum() uint32 {
+	return binary.LittleEndian.Uint32(s.data[len(s.data)-footerSize:])
+}
+
+// Version returns the format version.
+func (s *Segment) Version() uint16 { return s.hdr.Version }
+
 // SizeBytes returns the total file size.
 func (s *Segment) SizeBytes() int { return len(s.data) }
 

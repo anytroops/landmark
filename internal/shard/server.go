@@ -120,6 +120,21 @@ func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, star
 	return out, nil
 }
 
+// Info reports which segment this shard serves. It does not take a worker,
+// so it answers even when the shard is saturated.
+func (s *Server) Info(context.Context, *landmarkv1.InfoRequest) (*landmarkv1.InfoResponse, error) {
+	partition, nParts := s.seg.Partition()
+	return &landmarkv1.InfoResponse{
+		PartitionId:   partition,
+		NPartitions:   nParts,
+		NTracks:       s.seg.NTracks(),
+		NKeys:         uint64(s.seg.NKeys()),
+		NPostings:     s.seg.NPostings(),
+		SegmentCrc32C: s.seg.Checksum(),
+		FormatVersion: uint32(s.seg.Version()),
+	}, nil
+}
+
 // acquire takes a Matcher, waiting at most until ctx ends or MaxQueueWait.
 func (s *Server) acquire(ctx context.Context) (*match.Matcher, error) {
 	select { // fast path: a Matcher is free, no timer needed
