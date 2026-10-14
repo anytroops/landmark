@@ -110,3 +110,13 @@ def test_dense_tables_match_ingest_rules() -> None:
     fma, cluster = dense_tables(manifest)
     assert fma.tolist() == [10, 20, 30, 40]  # dense id = sorted position
     assert cluster.tolist() == [0, 1, 2, 1]  # 40 joins 20's cluster; 999 not indexed
+
+
+def test_shard_backend_skips_empty_queries() -> None:
+    from eval.backends import ShardBackend
+
+    # No server at this address: an empty query must not attempt an RPC.
+    b = ShardBackend("127.0.0.1:1", np.arange(3))
+    hit = b.search(np.empty(0, np.uint32), np.empty(0, np.uint32))
+    assert hit.top1_dense == -1 and hit.postings_scanned == 0
+    b.close()
