@@ -92,3 +92,15 @@ Format: context, options, decision, consequences, date.
 - **Options:** (A) fingerprint the query at n sub-hop offsets (hop/n apart) and union the landmarks; (B) coarser hash quantization (drop a bit of dt and f); (C) defer.
 - **Decision:** A with n = 4 (64-sample steps). Sean's pick. Index side unchanged. Exact duplicate (hash, t) pairs are dropped so nothing votes twice.
 - **Consequences:** ~4x query landmarks, so more postings scanned and more search time per query: measure in Phase 4 latency benchmarks. Votes from different grids can split between offsets d and d+1; if that limits the gain, add +/-1 offset tolerance to scoring. The Go port must implement this on the query path. Measured (test, vs D14 alone): SNR 0 dB 94.5 to 95.4, SNR 5 dB 98.0 to 98.8, mean search 6.9 to 13.8 ms. Paired McNemar: same direction in every noise condition, significant only at SNR 5 dB 10 s (p = 0.02) (`compare_seed0_d14_vs_d14_shift4.md`). Calibrated thresholds moved to t_abs 30, t_ratio 1.0. Speed +/-2% raw top-1 rose 39 to 66 but accepted fell (still an expected failure). Keep for now; revisit against Phase 4 latency budgets since it is a query-side flag.
+
+## D16. Go FFT: gonum (2026-10-14)
+- **Context:** The Go fingerprinter needs a real FFT of fixed size 1024.
+- **Options:** (A) gonum `dsp/fourier`, pure Go, float64; (B) hand-written fixed-size FFT; (C) FFTW via cgo.
+- **Decision:** A. At float64 all three agree to ~1e-12, so accuracy is identical; the choice is speed vs build complexity. gonum keeps the build pure Go (static binaries, simple Docker). Sean asked for whichever gives the best results; this is that.
+- **Consequences:** FFT sits behind a small internal function so it can be swapped if pprof shows it dominates query latency (the query path runs ~4 x 430 FFTs per 10 s clip with D15).
+
+## D17. Exact Go/Python parity via float64 in both (2026-10-14)
+- **Context:** numpy 2.x computes `rfft` of float32 input in complex64. gonum is float64. Peak picking compares values for equality (local max) and ranks by magnitude, so precision differences change which peaks win near ties.
+- **Options:** (A) switch Python to float64 and regenerate golden vectors; (B) keep Python float32, accept the brief's Jaccard >= 0.98 bar.
+- **Decision:** A. Sean's pick. Parity target tightened: any mismatch beyond FFT rounding is a bug.
+- **Consequences:** Python spectrogram memory doubles (~5 MB per 30 s clip, irrelevant). Dedupe, splits, index, eval, and golden vectors are regenerated; accuracy change from the precision switch is measured (tag `_f64`).

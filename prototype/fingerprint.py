@@ -45,19 +45,20 @@ class Peaks:
 
 
 def spectrogram(pcm: np.ndarray, p: Params = DEFAULT) -> np.ndarray:
-    """Log-magnitude STFT in dB, shape (frames, N_BINS). No centering: frame k starts at k*hop."""
+    """Log-magnitude STFT in dB, float64, shape (frames, N_BINS). Frame k starts at k*hop."""
     if len(pcm) < p.n_fft:
-        return np.empty((0, N_BINS), dtype=np.float32)
-    frames = sliding_window_view(pcm.astype(np.float32), p.n_fft)[:: p.hop]
-    spec = np.fft.rfft(frames * np.hanning(p.n_fft).astype(np.float32), axis=1)[:, :N_BINS]
-    return (20 * np.log10(np.abs(spec) + 1e-10)).astype(np.float32)
+        return np.empty((0, N_BINS), dtype=np.float64)
+    # float64 throughout so the Go port (gonum FFT, float64) can match exactly (D17).
+    frames = sliding_window_view(pcm.astype(np.float64), p.n_fft)[:: p.hop]
+    spec = np.fft.rfft(frames * np.hanning(p.n_fft), axis=1)[:, :N_BINS]
+    return 20 * np.log10(np.abs(spec) + 1e-10)
 
 
 def find_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
     """Local maxima above the floor, then the strongest `peaks_per_block` per time block."""
     if spec.size == 0:
         empty = np.empty(0, dtype=np.int64)
-        return Peaks(empty, empty, np.empty(0, dtype=np.float32))
+        return Peaks(empty, empty, np.empty(0, dtype=np.float64))
     local_max = maximum_filter(spec, size=(p.nbhd_t, p.nbhd_f), mode="constant", cval=-np.inf)
     t, f = np.nonzero((spec == local_max) & (spec > p.floor_db))
     mag = spec[t, f]
