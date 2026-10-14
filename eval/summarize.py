@@ -4,8 +4,10 @@ Metrics per condition:
   raw_top1     top-1 correct ignoring thresholds (positives)
   accuracy     top-1 correct AND accepted (positives); a rejection is a miss
   far          accepted negatives / negatives
-Threshold choice: among (t_abs, t_ratio) with pooled val FAR <= MAX_FAR,
-maximize mean val accuracy over conditions. Test is never used for tuning.
+Threshold choice (D13): among (t_abs, t_ratio) with pooled val FAR <= max_far,
+maximize mean val accuracy over conditions, excluding the speed conditions
+(an expected v1 failure that would otherwise drag thresholds down to scrape
+a few hits). Test is never used for tuning.
 """
 
 import argparse
@@ -21,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "eval" / "results"
 T_ABS = list(range(2, 61))
 T_RATIO = [1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0]
+EXCLUDE_FROM_OBJECTIVE = ("speed_",)
 
 
 def accepted(df: pd.DataFrame, t_abs: int, t_ratio: float) -> np.ndarray:
@@ -30,7 +33,8 @@ def accepted(df: pd.DataFrame, t_abs: int, t_ratio: float) -> np.ndarray:
 
 
 def calibrate(val: pd.DataFrame, max_far: float) -> tuple[int, float, float, float]:
-    pos, neg = val[val.label == "pos"], val[val.label == "neg"]
+    tuned = ~val["cond"].str.startswith(EXCLUDE_FROM_OBJECTIVE)
+    pos, neg = val[(val.label == "pos") & tuned], val[val.label == "neg"]
     best: tuple[float, int, float, float] | None = None
     for ta in T_ABS:
         for tr in T_RATIO:
@@ -96,7 +100,7 @@ def markdown(rows: list[dict[str, object]]) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--max-far", type=float, default=0.005)
+    ap.add_argument("--max-far", type=float, default=0.001)
     args = ap.parse_args()
 
     def load(split: str) -> tuple[pd.DataFrame, pd.DataFrame]:

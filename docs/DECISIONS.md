@@ -73,3 +73,9 @@ Format: context, options, decision, consequences, date.
 - **Options:** (A) dedupe by metadata (artist + normalized title); (B) dedupe by audio: index all tracks, query each full clip, union-find pairs above a score threshold; (C) leave labels and accept a noisy FAR.
 - **Decision:** B. Split by cluster, not track: a cluster lands entirely in indexed, val_neg, or test_neg. Positives take one track per cluster. A positive is correct if top-1 is in its cluster. Threshold 25 on the full-clip pair score, chosen by inspecting pairs per score band (`eval/results/dup_pairs_small.csv`): >= 60 is almost all same-song versions; 40-60 includes cross-artist shared audio (riddims, instrumentals); 30-40 mostly versions; < 30 mostly coincidental. Over-clustering only moves unrelated tracks together, so err low. At 25: 150 clusters, 340 tracks, largest 10. The 2 undecodable tracks are excluded from splits.
 - **Consequences:** Ground truth now depends on the fingerprinter itself, which is circular in principle: a duplicate it cannot detect stays unlabeled. Metadata (A) would miss intro/outro and cross-artist riddim cases, which this catches. Re-run dedupe whenever fingerprint params change.
+
+## D13. Threshold calibration objective (2026-10-14)
+- **Context:** The first calibration maximized mean val accuracy over all conditions with pooled FAR <= 0.5%. It picked t_abs = 2, because the speed conditions (an expected v1 failure) rewarded the loosest threshold the FAR cap allowed.
+- **Options:** include all conditions; exclude speed; optimize a single anchor condition (e.g. SNR 5 dB).
+- **Decision:** Exclude speed conditions from the objective; pooled val FAR <= 0.1%. Grid: t_abs 2-60, t_ratio {1, 1.25, 1.5, 2, 2.5, 3, 4}.
+- **Consequences:** Result on seed 0: t_abs 12, t_ratio 2.5. Speed accuracy at threshold is reported but not optimized for. Changing the condition set changes thresholds; rerun summarize after any change.
