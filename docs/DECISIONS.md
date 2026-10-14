@@ -49,3 +49,21 @@ Format: context, options, decision, consequences, date.
 - **Options:** Docker Desktop, OrbStack, Colima.
 - **Decision:** Colima (installed via Homebrew, no GUI or license prompt), with the Homebrew docker CLI and compose plugin. VM started with 4 CPUs, 8 GB RAM.
 - **Consequences:** Benchmarks on this laptop run inside a Linux VM; record that in machine specs. Start it with `colima start` after a reboot.
+
+## D9. Peak picking: top-N per time block (2026-10-14)
+- **Context:** Constellation peaks must be dense enough to match and sparse enough to keep the index small. A global amplitude floor makes density depend on loudness and genre.
+- **Options:** (A) max filter + global floor; (B) max filter + adaptive local floor; (C) max filter, keep the strongest N per time block, plus a low absolute floor.
+- **Decision:** C. 17x17 max filter, floor -20 dB (rejects near-silence only), 30 peaks per 43-frame (~1 s) block. Sean's pick.
+- **Consequences:** Peaks/s is fixed by construction, so index size is predictable (landmarks/s ~ peaks/s x fanout). Under noise the strongest peaks survive. Block boundaries are a ranking discontinuity; a time shift that is not block-aligned can change which peaks survive near boundaries.
+
+## D10. Pairing: nearest FANOUT in a frequency-bounded zone (2026-10-14)
+- **Context:** Which later peaks each anchor pairs with determines hash specificity and robustness.
+- **Options:** (A) next FANOUT, 1 <= dt <= 63, no f bound; (B) same with |f2 - f1| <= 64 bins; (C) FANOUT strongest in the zone.
+- **Decision:** B. FANOUT 5, min_dt 1, max_dt 63, max_df 64. Sean's pick.
+- **Consequences:** f2 is constrained near f1, so the hash's effective entropy is lower than 24 bits (~9 + 7 + 6). Watch posting-list skew for common keys. Pairing is vectorized as an (n x width) candidate matrix with a cumsum rank, no Python loop.
+
+## D11. Prototype index: sorted arrays in segment-v1 layout (2026-10-14)
+- **Context:** The brief said dict-based. Estimated (not measured) ~70 B per (track, t) tuple in Python puts fma_small at 2 GB+ RAM with pure-Python matching.
+- **Options:** (A) dict of lists; (B) sorted keys + offsets + posting arrays, vectorized matching; (C) dict index + numpy matcher.
+- **Decision:** B. Postings sorted by (key, track, t), structure-of-arrays. Matching: searchsorted on keys, flattened range gather, votes as unique counts over packed (track << 32 | offset + 2^31). Sean's pick.
+- **Consequences:** Same layout as segment v1 minus varint encoding, so the Go port is a translation. A brute-force dict matcher is kept in tests as the correctness oracle.
