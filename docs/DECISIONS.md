@@ -129,3 +129,9 @@ Format: context, options, decision, consequences, date.
 - `FromBytes` validates every structural invariant (checksum, sizes, strictly increasing keys, monotonic offsets spanning the blob) so lookups can index safely; the varint decoder still range-checks every posting. Fuzzed: 47.5M executions locally without a panic; CI fuzzes 20 s per run.
 - Writes are atomic: temp file, fsync, rename. A crash never leaves a partial segment under the real name.
 - Postings in varint segments are not fully decoded at open, so a count mismatch with the header surfaces at lookup time as ErrCorrupt.
+
+## D22. Go matcher: sort-and-count votes (2026-10-14)
+- **Context:** The matcher is the hottest code on the query path: ~350k postings per query on fma_small with 4 shifts (D15), millions at fma_large scale.
+- **Options:** (A) hash map from (track, offset) to count; (B) pack votes into uint64, sort, count runs; (C) prune to top tracks by raw hit count, then build offset histograms for those only.
+- **Decision:** B. Sean's pick. Buffers are reused per Matcher, so a query allocates only its result. Start with `slices.Sort` (pdqsort) and switch to radix sort only if pprof shows sorting dominates. Adjacent repeated query hashes reuse their postings (queries arrive sorted by hash).
+- **Consequences:** Exact parity with prototype/match.py, tie-breaking included (best offset = smallest; equal scores rank by track id), checked in CI against 21 golden queries plus a brute-force map reference. C remains the Phase 4 lever if the matcher dominates latency; it is approximate and would need its own eval. Duplicate-aware runner-up (D14) needs top-k longer than the largest cluster (10 on fma_small); shards should return k >= 11.

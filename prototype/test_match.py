@@ -123,3 +123,18 @@ def test_runner_up_skips_duplicate_cluster() -> None:
     assert dedup.candidates[0].score == 100
     assert dedup.runner_up < 10
     assert accept(dedup, t_abs=10, t_ratio=2.0)
+
+
+def test_match_golden_is_current() -> None:
+    # Fails if the matcher changed without `python -m prototype.golden_match`.
+    import json
+
+    from prototype.golden_match import GOLDEN, TOP_K, load_sets, make_query
+
+    g = json.loads((GOLDEN / "match.json").read_text())
+    _, sets = load_sets()
+    index = build(sets, list(range(len(sets))))
+    for i, q in enumerate(g["queries"]):
+        res = search(index, *make_query(sets, i), top_k=TOP_K)
+        assert [[c.track, c.score, c.offset] for c in res.candidates] == q["candidates"]
+        assert res.postings_scanned == q["postings_scanned"]
