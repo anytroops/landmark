@@ -81,3 +81,12 @@ def test_reencode_preserves_duration() -> None:
     # The encoder adds ~100 ms of lead-in delay plus frame padding. Left in on
     # purpose: matching is offset-invariant, like a real query with arbitrary start.
     assert abs(len(out) - len(sig)) < 0.2 * 11025
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_reencode_bitrates_differ() -> None:
+    # Regression: at 11,025 Hz both bitrates clamped to 64k and produced identical output.
+    sig = np.random.default_rng(0).standard_normal(3 * 11025).astype(np.float32) * 0.1
+    a, b = reencode(sig, "128k"), reencode(sig, "64k")
+    n = min(len(a), len(b))
+    assert not np.array_equal(a[:n], b[:n])

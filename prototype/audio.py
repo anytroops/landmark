@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 SAMPLE_RATE = 11025
+ENCODE_RATE = 44100
 
 
 class DecodeError(Exception):
@@ -29,12 +30,16 @@ def decode(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
 
 
 def encode_decode_mp3(pcm: np.ndarray, bitrate: str, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
-    """Round-trip PCM through an MP3 encoder at `bitrate` (e.g. "64k")."""
+    """Round-trip PCM through an MP3 encoder at `bitrate` (e.g. "64k").
+
+    Encodes at 44.1 kHz: at 11,025 Hz MP3 (MPEG-2.5) caps at 64 kbps, so
+    "128k" would silently equal "64k". Decodes back to `sample_rate`.
+    """
     enc = subprocess.run(
         [
             "ffmpeg", "-nostdin", "-v", "error",
             "-f", "f32le", "-ar", str(sample_rate), "-ac", "1", "-i", "-",
-            "-b:a", bitrate, "-f", "mp3", "-",
+            "-ar", str(ENCODE_RATE), "-b:a", bitrate, "-f", "mp3", "-",
         ],
         input=pcm.astype(np.float32).tobytes(),
         capture_output=True,
