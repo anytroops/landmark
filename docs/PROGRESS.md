@@ -16,7 +16,8 @@
 ## Next
 - 2026-10-14 (Phase 3 done criterion): official B3, 3 reps: replica kill -9 at 100 qps kept 100% complete answers; 2-3 of 6,000 requests per run over 50 ms (~106 ms), none after ejection.
 - 2026-10-14 (Phase 4): bench harness; quick B1 sweeps; profiling found pdqsort at 54% of shard CPU at saturation; radix sort (D27) roughly doubled the knee; B5 (3 reps, AC); Grafana dashboard.
-- Next: fma_medium (download in progress): dedupe, splits, ingest P=1,2,4,8, eval at scale via the Go shard, full-method B1/B2.
+- 2026-10-14 (Phase 4): packed request format (D28), 40% smaller requests; quick sweep: P=1 knee 1,600 qps, p50 5.4 ms. fma_medium downloaded, verified, extracted; fma_small replaced by a symlink after a byte-for-byte check.
+- Next: `bench/scripts/medium_pipeline.sh` (dedupe, splits, ingest P=1,2,4,8, eval at scale, queries), then full-method B1/B2 on fma_medium.
 - Cloud multi-node run for real B2 scaling: options and cost for Sean.
 - Scale up: fma_medium (22 GiB zip, needs Sean's OK), then fma_large (needs ~186 GB: external disk or cloud VM).
 - Decide on per-key overhead (u32 offsets, compressed keys); see B4 notes.
@@ -36,6 +37,7 @@
 - Benchmarks on battery are throttled ~3x on this laptop (single decode 0.33 s vs 0.10 s). Run metadata now records `power`; only use `ac` runs for timing claims.
 - Never gate a commit on `make test | tail`: the pipe returns tail's status, so failures slip through (it happened once: 5744ed0 pushed a failing test). Run `make test && make lint && git commit`, with output to a file if it must be short.
 - zsh: an unmatched glob is an error and stops an `&&` chain (use `rm -f -- path` with exact names, or `setopt null_glob`).
+- Never commit while a benchmark runs: each point records HEAD when it finishes, so a mid-run commit splits one sweep across commits. Bench scripts refuse dirty trees and battery power.
 - `pgrep -f` inside a wait loop matches the loop's own command line; wait on a PID or a file instead.
 - FMA zips need 7zip (`7zz x`), not unzip.
 - MP3 at 11,025 Hz caps at 64 kbps; degradations encode at 44.1 kHz.
