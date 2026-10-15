@@ -8,7 +8,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
 | B3 | Failure-injection timeline around a replica kill | [TBD] |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small done (below); fma_large [TBD] |
-| B5 | Ingest throughput vs worker count | [TBD] |
+| B5 | Ingest throughput vs worker count | fma_small (below) |
 
 ## Fingerprint throughput, Go vs Python (Phase 2)
 
@@ -65,3 +65,17 @@ Raw: `bench/results/b1_quick_small` (commit 3e1d3a9) and `bench/results/b1_quick
 - P=4 at 700 qps (saturated): the overhead disappears; `Matcher.Search` is 76% of shard CPU, **54% in pdqsort** sorting votes.
 - Fix (D27): byte-skipping LSD radix sort, 4.3x faster per sort, identical output. End to end: the knee roughly doubled at every P and low-load latency halved.
 - Coordinator: ~46% of its CPU in network write syscalls, since each query's ~4,300 landmarks are re-sent to every partition as individual protobuf messages. A packed, struct-of-arrays request is the next lever.
+
+## B5: ingest throughput vs workers (Phase 4)
+
+600 fma_small tracks (first 600 of the indexed split), P=1, `cmd/ingest` with N decode+fingerprint goroutines (each runs its own ffmpeg process). Fingerprint phase timed separately from segment writing (~0.5 s). Apple M4 Pro, AC power. Raw: `bench/results/b5_small/`.
+
+| Workers | Tracks/min | Audio x realtime | Speedup |
+|---|---|---|---|
+| 1 | 843 | 421 | 1.00 |
+| 2 | 1,562 | 781 | 1.85 |
+| 4 | 2,876 | 1,437 | 3.41 |
+| 8 | 4,193 | 2,096 | 4.97 |
+| 12 | 4,286 | 2,142 | 5.08 |
+
+Near-linear to 4 workers, flat past 8: the machine has 8 performance cores, and each worker drives an ffmpeg process as well as Go fingerprinting. Extrapolation, not a measurement: 106,574 fma_large tracks at ~4,300 tracks/min is about 25 minutes of fingerprinting on this laptop.
