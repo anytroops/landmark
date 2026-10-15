@@ -120,3 +120,30 @@ def test_shard_backend_skips_empty_queries() -> None:
     hit = b.search(np.empty(0, np.uint32), np.empty(0, np.uint32))
     assert hit.top1_dense == -1 and hit.postings_scanned == 0
     b.close()
+
+
+def test_shard_backend_retries_transient_errors() -> None:
+    import grpc
+
+    from eval.backends import ShardBackend
+
+    class FlakyStub:
+        def __init__(self, failures: int) -> None:
+            self.failures, self.calls = failures, 0
+
+        def Search(self, req, timeout):  # noqa: N802, ANN001, ANN201, ARG002
+            self.calls += 1
+            if self.calls <= self.failures:
+                err = grpc.RpcError()
+                err.code = lambda: grpc.StatusCode.DEADLINE_EXCEEDED
+                raise err
+            return type("R", (), {"candidates": [], "postings_scanned": 7})()
+
+    b = ShardBackend("127.0.0.1:1", np.arange(3))
+    b._stub = FlakyStub(failures=2)
+    hit = b.search(np.array([1], np.uint32), np.array([0], np.uint32))
+    assert hit.postings_scanned == 7 and b.retries == 2
+    b._stub = FlakyStub(failures=3)
+    with pytest.raises(grpc.RpcError):
+        b.search(np.array([1], np.uint32), np.array([0], np.uint32))
+    b.close()

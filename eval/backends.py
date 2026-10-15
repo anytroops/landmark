@@ -56,6 +56,8 @@ class ShardBackend:
         self._stub = landmark_pb2_grpc.ShardServiceStub(self._channel)
         self._cluster = dense_cluster
         self._timeout = timeout_s
+        self._grpc = grpc
+        self.retries = 0  # transient failures retried; recorded in run metadata
 
     def search(self, hashes: np.ndarray, times: np.ndarray) -> Hit:
         if len(hashes) == 0:
@@ -66,7 +68,7 @@ class ShardBackend:
         req = self._pb.SearchRequest(
             top_k=SHARD_TOP_K, hashes=hashes.tolist(), times=times.tolist()
         )
-        resp = self._stub.Search(req, timeout=self._timeout)
+        resp = self._search_with_retry(req)
         cands = resp.candidates
         if not cands:
             return Hit(-1, 0, 0, 0, resp.postings_scanned)
@@ -74,6 +76,20 @@ class ShardBackend:
         top_cluster = self._cluster[top.track_id]
         runner = next((c.score for c in cands[1:] if self._cluster[c.track_id] != top_cluster), 0)
         return Hit(top.track_id, top.score, top.offset, runner, resp.postings_scanned)
+
+    def _search_with_retry(self, req, attempts: int = 3):  # noqa: ANN001, ANN202
+        """Retry timeouts and unavailability: an eval run should not die on one
+        transient failure (e.g. the machine sleeping mid-call). Other errors,
+        and a third consecutive failure, propagate."""
+        transient = {self._grpc.StatusCode.DEADLINE_EXCEEDED, self._grpc.StatusCode.UNAVAILABLE}
+        for i in range(attempts):
+            try:
+                return self._stub.Search(req, timeout=self._timeout)
+            except self._grpc.RpcError as e:
+                if e.code() not in transient or i == attempts - 1:
+                    raise
+                self.retries += 1
+        raise AssertionError("unreachable")
 
     def close(self) -> None:
         self._channel.close()
