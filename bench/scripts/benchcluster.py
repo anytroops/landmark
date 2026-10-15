@@ -42,9 +42,21 @@ def wait_for(log: Path, needle: str, timeout_s: float = 30.0) -> None:
 
 @contextlib.contextmanager
 def cluster(
-    index: Path, rf: int, deadline_ms: int, workers: int, base_port: int = 7100
+    index: Path,
+    rf: int,
+    deadline_ms: int,
+    workers: int,
+    base_port: int = 7100,
+    shard_procs: int = 0,
 ) -> Iterator[tuple[str, list[subprocess.Popen]]]:
-    """Start rf replicas of every partition in index/ plus a coordinator."""
+    """Start rf replicas of every partition in index/ plus a coordinator.
+
+    shard_procs > 0 sets GOMAXPROCS for each shard (default: all cores each,
+    which oversubscribes the host when many shards share it).
+    """
+    env = dict(os.environ)
+    if shard_procs > 0:
+        env["GOMAXPROCS"] = str(shard_procs)
     man = json.loads((index / "index.json").read_text())
     tmp = Path(tempfile.mkdtemp(prefix="benchcluster-"))
     procs: list[subprocess.Popen] = []
@@ -60,7 +72,7 @@ def cluster(
                     subprocess.Popen(
                         [str(BIN / "shard"), "-segment", str(index / seg["file"]), "-listen", addr,
                          "-admin", f"127.0.0.1:{port + 1000}", "-workers", str(workers)],
-                        stdout=log.open("w"), stderr=subprocess.STDOUT,
+                        stdout=log.open("w"), stderr=subprocess.STDOUT, env=env,
                     )
                 )  # fmt: skip
                 wait_for(log, "serving")
@@ -104,18 +116,81 @@ def run_loadgen(target: str, queries: Path, rate: float, warmup: int, duration: 
 def sweep(args: argparse.Namespace) -> None:
     index = Path(args.index)
     n_parts = json.loads((index / "index.json").read_text())["n_partitions"]
-    with cluster(index, args.rf, args.deadline_ms, args.workers) as (target, _):
+    with cluster(index, args.rf, args.deadline_ms, args.workers, shard_procs=args.shard_procs) as (
+        target,
+        _,
+    ):
         for rate in args.rates:
             for rep in range(args.reps):
                 out = Path(args.out) / f"P{n_parts}_rf{args.rf}_r{rate:g}_rep{rep}"
                 label = (f"single-host bare metal, P={n_parts} RF={args.rf}, workers/shard="
-                         f"{args.workers}, deadline {args.deadline_ms} ms")  # fmt: skip
+                         f"{args.workers}, GOMAXPROCS/shard={args.shard_procs or 'all'}, "
+                         f"deadline {args.deadline_ms} ms")  # fmt: skip
                 s = run_loadgen(target, Path(args.queries), rate, args.warmup, args.duration,
                                 out, label, args.loadgen_args)  # fmt: skip
                 m = s["measured"]
                 print(f"P={n_parts} rate={rate:g} rep={rep}: success={m['success_rate']:.4f} "
                       f"p50={m['p50_ms']} p99={m['p99_ms']} p999={m['p999_ms']} "
                       f"codes={m['codes']}", flush=True)  # fmt: skip
+
+
+def profile(args: argparse.Namespace) -> None:
+    """Run load, and mid-run capture CPU profiles plus per-process CPU shares."""
+    import urllib.request
+
+    index = Path(args.index)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    base = 7100
+    n_parts = json.loads((index / "index.json").read_text())["n_partitions"]
+    with cluster(index, args.rf, args.deadline_ms, args.workers, base, args.shard_procs) as (
+        target,
+        procs,
+    ):
+        lg = subprocess.Popen(
+            [str(BIN / "loadgen"), "run", "-target", target, "-queries", args.queries,
+             "-rate", str(args.rate), "-warmup", "10s", "-duration", f"{args.seconds + 10}s",
+             "-label", f"profile run, P={n_parts}",
+             "-out", str(out / "loadgen")],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )  # fmt: skip
+        time.sleep(10)
+        names = {p.pid: Path(p.args[0]).name for p in procs} | {lg.pid: "loadgen"}
+        ps = subprocess.run(["ps", "-o", "pid=,%cpu=", "-p", ",".join(map(str, names))],
+                            capture_output=True, text=True, check=True).stdout  # fmt: skip
+
+        def grab(port: int, name: str) -> None:
+            url = f"http://127.0.0.1:{port}/debug/pprof/profile?seconds={args.seconds}"
+            with urllib.request.urlopen(url, timeout=args.seconds + 30) as r:
+                (out / f"{name}.pprof").write_bytes(r.read())
+
+        import threading
+
+        threads = [threading.Thread(target=grab, args=(base + 501, "coordinator")),
+                   threading.Thread(target=grab, args=(base + 1000, "shard0"))]  # fmt: skip
+        for t in threads:
+            t.start()
+        samples = []
+        for _ in range(args.seconds // 2):
+            time.sleep(2)
+            samples.append(subprocess.run(
+                ["ps", "-o", "pid=,%cpu=", "-p", ",".join(map(str, names))],
+                capture_output=True, text=True, check=True).stdout)  # fmt: skip
+        for t in threads:
+            t.join()
+        lg.wait()
+    shares: dict[str, list[float]] = {}
+    for snap in [ps, *samples]:
+        per: dict[str, float] = {}
+        for line in snap.split("\n"):
+            if line.strip():
+                pid, cpu = line.split()
+                per[names[int(pid)]] = per.get(names[int(pid)], 0.0) + float(cpu)
+        for k, v in per.items():
+            shares.setdefault(k, []).append(v)
+    avg = {k: round(sum(v) / len(v), 1) for k, v in shares.items()}
+    (out / "process_cpu.json").write_text(json.dumps({"percent_of_one_core": avg}, indent=1))
+    print("average CPU (% of one core):", avg)
 
 
 def main() -> None:
@@ -132,10 +207,23 @@ def main() -> None:
     sw.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     sw.add_argument("--queries", default=str(ROOT / "data/queries/test_10s_seed0.gob"))
     sw.add_argument("--out", required=True)
+    sw.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
     sw.add_argument("loadgen_args", nargs="*", help="extra flags passed to loadgen run after --")
+    pr = sub.add_parser("profile")
+    pr.add_argument("--index", required=True)
+    pr.add_argument("--rf", type=int, default=1)
+    pr.add_argument("--rate", type=float, required=True)
+    pr.add_argument("--seconds", type=int, default=20)
+    pr.add_argument("--deadline-ms", type=int, default=200)
+    pr.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    pr.add_argument("--queries", default=str(ROOT / "data/queries/test_10s_seed0.gob"))
+    pr.add_argument("--out", required=True)
+    pr.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
     args = ap.parse_args()
     if args.cmd == "sweep":
         sweep(args)
+    elif args.cmd == "profile":
+        profile(args)
     else:
         sys.exit(2)
 
