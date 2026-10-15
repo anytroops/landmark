@@ -5,7 +5,7 @@
 // landmarks agree on one time alignment.
 //
 // Votes are counted by sorting, not hashing (D22): each vote is packed into
-// one uint64, the slice is sorted, and equal runs are counted. The result
+// one uint64, the slice is radix-sorted (D27), and equal runs are counted. The result
 // matches prototype/match.py exactly, including tie-breaking, and buffers are
 // reused across queries so a query allocates almost nothing.
 package match
@@ -45,6 +45,7 @@ type Result struct {
 // each goroutine its own (or pool them).
 type Matcher struct {
 	votes    []uint64
+	scratch  []uint64 // radix sort buffer; swaps roles with votes
 	postings []segment.Posting
 	best     []Candidate
 }
@@ -71,7 +72,13 @@ func (m *Matcher) Search(src Source, query []fingerprint.Landmark, topK int) (Re
 			m.votes = append(m.votes, uint64(p.Track)<<32|uint64(uint32(off)))
 		}
 	}
-	slices.Sort(m.votes)
+	if cap(m.scratch) < len(m.votes) {
+		m.scratch = make([]uint64, len(m.votes), cap(m.votes))
+	}
+	sorted := sortVotes(m.votes, m.scratch[:len(m.votes)])
+	if len(sorted) > 0 && &sorted[0] != &m.votes[0] { // landed in scratch: swap so both stay reusable
+		m.votes, m.scratch = sorted, m.votes
+	}
 
 	// One pass over sorted votes. Within a track, runs come in ascending
 	// offset order; keeping only strictly larger counts makes ties go to the

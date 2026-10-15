@@ -159,3 +159,9 @@ Format: context, options, decision, consequences, date.
 - **Options:** (A) trust the config; (B) shards report segment identity (Info RPC: partition, n_partitions, CRC-32C) and the coordinator uses only replicas matching index.json.
 - **Decision:** B. Sean's pick. Verified every health round, so a replica restarted with a different file drops out within one poll. A Search response claiming the wrong partition unverifies the replica immediately. Unverified replicas are never used, not even in panic mode: a partial answer beats a wrong one.
 - **Consequences:** Rolling out a new index needs a deliberate switch (new index.json and config), which is the right shape for versioned deploys later. Mutation-tested.
+
+## D27. Radix sort for votes (2026-10-14)
+- **Context:** D22 said: start with `slices.Sort`, switch to radix only if pprof shows sorting dominates. A saturated P=4 run (700 qps, `bench/results/prof_p4_small_r700_procs3`) put Matcher.Search at 76% of shard CPU, 54% in pdqsort. (A 500 qps profile instead showed mostly runtime overhead from idle spinning; below the knee, profiles overstate overhead.)
+- **Options:** keep pdqsort; LSD radix sort; prune-then-count (D22 option C, approximate).
+- **Decision:** LSD radix sort, one byte per pass, skipping bytes identical across all keys (computed from the OR and AND of the keys). Vote keys are track<<32 | (offset + 2^31) with small tracks and offsets, so ~3-4 of 8 bytes vary. Below 512 keys, `slices.Sort`. Output identical; golden parity and brute-force tests unchanged.
+- **Consequences:** 4.3x faster on 100k realistic votes (BenchmarkSortVotes: 4.56 ms to 1.07 ms, M4 Pro). One extra reusable buffer per Matcher (8 bytes per vote). End-to-end effect measured in B1 below.
