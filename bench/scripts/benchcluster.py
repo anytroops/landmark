@@ -193,6 +193,17 @@ def profile(args: argparse.Namespace) -> None:
     print("average CPU (% of one core):", avg)
 
 
+def require_clean_tree() -> None:
+    """Refuse to benchmark uncommitted code: results must trace to a commit."""
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no", "--", ".",
+         ":(exclude)eval/results", ":(exclude)bench/results", ":(exclude)docs"],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    if out.strip() and not os.environ.get("LANDMARK_ALLOW_DIRTY"):
+        raise SystemExit(f"uncommitted changes; commit first (or LANDMARK_ALLOW_DIRTY=1):\n{out}")
+
+
 def require_ac_power() -> None:
     """Refuse to benchmark on battery: macOS throttles, so timings would mislead."""
     out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
@@ -230,6 +241,7 @@ def main() -> None:
     pr.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
     args = ap.parse_args()
     require_ac_power()
+    require_clean_tree()
     if args.cmd == "sweep":
         sweep(args)
     elif args.cmd == "profile":

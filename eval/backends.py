@@ -64,11 +64,7 @@ class ShardBackend:
             # Python matcher does.
             return Hit(-1, 0, 0, 0, 0)
         req = self._pb.SearchRequest(
-            top_k=SHARD_TOP_K,
-            landmarks=[
-                self._pb.Landmark(hash=int(h), t=int(t))
-                for h, t in zip(hashes.tolist(), times.tolist(), strict=True)
-            ],
+            top_k=SHARD_TOP_K, hashes=hashes.tolist(), times=times.tolist()
         )
         resp = self._stub.Search(req, timeout=self._timeout)
         cands = resp.candidates

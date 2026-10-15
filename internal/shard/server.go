@@ -74,11 +74,14 @@ func (s *Server) Search(ctx context.Context, req *landmarkv1.SearchRequest) (*la
 
 func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, start time.Time) (*landmarkv1.SearchResponse, error) {
 	topK := int(req.GetTopK())
+	hashes, times := req.GetHashes(), req.GetTimes()
 	switch {
-	case len(req.GetLandmarks()) == 0:
+	case len(hashes) != len(times):
+		return nil, status.Errorf(codes.InvalidArgument, "%d hashes but %d times", len(hashes), len(times))
+	case len(hashes) == 0:
 		return nil, status.Error(codes.InvalidArgument, "no landmarks")
-	case len(req.GetLandmarks()) > MaxLandmarks:
-		return nil, status.Errorf(codes.InvalidArgument, "%d landmarks exceeds limit %d", len(req.GetLandmarks()), MaxLandmarks)
+	case len(hashes) > MaxLandmarks:
+		return nil, status.Errorf(codes.InvalidArgument, "%d landmarks exceeds limit %d", len(hashes), MaxLandmarks)
 	case topK > MaxTopK:
 		return nil, status.Errorf(codes.InvalidArgument, "top_k %d exceeds limit %d", topK, MaxTopK)
 	case topK == 0:
@@ -92,9 +95,9 @@ func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, star
 	}
 	defer func() { s.pool <- m }()
 
-	query := make([]fingerprint.Landmark, len(req.GetLandmarks()))
-	for i, l := range req.GetLandmarks() {
-		query[i] = fingerprint.Landmark{Hash: l.GetHash(), T: l.GetT()}
+	query := make([]fingerprint.Landmark, len(hashes))
+	for i := range hashes {
+		query[i] = fingerprint.Landmark{Hash: hashes[i], T: times[i]}
 	}
 	res, err := m.Search(s.seg, query, topK)
 	if err != nil {

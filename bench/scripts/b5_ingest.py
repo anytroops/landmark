@@ -18,6 +18,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def require_clean_tree() -> None:
+    """Refuse to benchmark uncommitted code: results must trace to a commit."""
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no", "--", ".",
+         ":(exclude)eval/results", ":(exclude)bench/results", ":(exclude)docs"],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    if out.strip() and not os.environ.get("LANDMARK_ALLOW_DIRTY"):
+        raise SystemExit(f"uncommitted changes; commit first (or LANDMARK_ALLOW_DIRTY=1):\n{out}")
+
+
 def require_ac_power() -> None:
     """Refuse to benchmark on battery: macOS throttles, so timings would mislead."""
     out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
@@ -35,6 +46,7 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     require_ac_power()
+    require_clean_tree()
 
     man = json.loads(Path(args.manifest).read_text())
     sub = {"meta": man["meta"], "indexed": sorted(man["indexed"])[: args.tracks], "clusters": {}}

@@ -46,7 +46,8 @@ func trackHashBase(d uint32) uint32 {
 func query(d uint32) *landmarkv1.IdentifyRequest {
 	req := &landmarkv1.IdentifyRequest{}
 	for i := uint32(5); i < perTrack; i++ {
-		req.Landmarks = append(req.Landmarks, &landmarkv1.Landmark{Hash: trackHashBase(d) + i, T: i - 5})
+		req.Hashes = append(req.Hashes, trackHashBase(d)+i)
+		req.Times = append(req.Times, i-5)
 	}
 	return req
 }
@@ -405,7 +406,7 @@ func TestIdentifyValidation(t *testing.T) {
 	if err != nil || resp.GetPartial() || resp.GetPartitionsResponded() != 2 || len(resp.GetCandidates()) != 0 {
 		t.Errorf("empty query: %v, %v", resp, err)
 	}
-	big := &landmarkv1.IdentifyRequest{Landmarks: make([]*landmarkv1.Landmark, shard.MaxLandmarks+1)}
+	big := &landmarkv1.IdentifyRequest{Hashes: make([]uint32, shard.MaxLandmarks+1), Times: make([]uint32, shard.MaxLandmarks+1)}
 	if _, err := tc.coord.Identify(context.Background(), big); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("too many landmarks: code %v", status.Code(err))
 	}
@@ -413,6 +414,11 @@ func TestIdentifyValidation(t *testing.T) {
 	q.TopK = MaxTopK + 1
 	if _, err := tc.coord.Identify(context.Background(), q); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("top_k too large: code %v", status.Code(err))
+	}
+	q = query(1)
+	q.Times = q.Times[1:]
+	if _, err := tc.coord.Identify(context.Background(), q); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("mismatched arrays: code %v", status.Code(err))
 	}
 }
 

@@ -4,13 +4,6 @@ package landmark.v1;
 
 option go_package = "github.com/anytroops/landmark/gen/landmark/v1;landmarkv1";
 
-// Landmark is one (anchor, target) peak pair packed into a hash.
-message Landmark {
-  uint32 hash = 1;
-  // Anchor frame index in the query.
-  uint32 t = 2;
-}
-
 message Candidate {
   uint32 track_id = 1;
   // Max offset-histogram count.
@@ -19,9 +12,15 @@ message Candidate {
   int32 offset = 3;
 }
 
+// Query landmarks travel as parallel packed arrays: (hashes[i], times[i]) is
+// one landmark, times[i] its anchor frame in the query. Packed arrays decode
+// into two slices instead of one message object per landmark (D28).
 message SearchRequest {
-  repeated Landmark landmarks = 1;
+  reserved 1;
+  reserved "landmarks";
   uint32 top_k = 2;
+  repeated fixed32 hashes = 3;
+  repeated uint32 times = 4;
 }
 
 message SearchResponse {
@@ -51,8 +50,11 @@ service ShardService {
 }
 
 message IdentifyRequest {
-  repeated Landmark landmarks = 1;
+  reserved 1;
+  reserved "landmarks";
   uint32 top_k = 2;
+  repeated fixed32 hashes = 3; // see SearchRequest
+  repeated uint32 times = 4;
 }
 
 message IdentifyResponse {

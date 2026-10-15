@@ -171,12 +171,15 @@ func (c *Coordinator) Identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
 	n := uint32(len(c.parts))
 	topK := int(req.GetTopK())
+	hashes, times := req.GetHashes(), req.GetTimes()
 	switch {
-	case len(req.GetLandmarks()) == 0:
+	case len(hashes) != len(times):
+		return nil, status.Errorf(codes.InvalidArgument, "%d hashes but %d times", len(hashes), len(times))
+	case len(hashes) == 0:
 		// Silent audio fingerprints to nothing: a complete answer of "no match".
 		return &landmarkv1.IdentifyResponse{PartitionsResponded: n, PartitionsTotal: n}, nil
-	case len(req.GetLandmarks()) > shard.MaxLandmarks:
-		return nil, status.Errorf(codes.InvalidArgument, "%d landmarks exceeds limit %d", len(req.GetLandmarks()), shard.MaxLandmarks)
+	case len(hashes) > shard.MaxLandmarks:
+		return nil, status.Errorf(codes.InvalidArgument, "%d landmarks exceeds limit %d", len(hashes), shard.MaxLandmarks)
 	case topK > MaxTopK:
 		return nil, status.Errorf(codes.InvalidArgument, "top_k %d exceeds limit %d", topK, MaxTopK)
 	case topK == 0:
@@ -186,7 +189,8 @@ func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 	// The caller's deadline wins if it is earlier than ours.
 	ctx, cancel := context.WithTimeout(ctx, c.cl.Deadline())
 	defer cancel()
-	shardReq := &landmarkv1.SearchRequest{Landmarks: req.GetLandmarks(), TopK: shardTopK}
+	// The same arrays go to every partition; the request is only read.
+	shardReq := &landmarkv1.SearchRequest{Hashes: hashes, Times: times, TopK: shardTopK}
 
 	results := make([]*landmarkv1.SearchResponse, n)
 	errs := make([]error, n)

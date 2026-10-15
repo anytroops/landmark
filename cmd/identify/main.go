@@ -90,9 +90,9 @@ func run(addr, catalogPath, file string, startSec, durSec float64, shifts int, t
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
 	defer func() { _ = conn.Close() }()
-	req := &landmarkv1.SearchRequest{TopK: 20, Landmarks: make([]*landmarkv1.Landmark, len(lms))}
+	req := &landmarkv1.SearchRequest{TopK: 20, Hashes: make([]uint32, len(lms)), Times: make([]uint32, len(lms))}
 	for i, l := range lms {
-		req.Landmarks[i] = &landmarkv1.Landmark{Hash: l.Hash, T: l.T}
+		req.Hashes[i], req.Times[i] = l.Hash, l.T
 	}
 	t2 := time.Now()
 	resp, err := landmarkv1.NewShardServiceClient(conn).Search(ctx, req)
@@ -158,9 +158,9 @@ func runCoordinator(addr, catalogPath, file string, startSec, durSec float64, sh
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
 	defer func() { _ = conn.Close() }()
-	req := &landmarkv1.IdentifyRequest{TopK: 5, Landmarks: make([]*landmarkv1.Landmark, len(lms))}
+	req := &landmarkv1.IdentifyRequest{TopK: 5, Hashes: make([]uint32, len(lms)), Times: make([]uint32, len(lms))}
 	for i, l := range lms {
-		req.Landmarks[i] = &landmarkv1.Landmark{Hash: l.Hash, T: l.T}
+		req.Hashes[i], req.Times[i] = l.Hash, l.T
 	}
 	t0 := time.Now()
 	resp, err := landmarkv1.NewCoordinatorServiceClient(conn).Identify(ctx, req)

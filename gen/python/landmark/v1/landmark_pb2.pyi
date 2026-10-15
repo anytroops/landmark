@@ -6,14 +6,6 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class Landmark(_message.Message):
-    __slots__ = ("hash", "t")
-    HASH_FIELD_NUMBER: _ClassVar[int]
-    T_FIELD_NUMBER: _ClassVar[int]
-    hash: int
-    t: int
-    def __init__(self, hash: _Optional[int] = ..., t: _Optional[int] = ...) -> None: ...
-
 class Candidate(_message.Message):
     __slots__ = ("track_id", "score", "offset")
     TRACK_ID_FIELD_NUMBER: _ClassVar[int]
@@ -25,12 +17,14 @@ class Candidate(_message.Message):
     def __init__(self, track_id: _Optional[int] = ..., score: _Optional[int] = ..., offset: _Optional[int] = ...) -> None: ...
 
 class SearchRequest(_message.Message):
-    __slots__ = ("landmarks", "top_k")
-    LANDMARKS_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("top_k", "hashes", "times")
     TOP_K_FIELD_NUMBER: _ClassVar[int]
-    landmarks: _containers.RepeatedCompositeFieldContainer[Landmark]
+    HASHES_FIELD_NUMBER: _ClassVar[int]
+    TIMES_FIELD_NUMBER: _ClassVar[int]
     top_k: int
-    def __init__(self, landmarks: _Optional[_Iterable[_Union[Landmark, _Mapping]]] = ..., top_k: _Optional[int] = ...) -> None: ...
+    hashes: _containers.RepeatedScalarFieldContainer[int]
+    times: _containers.RepeatedScalarFieldContainer[int]
+    def __init__(self, top_k: _Optional[int] = ..., hashes: _Optional[_Iterable[int]] = ..., times: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class SearchResponse(_message.Message):
     __slots__ = ("candidates", "partition_id", "postings_scanned")
@@ -65,12 +59,14 @@ class InfoResponse(_message.Message):
     def __init__(self, partition_id: _Optional[int] = ..., n_partitions: _Optional[int] = ..., n_tracks: _Optional[int] = ..., n_keys: _Optional[int] = ..., n_postings: _Optional[int] = ..., segment_crc32c: _Optional[int] = ..., format_version: _Optional[int] = ...) -> None: ...
 
 class IdentifyRequest(_message.Message):
-    __slots__ = ("landmarks", "top_k")
-    LANDMARKS_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("top_k", "hashes", "times")
     TOP_K_FIELD_NUMBER: _ClassVar[int]
-    landmarks: _containers.RepeatedCompositeFieldContainer[Landmark]
+    HASHES_FIELD_NUMBER: _ClassVar[int]
+    TIMES_FIELD_NUMBER: _ClassVar[int]
     top_k: int
-    def __init__(self, landmarks: _Optional[_Iterable[_Union[Landmark, _Mapping]]] = ..., top_k: _Optional[int] = ...) -> None: ...
+    hashes: _containers.RepeatedScalarFieldContainer[int]
+    times: _containers.RepeatedScalarFieldContainer[int]
+    def __init__(self, top_k: _Optional[int] = ..., hashes: _Optional[_Iterable[int]] = ..., times: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class IdentifyResponse(_message.Message):
     __slots__ = ("candidates", "matched", "partial", "partitions_responded", "partitions_total")

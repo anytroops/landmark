@@ -72,7 +72,7 @@ func TestOpenLoop(t *testing.T) {
 
 	cfg := runConfig{Rate: 100, Duration: time.Second, Timeout: time.Second, MaxInFlight: 1000}
 	queries := []Query{{Expected: -1, Landmarks: []fingerprint.Landmark{{Hash: 1}}}}
-	reqs := []*landmarkv1.IdentifyRequest{{Landmarks: []*landmarkv1.Landmark{{Hash: 1}}}}
+	reqs := []*landmarkv1.IdentifyRequest{{Hashes: []uint32{1}, Times: []uint32{0}}}
 	start := time.Now()
 	recs, _ := schedule(cfg, queries, reqs, []landmarkv1.CoordinatorServiceClient{landmarkv1.NewCoordinatorServiceClient(conn)})
 	if len(recs) != 100 {

@@ -75,7 +75,8 @@ func newServer(t *testing.T, cfg Config) *Server {
 func query() *landmarkv1.SearchRequest {
 	req := &landmarkv1.SearchRequest{TopK: 5}
 	for h := uint32(10); h < 30; h++ {
-		req.Landmarks = append(req.Landmarks, &landmarkv1.Landmark{Hash: h, T: h - 5})
+		req.Hashes = append(req.Hashes, h)
+		req.Times = append(req.Times, h-5)
 	}
 	return req
 }
@@ -102,17 +103,15 @@ func TestSearchReturnsGlobalIDs(t *testing.T) {
 
 func TestSearchValidation(t *testing.T) {
 	client := startServer(t, newServer(t, Config{Workers: 1, MaxQueueWait: time.Second}))
-	big := &landmarkv1.SearchRequest{Landmarks: make([]*landmarkv1.Landmark, MaxLandmarks+1)}
-	for i := range big.Landmarks {
-		big.Landmarks[i] = &landmarkv1.Landmark{}
-	}
+	big := &landmarkv1.SearchRequest{Hashes: make([]uint32, MaxLandmarks+1), Times: make([]uint32, MaxLandmarks+1)}
 	tests := []struct {
 		name string
 		req  *landmarkv1.SearchRequest
 	}{
 		{"no landmarks", &landmarkv1.SearchRequest{}},
 		{"too many landmarks", big},
-		{"top_k too large", &landmarkv1.SearchRequest{Landmarks: query().Landmarks, TopK: MaxTopK + 1}},
+		{"top_k too large", &landmarkv1.SearchRequest{Hashes: query().Hashes, Times: query().Times, TopK: MaxTopK + 1}},
+		{"mismatched arrays", &landmarkv1.SearchRequest{Hashes: []uint32{1, 2}, Times: []uint32{1}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

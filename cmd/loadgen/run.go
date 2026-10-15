@@ -83,9 +83,9 @@ func runCmd(args []string) error {
 	}
 	reqs := make([]*landmarkv1.IdentifyRequest, len(queries))
 	for i, q := range queries {
-		r := &landmarkv1.IdentifyRequest{TopK: 1, Landmarks: make([]*landmarkv1.Landmark, len(q.Landmarks))}
+		r := &landmarkv1.IdentifyRequest{TopK: 1, Hashes: make([]uint32, len(q.Landmarks)), Times: make([]uint32, len(q.Landmarks))}
 		for j, l := range q.Landmarks {
-			r.Landmarks[j] = &landmarkv1.Landmark{Hash: l.Hash, T: l.T}
+			r.Hashes[j], r.Times[j] = l.Hash, l.T
 		}
 		reqs[i] = r
 	}
