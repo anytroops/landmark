@@ -193,6 +193,15 @@ def profile(args: argparse.Namespace) -> None:
     print("average CPU (% of one core):", avg)
 
 
+def require_ac_power() -> None:
+    """Refuse to benchmark on battery: macOS throttles, so timings would mislead."""
+    out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
+    if "Battery Power" in out and not os.environ.get("LANDMARK_ALLOW_BATTERY"):
+        raise SystemExit(
+            "on battery power: plug in, or set LANDMARK_ALLOW_BATTERY=1 for a labeled dry run"
+        )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -220,6 +229,7 @@ def main() -> None:
     pr.add_argument("--out", required=True)
     pr.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
     args = ap.parse_args()
+    require_ac_power()
     if args.cmd == "sweep":
         sweep(args)
     elif args.cmd == "profile":

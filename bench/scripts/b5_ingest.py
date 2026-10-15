@@ -10,11 +10,21 @@ segment writing.
 
 import argparse
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def require_ac_power() -> None:
+    """Refuse to benchmark on battery: macOS throttles, so timings would mislead."""
+    out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
+    if "Battery Power" in out and not os.environ.get("LANDMARK_ALLOW_BATTERY"):
+        raise SystemExit(
+            "on battery power: plug in, or set LANDMARK_ALLOW_BATTERY=1 for a labeled dry run"
+        )
 
 
 def main() -> None:
@@ -24,6 +34,7 @@ def main() -> None:
     ap.add_argument("--workers", type=int, nargs="+", default=[1, 2, 4, 8, 12])
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    require_ac_power()
 
     man = json.loads(Path(args.manifest).read_text())
     sub = {"meta": man["meta"], "indexed": sorted(man["indexed"])[: args.tracks], "clusters": {}}

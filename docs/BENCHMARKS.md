@@ -8,7 +8,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
 | B3 | Failure-injection timeline around a replica kill | [TBD] |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small done (below); fma_large [TBD] |
-| B5 | Ingest throughput vs worker count | fma_small (below) |
+| B5 | Ingest throughput vs worker count | provisional (battery power); rerun on AC [TBD] |
 
 ## Fingerprint throughput, Go vs Python (Phase 2)
 
@@ -68,7 +68,9 @@ Raw: `bench/results/b1_quick_small` (commit 3e1d3a9) and `bench/results/b1_quick
 
 ## B5: ingest throughput vs workers (Phase 4)
 
-600 fma_small tracks (first 600 of the indexed split), P=1, `cmd/ingest` with N decode+fingerprint goroutines (each runs its own ffmpeg process). Fingerprint phase timed separately from segment writing (~0.5 s). Apple M4 Pro, AC power. Raw: `bench/results/b5_small/`.
+600 fma_small tracks (first 600 of the indexed split), P=1, `cmd/ingest` with N decode+fingerprint goroutines (each runs its own ffmpeg process). Fingerprint phase timed separately from segment writing (~0.5 s). Apple M4 Pro. Raw: `bench/results/b5_small/`.
+
+**Provisional: this run was on battery power** (recorded in each result file), where macOS throttles the CPU, so absolute throughput is understated. An earlier version of this section said AC power; that was wrong. Rerun on AC before citing these numbers.
 
 | Workers | Tracks/min | Audio x realtime | Speedup |
 |---|---|---|---|
