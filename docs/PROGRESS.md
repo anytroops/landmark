@@ -1,6 +1,6 @@
 # Progress
 
-## Current phase: 3 (distributed): coordinator, replication, cluster, load generator done; official runs pending AC power
+## Current phase: 4 (measure); Phase 3 done except scale-up to fma_medium/large
 
 ## Done
 - 2026-10-14: Phase 0. Repo, toolchain, CI green, compose stack, fma_metadata + fma_small downloaded, SHA1 verified, extracted (7zip; unzip fails on FMA), zips deleted.
@@ -14,8 +14,10 @@
 - 2026-10-14 (Phase 3): shard Info RPC + index manifest; cluster config; coordinator with per-attempt timeouts (D24), outlier ejection (D25), identity verification (D26), mutation-tested; Docker cluster (2x2); open-loop loadgen with failure injection; B3 script. Battery smoke run: kill -9 of a replica at 50 qps kept 100% success, one slow request (~115 ms).
 
 ## Next
-- On AC power: official B3 run (`bench/scripts/b3_failover.sh`), matcher/shard pprof, then Phase 4 benchmarks.
-- Grafana dashboard JSON (identify latency, partial rate, per-replica availability, attempts by outcome).
+- 2026-10-14 (Phase 3 done criterion): official B3, 3 reps: replica kill -9 at 100 qps kept 100% complete answers; 2-3 of 6,000 requests per run over 50 ms (~106 ms), none after ejection.
+- 2026-10-14 (Phase 4): bench harness; quick B1 sweeps; profiling found pdqsort at 54% of shard CPU at saturation; radix sort (D27) roughly doubled the knee; B5 (3 reps, AC); Grafana dashboard.
+- Next: fma_medium (download in progress): dedupe, splits, ingest P=1,2,4,8, eval at scale via the Go shard, full-method B1/B2.
+- Cloud multi-node run for real B2 scaling: options and cost for Sean.
 - Scale up: fma_medium (22 GiB zip, needs Sean's OK), then fma_large (needs ~186 GB: external disk or cloud VM).
 - Decide on per-key overhead (u32 offsets, compressed keys); see B4 notes.
 - Optional: make D9 peak selection shift-invariant (rank within a window centered on each peak). Core change, needs Sean's pick.
