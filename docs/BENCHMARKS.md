@@ -8,7 +8,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
 | B3 | Failure-injection timeline around a replica kill | [TBD] |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small done (below); fma_large [TBD] |
-| B5 | Ingest throughput vs worker count | provisional (battery power); rerun on AC [TBD] |
+| B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
 
 ## Fingerprint throughput, Go vs Python (Phase 2)
 
@@ -68,16 +68,14 @@ Raw: `bench/results/b1_quick_small` (commit 3e1d3a9) and `bench/results/b1_quick
 
 ## B5: ingest throughput vs workers (Phase 4)
 
-600 fma_small tracks (first 600 of the indexed split), P=1, `cmd/ingest` with N decode+fingerprint goroutines (each runs its own ffmpeg process). Fingerprint phase timed separately from segment writing (~0.5 s). Apple M4 Pro. Raw: `bench/results/b5_small/`.
+600 fma_small tracks (first 600 of the indexed split), P=1, `cmd/ingest` with N decode+fingerprint goroutines (each runs its own ffmpeg process). Fingerprint phase timed separately from segment writing (~0.5 s). Apple M4 Pro, AC power, 3 reps; median and range. Raw: `bench/results/b5_small/rep{0,1,2}/`. (A first run on battery power gave similar numbers and was discarded.)
 
-**Provisional: this run was on battery power** (recorded in each result file), where macOS throttles the CPU, so absolute throughput is understated. An earlier version of this section said AC power; that was wrong. Rerun on AC before citing these numbers.
+| Workers | Tracks/min, median (range) | Speedup |
+|---|---|---|
+| 1 | 793 (790-811) | 1.00 |
+| 2 | 1,531 (1,518-1,539) | 1.93 |
+| 4 | 2,870 (2,855-2,873) | 3.62 |
+| 8 | 3,843 (3,841-3,868) | 4.85 |
+| 12 | 4,118 (4,045-4,139) | 5.19 |
 
-| Workers | Tracks/min | Audio x realtime | Speedup |
-|---|---|---|---|
-| 1 | 843 | 421 | 1.00 |
-| 2 | 1,562 | 781 | 1.85 |
-| 4 | 2,876 | 1,437 | 3.41 |
-| 8 | 4,193 | 2,096 | 4.97 |
-| 12 | 4,286 | 2,142 | 5.08 |
-
-Near-linear to 4 workers, flat past 8: the machine has 8 performance cores, and each worker drives an ffmpeg process as well as Go fingerprinting. Extrapolation, not a measurement: 106,574 fma_large tracks at ~4,300 tracks/min is about 25 minutes of fingerprinting on this laptop.
+Near-linear to 4 workers, flattening past 8: the machine has 8 performance cores, and each worker drives an ffmpeg process as well as Go fingerprinting. Extrapolation, not a measurement: 106,574 fma_large tracks at ~4,100 tracks/min is about 26 minutes of fingerprinting on this laptop.
