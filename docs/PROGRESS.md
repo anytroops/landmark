@@ -17,7 +17,8 @@
 - 2026-10-14 (Phase 3 done criterion): official B3, 3 reps: replica kill -9 at 100 qps kept 100% complete answers; 2-3 of 6,000 requests per run over 50 ms (~106 ms), none after ejection.
 - 2026-10-14 (Phase 4): bench harness; quick B1 sweeps; profiling found pdqsort at 54% of shard CPU at saturation; radix sort (D27) roughly doubled the knee; B5 (3 reps, AC); Grafana dashboard.
 - 2026-10-14 (Phase 4): packed request format (D28), 40% smaller requests; quick sweep: P=1 knee 1,600 qps, p50 5.4 ms. fma_medium downloaded, verified, extracted; fma_small replaced by a symlink after a byte-for-byte check.
-- Next: `bench/scripts/medium_pipeline.sh` (dedupe, splits, ingest P=1,2,4,8, eval at scale, queries), then full-method B1/B2 on fma_medium.
+- 2026-10-15 (Phase 4): fma_medium pipeline: 520 duplicate clusters, 23,985 indexed, Go ingest P=1,2,4,8 (102M postings), eval at scale through the Go shard (clean 99.9%, SNR 0 dB 97.1%, FAR <= 0.1%), B4 at medium (hash space ~80% used), medium replay queries.
+- Next (AC power, lid open): quick B1 sweep on fma_medium, then full-method B1 and B2 (`bench/scripts/b2_slo.py`).
 - Cloud multi-node run for real B2 scaling: options and cost for Sean.
 - Scale up: fma_medium (22 GiB zip, needs Sean's OK), then fma_large (needs ~186 GB: external disk or cloud VM).
 - Decide on per-key overhead (u32 offsets, compressed keys); see B4 notes.
@@ -32,6 +33,7 @@
 - Some fma_small clips are shorter than the 10 s excerpt; one track per split was skipped. Count them before Phase 4 eval.
 
 ## Gotchas
+- `caffeinate -i` does not stop a closed MacBook on battery from sleeping; long runs need the lid open (or AC with -s). A sleep mid-run freezes processes and inflates wall-clock timings; the fma_medium ingest timings are unusable for that reason.
 - A `kill -9`'d container's IP disappears, so in-flight requests to it hang instead of failing fast; per-attempt timeouts (D24) are what bound the damage.
 - Compose: several services sharing one image tag must not all `build:` it (parallel builds collide); one builds, the rest `pull_policy: never`.
 - Benchmarks on battery are throttled ~3x on this laptop (single decode 0.33 s vs 0.10 s). Run metadata now records `power`; only use `ac` runs for timing claims.

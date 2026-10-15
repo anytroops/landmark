@@ -37,6 +37,26 @@ Sources: `summary_seed0.json` (baseline), `summary_seed0_d14.json`, `summary_see
 
 **D15 paired test** (`eval/results/compare_seed0_d14_vs_d14_shift4.md`, exact McNemar on identical queries): every noise condition moves the same direction, but only white_snr5_10s reaches p < 0.05 (9 vs 1 discordant, p = 0.02); SNR 0 is 21 vs 12 (p = 0.16). Read it as a consistent ~1 point gain at low SNR that n = 1,000 cannot pin down, for 2x search time.
 
+## fma_medium: 3.4x the catalog (Phase 4)
+
+Index: 23,985 tracks (fma_medium minus held-out negatives and undecodable files), served by the Go stack (`cmd/ingest` P=1 segment, `cmd/shard` over gRPC, D14 + D15 + D27 + D28). Duplicate-aware splits per D12 (520 clusters, 1,408 tracks; `eval/manifests/duplicates_medium.json`). Thresholds recalibrated on the medium val split (D13 objective): t_abs 24, t_ratio 3.0. Raw: `eval/results/queries_{val,test}_seed0_medium.csv.gz`; val at commit 107f231, test at 77e4631 (the only change between them is the eval backend's retry of transient gRPC errors; 1 call was retried). Both clean.
+
+| Condition | Top-1 raw (95% CI) | Accuracy at threshold (95% CI) | FAR (95% CI) | n pos / neg |
+|---|---|---|---|---|
+| clean_10s | 99.9 (99.4-100.0) | 99.9 (99.4-100.0) | 0.1 (0.0-0.6) | 1000 / 1000 |
+| clean_5s | 99.8 (99.3-99.9) | 99.8 (99.3-99.9) | 0.1 (0.0-0.6) | 1000 / 1000 |
+| mp3_128k_10s | 99.9 (99.4-100.0) | 99.9 (99.4-100.0) | 0.1 (0.0-0.6) | 1000 / 1000 |
+| mp3_64k_10s | 99.9 (99.4-100.0) | 99.9 (99.4-100.0) | 0.1 (0.0-0.6) | 1000 / 1000 |
+| speed_+2pct_10s | 61.0 (57.9-64.0) | 0.6 (0.3-1.3) | 0.0 (0.0-0.4) | 1000 / 1000 |
+| speed_-2pct_10s | 63.4 (60.4-66.3) | 0.7 (0.3-1.4) | 0.0 (0.0-0.4) | 1000 / 1000 |
+| white_snr0_10s | 99.5 (98.8-99.8) | 97.1 (95.9-98.0) | 0.0 (0.0-0.4) | 1000 / 1000 |
+| white_snr10_10s | 99.9 (99.4-100.0) | 99.6 (99.0-99.8) | 0.0 (0.0-0.4) | 1000 / 1000 |
+| white_snr15_10s | 99.9 (99.4-100.0) | 99.6 (99.0-99.8) | 0.1 (0.0-0.6) | 1000 / 1000 |
+| white_snr5_10s | 99.7 (99.1-99.9) | 99.4 (98.7-99.7) | 0.0 (0.0-0.4) | 1000 / 1000 |
+| white_snr5_5s | 99.6 (99.0-99.8) | 96.7 (95.4-97.6) | 0.0 (0.0-0.4) | 1000 / 1000 |
+
+Accuracy and false accepts hold at 3.4x the catalog. Do not read the differences from the fma_small table as improvements: thresholds and test tracks differ, and most intervals overlap.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.

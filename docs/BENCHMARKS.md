@@ -7,7 +7,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small (below); full methodology on fma_medium [TBD] |
 | B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
-| B4 | Index size: raw vs encoded, bytes per posting | fma_small done (below); fma_large [TBD] |
+| B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
 
 ## Fingerprint throughput, Go vs Python (Phase 2)
@@ -76,3 +76,18 @@ Raw: `bench/results/b1_quick_small` (commit 3e1d3a9) and `bench/results/b1_quick
 | 8 | 2.7-5.4 (300-600) / 2.0-2.1 (300-600) ms | 600 / 800 qps |
 
 Raw: `bench/results/b1_quick_small_packed` (commit 9143080, clean, AC), plot `docs/figures/b1_quick_small_packed.png`. (A first run of this sweep happened before D28 was committed, because a lint failure stopped the commit; it was discarded, and the bench scripts now refuse uncommitted code.) From the first sweep to D27+D28, a single partition went from 600 to 1,600 qps at 100% complete answers and from 12.7 to 5.4 ms p50 on the same machine.
+
+## B4 at fma_medium scale, and the hash-space ceiling
+
+23,985 tracks, 102,118,846 postings, varint, local ids. Built in one fingerprint pass by `cmd/ingest -partitions 1,2,4,8` (commit 107f231). Sizes are deterministic; the ingest timings in these files are not usable (the Mac slept repeatedly during the run). Raw: `bench/results/b4_medium_p{1,2,4,8}.json`.
+
+| Subset | P | Postings | Keys (summed over segments) | Bytes | Bytes/posting | Key+offset share |
+|---|---|---|---|---|---|---|
+| small | 1 | 29,727,683 | 2,763,032 | 133,957,295 | 4.506 | 25% |
+| medium | 1 | 102,118,846 | 3,343,978 | 387,623,299 | 3.796 | 10% |
+| medium | 2 | 102,118,846 | 6,083,997 | 420,070,100 | 4.114 | 17% |
+| medium | 4 | 102,118,846 | 10,505,735 | 472,590,950 | 4.628 | 27% |
+| medium | 8 | 102,118,846 | 17,103,441 | 550,593,699 | 5.392 | 37% |
+
+- Postings grew 3.4x but distinct keys only 1.2x, so per-key overhead is amortized and bytes per posting fall (4.51 to 3.80 at P=1).
+- **The reachable hash space is nearly full.** D10 pairs peaks within +/-64 bins, so a hash can take about 512 x 129 x 63 = 4.16M values, not 2^24. fma_medium already uses 3.34M (~80%). From here, new tracks mostly lengthen existing posting lists, so per-query postings scanned, and query cost, grow roughly linearly with catalog size. For fma_large this argues for revisiting D20 (a direct table over ~4.2M reachable keys is dense) and the hash layout (more bits per landmark to keep lists short). Measure before deciding.
