@@ -7,16 +7,19 @@ SLO: p99 <= --p99-ms (default 100) and complete answers >= --min-success
 (default 0.999), latency measured open loop from scheduled send times.
 
 Search: bisect offered load between --lo (must pass) and --hi (must fail)
-with short probes until the bracket is within --tolerance; then confirm the
-best passing rate with the full methodology (30 s warmup, 120 s measured,
-3 reps), stepping down 5% at a time until all reps pass. The reported
-number is the confirmed rate. Single host: this measures parallelism on
-one machine, not distribution.
+with probes until the bracket is within --tolerance; then confirm the best
+passing rate with the full methodology (30 s warmup, 120 s measured, 3
+reps). A rate is confirmed when the MEDIAN p99 and MEDIAN success across
+the reps meet the SLO (D29, the brief's "median and spread"); otherwise
+step down 5% and confirm again, never below --lo. The reported number is
+the confirmed rate, with every rep's numbers. Single host: this measures
+parallelism on one machine, not distribution.
 """
 
 import argparse
 import json
 import os
+import statistics
 from pathlib import Path
 
 from bench.scripts.benchcluster import (
@@ -44,7 +47,7 @@ def main() -> None:
     ap.add_argument("--p99-ms", type=float, default=100)
     ap.add_argument("--min-success", type=float, default=0.999)
     ap.add_argument("--probe-warmup", type=int, default=10)
-    ap.add_argument("--probe-duration", type=int, default=30)
+    ap.add_argument("--probe-duration", type=int, default=60)
     ap.add_argument("--warmup", type=int, default=30)
     ap.add_argument("--duration", type=int, default=120)
     ap.add_argument("--reps", type=int, default=3)
@@ -90,12 +93,19 @@ def main() -> None:
         while True:
             reps = [probe(rate, args.warmup, args.duration, f"confirm_rep{k}")
                     for k in range(args.reps)]  # fmt: skip
-            if all(passes(m, args.p99_ms, args.min_success) for m in reps):
+            med = {"p99_ms": statistics.median(m["p99_ms"] for m in reps),
+                   "success_rate": statistics.median(m["success_rate"] for m in reps)}  # fmt: skip
+            print(f"P={n_parts} confirm rate={rate:.0f}: median p99={med['p99_ms']} "
+                  f"median success={med['success_rate']:.4f}", flush=True)  # fmt: skip
+            if passes(med, args.p99_ms, args.min_success):
                 break
+            if round(rate * 0.95) < args.lo:
+                raise SystemExit(f"no rate >= --lo {args.lo} confirmed; widen the search")
             rate = round(rate * 0.95)
 
     result = {"partitions": n_parts, "max_qps_under_slo": rate, "slo_p99_ms": args.p99_ms,
-              "slo_min_success": args.min_success, "probes": log}  # fmt: skip
+              "slo_min_success": args.min_success, "rule": "median of reps (D29)",
+              "confirm_median": med, "probes": log}  # fmt: skip
     (out / "result.json").write_text(json.dumps(result, indent=1) + "\n")
     print(f"P={n_parts}: max sustainable {rate:.0f} qps under the SLO", flush=True)
 

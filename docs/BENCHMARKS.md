@@ -4,7 +4,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 
 | ID | Benchmark | Result |
 |---|---|---|
-| B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small (below); full methodology on fma_medium [TBD] |
+| B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small and fma_medium (below); full methodology on fma_medium [TBD] |
 | B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
@@ -77,6 +77,34 @@ Raw: `bench/results/b1_quick_small` (commit 3e1d3a9) and `bench/results/b1_quick
 
 Raw: `bench/results/b1_quick_small_packed` (commit 9143080, clean, AC), plot `docs/figures/b1_quick_small_packed.png`. (A first run of this sweep happened before D28 was committed, because a lint failure stopped the commit; it was discarded, and the bench scripts now refuse uncommitted code.) From the first sweep to D27+D28, a single partition went from 600 to 1,600 qps at 100% complete answers and from 12.7 to 5.4 ms p50 on the same machine.
 
+## B5: ingest throughput vs workers (Phase 4)
+
+600 fma_small tracks (first 600 of the indexed split), P=1, `cmd/ingest` with N decode+fingerprint goroutines (each runs its own ffmpeg process). Fingerprint phase timed separately from segment writing (~0.5 s). Apple M4 Pro, AC power, 3 reps; median and range. Raw: `bench/results/b5_small/rep{0,1,2}/`. (A first run on battery power gave similar numbers and was discarded.)
+
+| Workers | Tracks/min, median (range) | Speedup |
+|---|---|---|
+| 1 | 793 (790-811) | 1.00 |
+| 2 | 1,531 (1,518-1,539) | 1.93 |
+| 4 | 2,870 (2,855-2,873) | 3.62 |
+| 8 | 3,843 (3,841-3,868) | 4.85 |
+| 12 | 4,118 (4,045-4,139) | 5.19 |
+
+Near-linear to 4 workers, flattening past 8: the machine has 8 performance cores, and each worker drives an ffmpeg process as well as Go fingerprinting. Extrapolation, not a measurement: 106,574 fma_large tracks at ~4,100 tracks/min is about 26 minutes of fingerprinting on this laptop.
+
+## B3: replica kill under load (Phase 3 done criterion)
+
+Docker compose cluster (`deploy/docker-compose.yml`): P=2 partitions x RF=2 replicas over the fma_small index, coordinator with a 200 ms deadline and D24-D26 failure handling. Open-loop 100 qps from `cmd/loadgen` (1,499 replayed test-split queries), 10 s warmup, 60 s measured; `docker kill -s KILL landmark-shard-1a-1` fired at t = 30.00 s on the load generator's clock. 3 reps, commit 44dc5e1 (clean), AC power. Docker runs in a 4-vCPU Colima VM on the same laptop as the load generator. Raw: `bench/results/b3_rate100_rep{0,1,2}/`; plot `docs/figures/b3_rate100.png`.
+
+| Rep | Complete answers (measured 6,000) | p50 | p99 | Max | Requests over 50 ms | p99 in the kill second |
+|---|---|---|---|---|---|---|
+| 0 | 100.00% | 5.81 ms | 9.95 ms | 109.2 ms | 3 | 105.7 ms |
+| 1 | 100.00% | 5.81 ms | 9.97 ms | 110.4 ms | 3 | 106.3 ms |
+| 2 | 100.00% | 5.81 ms | 9.96 ms | 107.1 ms | 2 | 105.9 ms |
+
+- A killed container's address vanishes, so requests to it hang rather than fail. Each of the 2-3 slow requests waited out its first attempt's half-budget timeout (100 ms of 200 ms, D24) and then succeeded on the partner replica.
+- After 3 consecutive failures the replica was ejected (D25), so no further requests went to it: the very next second's p99 is back to ~9 ms.
+- No query failed or came back partial. Partial answers on whole-partition loss are covered by the coordinator tests (`TestWholePartitionDownIsPartialNotWrong`) and the manual smoke test.
+
 ## B4 at fma_medium scale, and the hash-space ceiling
 
 23,985 tracks, 102,118,846 postings, varint, local ids. Built in one fingerprint pass by `cmd/ingest -partitions 1,2,4,8` (commit 107f231). Sizes are deterministic; the ingest timings in these files are not usable (the Mac slept repeatedly during the run). Raw: `bench/results/b4_medium_p{1,2,4,8}.json`.
@@ -91,3 +119,17 @@ Raw: `bench/results/b1_quick_small_packed` (commit 9143080, clean, AC), plot `do
 
 - Postings grew 3.4x but distinct keys only 1.2x, so per-key overhead is amortized and bytes per posting fall (4.51 to 3.80 at P=1).
 - **The reachable hash space is nearly full.** D10 pairs peaks within +/-64 bins, so a hash can take about 512 x 129 x 63 = 4.16M values, not 2^24. fma_medium already uses 3.34M (~80%). From here, new tracks mostly lengthen existing posting lists, so per-query postings scanned, and query cost, grow roughly linearly with catalog size. For fma_large this argues for revisiting D20 (a direct table over ~4.2M reachable keys is dense) and the hash layout (more bits per landmark to keep lists short). Measure before deciding.
+
+## B1 quick sweep on fma_medium (Phase 4)
+
+Same harness and quick methodology as the fma_small sweeps (5 s warmup, 15 s measured, 1 rep), D27 + D28 code, over the fma_medium indexes (23,985 tracks, 102M postings) with 1,500 medium test-split replay queries. Commit 361c684, clean, AC. Raw: `bench/results/b1_quick_medium`; plot `docs/figures/b1_quick_medium.png`.
+
+| P | p50 / p99 at 100-200 qps | Last rate at 100% complete | First rate below 99.9% |
+|---|---|---|---|
+| 1 | 13.5-14.0 / 34.7-34.8 ms | 400 qps | 600 qps (95.9%) |
+| 2 | 8.4-8.6 / 19.8-44.8 ms | 400 qps | 600 qps (71.2%) |
+| 4 | 5.0-5.5 / 10.8-11.9 ms | 400 qps (p99 104.5 ms) | 600 qps (14.6%) |
+| 8 | 3.8-4.5 / 8.2-8.3 ms | 200 qps | 400 qps (98.3%) |
+
+- Per-query work is ~2.8x fma_small's: postings per key rose from ~10.8 to ~30.5 as the reachable hash space filled (see B4 at medium), and low-load p50 rose by about that factor (P=1: 5.4 to 13.5 ms).
+- Knees fall correspondingly (P=1: 1,600 qps on small to ~400-600 here). Partitioning still trades throughput for latency on one host.
