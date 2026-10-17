@@ -2,10 +2,13 @@ package cluster
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anytroops/landmark/internal/stoplist"
 )
 
 func writeJSON(t *testing.T, path string, v any) {
@@ -102,6 +105,100 @@ func TestLoadRejects(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Load(fixture(t, tc.mutate))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want it to mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// withStoplist writes l into the fixture's index and records it in
+// index.json with crc (the list's own checksum when empty).
+func withStoplist(t *testing.T, cfgPath string, l *stoplist.List, crc string) {
+	t.Helper()
+	idx := filepath.Join(filepath.Dir(cfgPath), "index")
+	if err := l.Write(filepath.Join(idx, stoplist.FileName)); err != nil {
+		t.Fatal(err)
+	}
+	if crc == "" {
+		crc = fmt.Sprintf("%08x", l.Checksum())
+	}
+	var man map[string]any
+	b, err := os.ReadFile(filepath.Join(idx, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &man); err != nil {
+		t.Fatal(err)
+	}
+	man["stoplist"] = stoplist.ManifestEntry{File: stoplist.FileName, CRC32C: crc}
+	writeJSON(t, filepath.Join(idx, "index.json"), man)
+}
+
+func stopFraction(f float64) func(cfg, _ map[string]any, cat []map[string]any) []map[string]any {
+	return func(cfg, _ map[string]any, cat []map[string]any) []map[string]any {
+		cfg["stop_fraction"] = f
+		return cat
+	}
+}
+
+func TestLoadStoplist(t *testing.T) {
+	l, err := stoplist.New(3, 1, []uint32{5, 9}, []uint32{1, 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := fixture(t, stopFraction(0.7)) // 0.7 x 3 tracks: keep hashes with <= 2 postings
+	withStoplist(t, path, l, "")
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Stop == nil || c.StopLimit != 2 || c.Stop.Count(9) != 4 {
+		t.Fatalf("Stop = %v, StopLimit = %d, want the list and 2", c.Stop, c.StopLimit)
+	}
+
+	// Without stop_fraction the list is ignored even when present.
+	path = fixture(t, nil)
+	withStoplist(t, path, l, "")
+	if c, err := Load(path); err != nil || c.Stop != nil {
+		t.Fatalf("Load = %v, %v; want no stop list", c, err)
+	}
+}
+
+func TestLoadStoplistRejects(t *testing.T) {
+	good, err := stoplist.New(3, 1, []uint32{5}, []uint32{2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherIndex, err := stoplist.New(4, 1, []uint32{5}, []uint32{2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	highMin, err := stoplist.New(3, 2, []uint32{5}, []uint32{2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		fraction float64
+		list     *stoplist.List // nil: index has no stop list
+		crc      string
+		wantErr  string
+	}{
+		{"negative fraction", -0.1, good, "", "stop_fraction"},
+		{"fraction above 1", 1.5, good, "", "stop_fraction"},
+		{"no stop list in index", 0.5, nil, "", "no stoplist"},
+		{"checksum mismatch", 0.5, good, "00000001", "checksum"},
+		{"different index", 0.5, otherIndex, "", "covers 4 tracks"},
+		{"cutoff below the list's minimum", 0.5, highMin, "", "below the list's minimum"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := fixture(t, stopFraction(tc.fraction))
+			if tc.list != nil {
+				withStoplist(t, path, tc.list, tc.crc)
+			}
+			_, err := Load(path)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("err = %v, want it to mention %q", err, tc.wantErr)
 			}

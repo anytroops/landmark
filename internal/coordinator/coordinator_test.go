@@ -21,6 +21,7 @@ import (
 	"github.com/anytroops/landmark/internal/cluster"
 	"github.com/anytroops/landmark/internal/segment"
 	"github.com/anytroops/landmark/internal/shard"
+	"github.com/anytroops/landmark/internal/stoplist"
 )
 
 // The test index: 6 global tracks over 2 partitions (partition = id mod 2).
@@ -139,6 +140,13 @@ type testCluster struct {
 
 func newTestCluster(t *testing.T, tRatio float64, opts Options) *testCluster {
 	t.Helper()
+	return newTestClusterWith(t, tRatio, opts, nil)
+}
+
+// newTestClusterWith lets configure change the cluster before the
+// coordinator starts.
+func newTestClusterWith(t *testing.T, tRatio float64, opts Options, configure func(*cluster.Cluster)) *testCluster {
+	t.Helper()
 	dir := t.TempDir()
 	tc := &testCluster{}
 	crcs := make([]uint32, nPartitions)
@@ -189,6 +197,9 @@ func newTestCluster(t *testing.T, tRatio float64, opts Options) *testCluster {
 		},
 		ExpectedCRC: crcs,
 		Catalog:     catalog,
+	}
+	if configure != nil {
+		configure(cl)
 	}
 	if opts.HealthInterval == 0 {
 		opts.HealthInterval = 50 * time.Millisecond
@@ -444,5 +455,68 @@ func TestConcurrentQueriesSurviveReplicaKill(t *testing.T) {
 	wg.Wait()
 	if failed.Load() != 0 || partial.Load() != 0 {
 		t.Errorf("with one live replica per partition: %d failed, %d partial", failed.Load(), partial.Load())
+	}
+}
+
+// withStoplist lists hashes base+from .. base+to-1 with count 100 and
+// base+to with count 7, and keeps hashes with at most 7 postings.
+func withStoplist(t *testing.T, base, from, to uint32) func(*cluster.Cluster) {
+	t.Helper()
+	var hashes, counts []uint32
+	for i := from; i < to; i++ {
+		hashes, counts = append(hashes, base+i), append(counts, 100)
+	}
+	hashes, counts = append(hashes, base+to), append(counts, 7)
+	l, err := stoplist.New(nTracks, 7, hashes, counts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func(cl *cluster.Cluster) { cl.Stop, cl.StopLimit = l, 7 }
+}
+
+func (tc *testCluster) searches() int64 {
+	var n int64
+	for p := range tc.reps {
+		for _, r := range tc.reps[p] {
+			n += r.shard.searches.Load()
+		}
+	}
+	return n
+}
+
+func TestStoplistDropsLandmarksBeforeFanOut(t *testing.T) {
+	// Track 3's query has hashes 3005..3049. Drop 3005..3019 (count 100 > 7);
+	// keep 3020 (count 7, at the limit). The shards see 30 landmarks.
+	tc := newTestClusterWith(t, 1.0, Options{}, withStoplist(t, 3000, 5, 20))
+	resp := tc.identify(t, 3)
+	top := resp.GetCandidates()[0]
+	if top.GetTrackId() != 3 || top.GetScore() != perTrack-5-15 || !resp.GetMatched() || resp.GetPartial() {
+		t.Fatalf("top = %v, matched=%v partial=%v; want track 3 scoring %d", top, resp.GetMatched(), resp.GetPartial(), perTrack-5-15)
+	}
+	if got := testutil.ToFloat64(tc.coord.metrics.stopped); got != 15 {
+		t.Errorf("landmarks_stopped_total = %v, want 15", got)
+	}
+}
+
+func TestStoplistDroppingEveryLandmarkAnswersNoMatch(t *testing.T) {
+	tc := newTestClusterWith(t, 1.0, Options{}, withStoplist(t, 1000, 5, perTrack))
+	before := tc.searches()
+	resp := tc.identify(t, 1)
+	if len(resp.GetCandidates()) != 0 || resp.GetMatched() || resp.GetPartial() || resp.GetPartitionsResponded() != nPartitions {
+		t.Fatalf("resp = %v, want a complete no-match", resp)
+	}
+	if n := tc.searches() - before; n != 0 {
+		t.Errorf("%d shard searches for a query with no landmarks left, want 0", n)
+	}
+}
+
+func TestStoplistLeavesUnlistedQueriesAlone(t *testing.T) {
+	tc := newTestClusterWith(t, 1.0, Options{}, withStoplist(t, 3000, 5, 20))
+	resp := tc.identify(t, 4) // no track-4 hash is listed
+	if top := resp.GetCandidates()[0]; top.GetTrackId() != 4 || top.GetScore() != perTrack-5 {
+		t.Fatalf("top = %v, want track 4 with the full score %d", top, perTrack-5)
+	}
+	if got := testutil.ToFloat64(tc.coord.metrics.stopped); got != 0 {
+		t.Errorf("landmarks_stopped_total = %v, want 0", got)
 	}
 }
