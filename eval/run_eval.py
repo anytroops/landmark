@@ -16,6 +16,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import Callable
 from multiprocessing import Pool
@@ -25,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 from eval.backends import LocalBackend, ShardBackend, dense_tables
-from eval.degrade import add_noise, excerpt, reencode, speed
+from eval.degrade import add_noise, excerpt, reencode, speed, stretch
 from prototype import fingerprint as fp
 from prototype.audio import DecodeError, decode
 from prototype.build_index import machine_spec
@@ -54,6 +55,23 @@ CONDITIONS: dict[str, tuple[float, Degrade]] = {
 }
 
 
+# Any tempo change by name: speed_{+x}pct_{n}s is turntable style (tempo and
+# pitch together), stretch_{+x}pct_{n}s is keylock style (tempo only).
+_SCALED = re.compile(r"(speed|stretch)_([+-]\d+(?:\.\d+)?)pct_(\d+)s")
+
+
+def condition(name: str) -> tuple[float, Degrade]:
+    """(excerpt seconds, degradation) for a named condition."""
+    if name in CONDITIONS:
+        return CONDITIONS[name]
+    m = _SCALED.fullmatch(name)
+    if m is None:
+        raise KeyError(f"unknown condition {name!r}")
+    fn = speed if m.group(1) == "speed" else stretch
+    factor = 1 + float(m.group(2)) / 100
+    return float(m.group(3)), lambda x, r: fn(x, factor)
+
+
 def _work(job: tuple[int, str, int, int, str, list[str], int]) -> list[dict[str, object]]:
     fma_id, label, rep, seed, subset, conds, shifts = job
     try:
@@ -62,7 +80,7 @@ def _work(job: tuple[int, str, int, int, str, list[str], int]) -> list[dict[str,
         return [{"fma_id": fma_id, "label": label, "rep": rep, "error": str(e)}]
     rows = []
     for ci, name in enumerate(conds):
-        secs, degrade = CONDITIONS[name]
+        secs, degrade = condition(name)
         start_rng = np.random.default_rng([seed, fma_id, rep, int(secs * 1000)])
         try:
             clip, start = excerpt(pcm, secs, start_rng)
@@ -100,7 +118,11 @@ def main() -> None:
         help="stop list cutoffs to evaluate, as fractions of catalog tracks (0 = off, D30)",
     )  # fmt: skip
     ap.add_argument("--stoplist", type=Path, help="stoplist.lmst of the searched index")
+    ap.add_argument("--positives-only", action="store_true",
+                    help="skip never-indexed queries (for curves that need no FAR)")  # fmt: skip
     args = ap.parse_args()
+    for name in args.conditions:
+        condition(name)  # fail fast on a typo, before any decoding
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     manifest = json.loads(args.manifest.read_text())
@@ -126,11 +148,12 @@ def main() -> None:
         (f, "pos", 0, args.seed, subset, args.conditions, args.query_shifts)
         for f in manifest[f"{args.split}_pos"][:lim]
     ]
-    jobs += [
-        (f, "neg", r, args.seed, subset, args.conditions, args.query_shifts)
-        for f in manifest[f"{args.split}_neg"][:lim]
-        for r in range(NEG_REPS)
-    ]
+    if not args.positives_only:
+        jobs += [
+            (f, "neg", r, args.seed, subset, args.conditions, args.query_shifts)
+            for f in manifest[f"{args.split}_neg"][:lim]
+            for r in range(NEG_REPS)
+        ]
 
     out_rows: dict[float, list[dict[str, object]]] = {f: [] for f in limits}
     search_secs = dict.fromkeys(limits, 0.0)
@@ -179,6 +202,7 @@ def main() -> None:
             "split": args.split, "seed": args.seed, "manifest": args.manifest.name,
             "conditions": args.conditions, "limit": args.limit,
             "query_shifts": args.query_shifts, "tag": tag,
+            "positives_only": args.positives_only,
             "stop_fraction": f, "stop_limit": limit,
             "stoplist": (f"{args.stoplist} crc32c {stop.crc:08x}" if stop is not None else None),
             "backend": f"shard {args.shard}" if args.shard else "python",

@@ -1,5 +1,8 @@
 """Query degradations: excerpting, additive noise, MP3 re-encode, speed change."""
 
+from fractions import Fraction
+
+import librosa
 import numpy as np
 from scipy.signal import resample_poly
 
@@ -45,7 +48,19 @@ def reencode(pcm: np.ndarray, bitrate: str) -> np.ndarray:
 
 
 def speed(pcm: np.ndarray, factor: float) -> np.ndarray:
-    """Turntable-style speed change: tempo and pitch both scale by `factor`."""
-    up = 1000
-    down = int(round(up * factor))
-    return resample_poly(pcm, up, down).astype(np.float32)
+    """Turntable-style speed change: tempo and pitch both scale by `factor`.
+
+    Resamples by the exact ratio 1/factor (to 1 part in 10,000); for the
+    +/-2% conditions this is the same 50/51 and 50/49 as before.
+    """
+    ratio = Fraction(factor).limit_denominator(10_000)
+    return resample_poly(pcm, ratio.denominator, ratio.numerator).astype(np.float32)
+
+
+def stretch(pcm: np.ndarray, factor: float) -> np.ndarray:
+    """Keylock-style speed change: tempo scales by `factor`, pitch stays.
+
+    Phase-vocoder time stretch, as DJ software does with key lock on (with
+    more artifacts than commercial stretchers).
+    """
+    return librosa.effects.time_stretch(pcm.astype(np.float32), rate=factor).astype(np.float32)
