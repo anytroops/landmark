@@ -1,0 +1,38 @@
+{
+  "split": "test",
+  "seed": 0,
+  "manifest": "splits_medium_seed0.json",
+  "conditions": [
+    "clean_10s",
+    "clean_5s",
+    "white_snr15_10s",
+    "white_snr10_10s",
+    "white_snr5_10s",
+    "white_snr0_10s",
+    "white_snr5_5s",
+    "mp3_128k_10s",
+    "mp3_64k_10s",
+    "speed_+2pct_10s",
+    "speed_-2pct_10s"
+  ],
+  "limit": 0,
+  "query_shifts": 4,
+  "tag": "_medium_d30_stop0.01",
+  "stop_fraction": 0.01,
+  "stop_limit": 239,
+  "stoplist": "data/segments/medium/p1/stoplist.lmst crc32c 10c8a1c6",
+  "backend": "shard 127.0.0.1:7201",
+  "backend_retries": 0,
+  "rows": 22000,
+  "wall_seconds": 965.9,
+  "mean_search_ms": 6.755,
+  "machine": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu": "Apple M4 Pro",
+    "cores": 12,
+    "python": "3.13.5",
+    "commit": "8d50412",
+    "power": "ac",
+    "dirty": false
+  }
+}

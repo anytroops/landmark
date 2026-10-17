@@ -16,7 +16,9 @@ RES = Path(__file__).resolve().parent / "results"
 
 def accepted_correct(tag: str, seed: int) -> pd.Series:
     d = pd.read_csv(RES / f"queries_test_seed{seed}{tag}.csv.gz")
-    d = d[d["error"].isna() & (d["label"] == "pos")]
+    if "error" in d.columns:  # only present when some query failed to decode
+        d = d[d["error"].isna()]
+    d = d[d["label"] == "pos"]
     th = json.loads((RES / f"summary_seed{seed}{tag}.json").read_text())["thresholds"]
     ok = (
         (d["top1_score"] >= th["t_abs"])
