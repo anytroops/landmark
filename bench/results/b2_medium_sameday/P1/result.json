@@ -1,0 +1,94 @@
+{
+ "partitions": 1,
+ "stop_fraction": 0.0,
+ "max_qps_under_slo": 550,
+ "slo_p99_ms": 100,
+ "slo_min_success": 0.999,
+ "rule": "median of reps (D29)",
+ "confirm_median": {
+  "p99_ms": 86.175,
+  "success_rate": 1
+ },
+ "probes": [
+  {
+   "tag": "probe",
+   "rate": 400.0,
+   "pass": true,
+   "p99_ms": 39.016,
+   "p50_ms": 14.985,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 1000.0,
+   "pass": false,
+   "p99_ms": 196.964,
+   "p50_ms": 135.074,
+   "success": 0.5552666666666667
+  },
+  {
+   "tag": "probe",
+   "rate": 700,
+   "pass": false,
+   "p99_ms": 195.055,
+   "p50_ms": 136.739,
+   "success": 0.8094285714285714
+  },
+  {
+   "tag": "probe",
+   "rate": 550,
+   "pass": true,
+   "p99_ms": 74.486,
+   "p50_ms": 20.726,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 625,
+   "pass": false,
+   "p99_ms": 188.402,
+   "p50_ms": 134.424,
+   "success": 0.9125866666666667
+  },
+  {
+   "tag": "probe",
+   "rate": 588,
+   "pass": false,
+   "p99_ms": 177.821,
+   "p50_ms": 127.498,
+   "success": 0.9805272108843538
+  },
+  {
+   "tag": "probe",
+   "rate": 569,
+   "pass": false,
+   "p99_ms": 106.388,
+   "p50_ms": 31.199,
+   "success": 1
+  },
+  {
+   "tag": "confirm_rep0",
+   "rate": 550,
+   "pass": true,
+   "p99_ms": 84.721,
+   "p50_ms": 21.28,
+   "success": 1
+  },
+  {
+   "tag": "confirm_rep1",
+   "rate": 550,
+   "pass": true,
+   "p99_ms": 86.175,
+   "p50_ms": 20.946,
+   "success": 1
+  },
+  {
+   "tag": "confirm_rep2",
+   "rate": 550,
+   "pass": false,
+   "p99_ms": 113.294,
+   "p50_ms": 20.535,
+   "success": 0.9998939393939394
+  }
+ ]
+}

@@ -198,15 +198,15 @@ Complete answers were 100% in every run except one P=1 run at 550 qps (99.95%) a
 
 ## B2 with the stop list (D30), fma_medium, P=1 (Phase 4)
 
-Same harness and SLO as B2 (bisect with 60 s probes, confirm with 3 x 120 s runs, median rule D29), coordinator `stop_fraction` 0.02 and 0.04, P=1, commit e43d1ea, every run at "100%; charged". Raw: `bench/results/b2_medium_stop{0.02,0.04}/P1/`. Accuracy per cutoff is in EVAL.md (stop list section).
+Same harness and SLO as B2 (bisect with 60 s probes, confirm with 3 x 120 s runs, median rule D29), coordinator `stop_fraction` 0.02 and 0.04, P=1, every run at "100%; charged". The baseline (stop list off) was rerun in the same session right after, so the ratios compare like with like. Commits e43d1ea (stop list) and 33e9ca1 (baseline; docs and results only in between). Raw: `bench/results/b2_medium_stop{0.02,0.04}/P1/`, `bench/results/b2_medium_sameday/P1/`. Accuracy per cutoff is in EVAL.md (stop list section).
 
 | Stop list | Max sustainable | p50 at that rate (each run) | p99 (each run) | Postings scanned per query, clean 10 s (median) | SNR 0 dB accuracy |
 |---|---|---|---|---|---|
-| off (B2 above) | 550 qps | 22.8, 22.7, 26.9 ms | 67, 69, 153 ms | 689k | 97.1% |
+| off (same session) | 550 qps | 21.3, 20.9, 20.5 ms | 85, 86, 113 ms | 689k | 97.1% |
 | 4% of tracks | **719 qps** | 15.7, 15.8, 15.0 ms | 85, 113, 33 ms | 524k | 95.5% |
 | 2% of tracks | **925 qps** | 11.5, 11.7, 10.8 ms | 90, 142, 45 ms | 388k | 94.4% |
 
-- Throughput rises 1.3x at 4% and 1.7x at 2%, roughly in line with the drop in postings scanned (24% and 44%): vote sorting is the main per-query cost. The baseline was measured in an earlier session, and P=1's limit varies about 5 to 10% between sessions, so the ratios carry about that much uncertainty.
+- Throughput rises 1.3x at 4% and 1.7x at 2% against the same-session baseline, roughly in line with the drop in postings scanned (24% and 44%): vote sorting is the main per-query cost. The same-session baseline confirmed 550 qps, the same rate as the first B2 run a day earlier.
 - At the same load latency falls too: at 400 qps (60 s probes) p50 / p99 were 9.6 / 12.7 ms at 2% and 12.2 / 20.7 ms at 4%, against 15.5 / 38.2 ms at 412 qps with the stop list off (B1).
 - Each confirmed rate is again at the edge (one of three runs breached p99 at each), as with every B2 point.
 - The price is accuracy in heavy noise (EVAL.md); clean and compressed audio are unchanged. Which cutoff to run by default is a product choice; the coordinator default stays off.
