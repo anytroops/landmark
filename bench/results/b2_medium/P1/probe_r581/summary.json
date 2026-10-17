@@ -1,0 +1,1314 @@
+{
+  "config": {
+    "target": "127.0.0.1:7600",
+    "queries": "data/queries/medium_test_10s_seed0.gob",
+    "rate_qps": 581,
+    "duration_ns": 60000000000,
+    "warmup_ns": 10000000000,
+    "poisson": false,
+    "timeout_ns": 1000000000,
+    "max_in_flight": 20000,
+    "conns": 4,
+    "seed": 1,
+    "label": "B2 single-host bare metal, P=1 RF=1, SLO p99\u003c=100 ms and success\u003e=0.999",
+    "event_at_ns": 0,
+    "event_cmd": ""
+  },
+  "machine": {
+    "commit": "1479a69",
+    "cores": "12",
+    "cpu": "Apple M4 Pro",
+    "dirty": "false",
+    "go": "go1.27.2",
+    "os": "darwin/arm64",
+    "power": "ac"
+  },
+  "measured": {
+    "count": 34860,
+    "ok": 33975,
+    "partial": 0,
+    "dropped": 0,
+    "codes": {
+      "DeadlineExceeded": 96,
+      "OK": 33975,
+      "Unavailable": 789
+    },
+    "success_rate": 0.9746127366609294,
+    "correct_rate": 0.9715720022948938,
+    "p50_ms": 129.69,
+    "p90_ms": 153.204,
+    "p99_ms": 183.149,
+    "p999_ms": 214.395,
+    "max_ms": 257.987
+  },
+  "timeline": [
+    {
+      "start_s": 0,
+      "count": 582,
+      "ok": 582,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 582
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9845360824742269,
+      "p50_ms": 24.575,
+      "p90_ms": 43.719,
+      "p99_ms": 63.465,
+      "p999_ms": 79.012,
+      "max_ms": 79.012
+    },
+    {
+      "start_s": 1,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9982788296041308,
+      "p50_ms": 26.459,
+      "p90_ms": 48.495,
+      "p99_ms": 67.81,
+      "p999_ms": 82.253,
+      "max_ms": 82.253
+    },
+    {
+      "start_s": 2,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9982788296041308,
+      "p50_ms": 42.551,
+      "p90_ms": 68.082,
+      "p99_ms": 91.64,
+      "p999_ms": 108.897,
+      "max_ms": 108.897
+    },
+    {
+      "start_s": 3,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 1,
+      "p50_ms": 22.62,
+      "p90_ms": 39.896,
+      "p99_ms": 62.708,
+      "p999_ms": 80.242,
+      "max_ms": 80.242
+    },
+    {
+      "start_s": 4,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9948364888123924,
+      "p50_ms": 35.245,
+      "p90_ms": 60.705,
+      "p99_ms": 84.925,
+      "p999_ms": 96.739,
+      "max_ms": 96.739
+    },
+    {
+      "start_s": 5,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9982788296041308,
+      "p50_ms": 69.078,
+      "p90_ms": 96.7,
+      "p99_ms": 121.804,
+      "p999_ms": 143.477,
+      "max_ms": 143.477
+    },
+    {
+      "start_s": 6,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9965576592082617,
+      "p50_ms": 98.266,
+      "p90_ms": 121.724,
+      "p99_ms": 149.1,
+      "p999_ms": 185.737,
+      "max_ms": 185.737
+    },
+    {
+      "start_s": 7,
+      "count": 581,
+      "ok": 580,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 580
+      },
+      "success_rate": 0.9982788296041308,
+      "correct_rate": 0.9965576592082617,
+      "p50_ms": 119.248,
+      "p90_ms": 138.18,
+      "p99_ms": 155.842,
+      "p999_ms": 206.129,
+      "max_ms": 206.129
+    },
+    {
+      "start_s": 8,
+      "count": 581,
+      "ok": 571,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 10,
+        "OK": 571
+      },
+      "success_rate": 0.9827882960413081,
+      "correct_rate": 0.9810671256454389,
+      "p50_ms": 126.151,
+      "p90_ms": 164.064,
+      "p99_ms": 203.375,
+      "p999_ms": 205.242,
+      "max_ms": 205.242
+    },
+    {
+      "start_s": 9,
+      "count": 581,
+      "ok": 564,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 564,
+        "Unavailable": 16
+      },
+      "success_rate": 0.9707401032702238,
+      "correct_rate": 0.963855421686747,
+      "p50_ms": 129.691,
+      "p90_ms": 150.325,
+      "p99_ms": 176.453,
+      "p999_ms": 200.648,
+      "max_ms": 200.648
+    },
+    {
+      "start_s": 10,
+      "count": 581,
+      "ok": 551,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 3,
+        "OK": 551,
+        "Unavailable": 27
+      },
+      "success_rate": 0.9483648881239243,
+      "correct_rate": 0.9449225473321858,
+      "p50_ms": 132.317,
+      "p90_ms": 154.269,
+      "p99_ms": 197.283,
+      "p999_ms": 202.641,
+      "max_ms": 202.641
+    },
+    {
+      "start_s": 11,
+      "count": 581,
+      "ok": 557,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 557,
+        "Unavailable": 23
+      },
+      "success_rate": 0.9586919104991394,
+      "correct_rate": 0.9518072289156626,
+      "p50_ms": 129.777,
+      "p90_ms": 151.699,
+      "p99_ms": 182.974,
+      "p999_ms": 201.175,
+      "max_ms": 201.175
+    },
+    {
+      "start_s": 12,
+      "count": 581,
+      "ok": 579,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 579,
+        "Unavailable": 1
+      },
+      "success_rate": 0.9965576592082617,
+      "correct_rate": 0.9913941480206541,
+      "p50_ms": 124.56,
+      "p90_ms": 145.386,
+      "p99_ms": 176.161,
+      "p999_ms": 201.937,
+      "max_ms": 201.937
+    },
+    {
+      "start_s": 13,
+      "count": 581,
+      "ok": 543,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 3,
+        "OK": 543,
+        "Unavailable": 35
+      },
+      "success_rate": 0.9345955249569707,
+      "correct_rate": 0.9328743545611016,
+      "p50_ms": 138.263,
+      "p90_ms": 162.927,
+      "p99_ms": 202.464,
+      "p999_ms": 214.395,
+      "max_ms": 214.395
+    },
+    {
+      "start_s": 14,
+      "count": 581,
+      "ok": 565,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 565,
+        "Unavailable": 16
+      },
+      "success_rate": 0.9724612736660929,
+      "correct_rate": 0.9690189328743546,
+      "p50_ms": 136.728,
+      "p90_ms": 159.765,
+      "p99_ms": 191.747,
+      "p999_ms": 205.799,
+      "max_ms": 205.799
+    },
+    {
+      "start_s": 15,
+      "count": 581,
+      "ok": 565,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 565,
+        "Unavailable": 15
+      },
+      "success_rate": 0.9724612736660929,
+      "correct_rate": 0.9724612736660929,
+      "p50_ms": 131.129,
+      "p90_ms": 152.067,
+      "p99_ms": 180.351,
+      "p999_ms": 204.529,
+      "max_ms": 204.529
+    },
+    {
+      "start_s": 16,
+      "count": 581,
+      "ok": 571,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 571,
+        "Unavailable": 10
+      },
+      "success_rate": 0.9827882960413081,
+      "correct_rate": 0.9793459552495697,
+      "p50_ms": 130.862,
+      "p90_ms": 149.009,
+      "p99_ms": 167.312,
+      "p999_ms": 189.14,
+      "max_ms": 189.14
+    },
+    {
+      "start_s": 17,
+      "count": 581,
+      "ok": 562,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 562,
+        "Unavailable": 19
+      },
+      "success_rate": 0.9672977624784854,
+      "correct_rate": 0.9655765920826161,
+      "p50_ms": 131.521,
+      "p90_ms": 153.623,
+      "p99_ms": 171.653,
+      "p999_ms": 187.598,
+      "max_ms": 187.598
+    },
+    {
+      "start_s": 18,
+      "count": 581,
+      "ok": 564,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 564,
+        "Unavailable": 17
+      },
+      "success_rate": 0.9707401032702238,
+      "correct_rate": 0.9690189328743546,
+      "p50_ms": 131.444,
+      "p90_ms": 150.754,
+      "p99_ms": 173.506,
+      "p999_ms": 197.528,
+      "max_ms": 197.528
+    },
+    {
+      "start_s": 19,
+      "count": 581,
+      "ok": 579,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 579,
+        "Unavailable": 2
+      },
+      "success_rate": 0.9965576592082617,
+      "correct_rate": 0.9896729776247849,
+      "p50_ms": 120.353,
+      "p90_ms": 140.225,
+      "p99_ms": 160.817,
+      "p999_ms": 171,
+      "max_ms": 171
+    },
+    {
+      "start_s": 20,
+      "count": 581,
+      "ok": 567,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 567,
+        "Unavailable": 14
+      },
+      "success_rate": 0.9759036144578314,
+      "correct_rate": 0.9724612736660929,
+      "p50_ms": 132.092,
+      "p90_ms": 154.046,
+      "p99_ms": 181.282,
+      "p999_ms": 191.536,
+      "max_ms": 191.536
+    },
+    {
+      "start_s": 21,
+      "count": 581,
+      "ok": 570,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 570,
+        "Unavailable": 11
+      },
+      "success_rate": 0.9810671256454389,
+      "correct_rate": 0.9810671256454389,
+      "p50_ms": 126.746,
+      "p90_ms": 145.306,
+      "p99_ms": 164.267,
+      "p999_ms": 207.608,
+      "max_ms": 207.608
+    },
+    {
+      "start_s": 22,
+      "count": 581,
+      "ok": 547,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 547,
+        "Unavailable": 33
+      },
+      "success_rate": 0.9414802065404475,
+      "correct_rate": 0.9397590361445783,
+      "p50_ms": 131.833,
+      "p90_ms": 155.474,
+      "p99_ms": 178.277,
+      "p999_ms": 202.885,
+      "max_ms": 202.885
+    },
+    {
+      "start_s": 23,
+      "count": 581,
+      "ok": 572,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 572,
+        "Unavailable": 9
+      },
+      "success_rate": 0.9845094664371773,
+      "correct_rate": 0.9827882960413081,
+      "p50_ms": 126.302,
+      "p90_ms": 147.873,
+      "p99_ms": 178.501,
+      "p999_ms": 185.538,
+      "max_ms": 185.538
+    },
+    {
+      "start_s": 24,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 1,
+      "p50_ms": 116.236,
+      "p90_ms": 138.549,
+      "p99_ms": 153.8,
+      "p999_ms": 172.972,
+      "max_ms": 172.972
+    },
+    {
+      "start_s": 25,
+      "count": 581,
+      "ok": 570,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 570,
+        "Unavailable": 11
+      },
+      "success_rate": 0.9810671256454389,
+      "correct_rate": 0.9793459552495697,
+      "p50_ms": 126.577,
+      "p90_ms": 148.602,
+      "p99_ms": 179.705,
+      "p999_ms": 195.655,
+      "max_ms": 195.655
+    },
+    {
+      "start_s": 26,
+      "count": 581,
+      "ok": 577,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 577,
+        "Unavailable": 4
+      },
+      "success_rate": 0.9931153184165232,
+      "correct_rate": 0.9913941480206541,
+      "p50_ms": 129.23,
+      "p90_ms": 155.037,
+      "p99_ms": 183.987,
+      "p999_ms": 194.479,
+      "max_ms": 194.479
+    },
+    {
+      "start_s": 27,
+      "count": 581,
+      "ok": 556,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 556,
+        "Unavailable": 24
+      },
+      "success_rate": 0.9569707401032702,
+      "correct_rate": 0.9535283993115319,
+      "p50_ms": 133.976,
+      "p90_ms": 157.651,
+      "p99_ms": 182.799,
+      "p999_ms": 200.772,
+      "max_ms": 200.772
+    },
+    {
+      "start_s": 28,
+      "count": 581,
+      "ok": 557,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 557,
+        "Unavailable": 24
+      },
+      "success_rate": 0.9586919104991394,
+      "correct_rate": 0.9535283993115319,
+      "p50_ms": 134.642,
+      "p90_ms": 160.662,
+      "p99_ms": 188.061,
+      "p999_ms": 215.621,
+      "max_ms": 215.621
+    },
+    {
+      "start_s": 29,
+      "count": 581,
+      "ok": 565,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 565,
+        "Unavailable": 16
+      },
+      "success_rate": 0.9724612736660929,
+      "correct_rate": 0.9707401032702238,
+      "p50_ms": 129.48,
+      "p90_ms": 149.723,
+      "p99_ms": 176.239,
+      "p999_ms": 199.666,
+      "max_ms": 199.666
+    },
+    {
+      "start_s": 30,
+      "count": 581,
+      "ok": 578,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 578,
+        "Unavailable": 3
+      },
+      "success_rate": 0.9948364888123924,
+      "correct_rate": 0.9896729776247849,
+      "p50_ms": 127.505,
+      "p90_ms": 147.59,
+      "p99_ms": 169.598,
+      "p999_ms": 197.529,
+      "max_ms": 197.529
+    },
+    {
+      "start_s": 31,
+      "count": 581,
+      "ok": 575,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 575,
+        "Unavailable": 6
+      },
+      "success_rate": 0.9896729776247849,
+      "correct_rate": 0.9862306368330465,
+      "p50_ms": 127.888,
+      "p90_ms": 149.738,
+      "p99_ms": 167.484,
+      "p999_ms": 191.279,
+      "max_ms": 191.279
+    },
+    {
+      "start_s": 32,
+      "count": 581,
+      "ok": 570,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 570,
+        "Unavailable": 11
+      },
+      "success_rate": 0.9810671256454389,
+      "correct_rate": 0.9741824440619621,
+      "p50_ms": 130.971,
+      "p90_ms": 149.276,
+      "p99_ms": 167.643,
+      "p999_ms": 187.192,
+      "max_ms": 187.192
+    },
+    {
+      "start_s": 33,
+      "count": 581,
+      "ok": 580,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 580
+      },
+      "success_rate": 0.9982788296041308,
+      "correct_rate": 0.9965576592082617,
+      "p50_ms": 130.335,
+      "p90_ms": 155.425,
+      "p99_ms": 177.966,
+      "p999_ms": 208.653,
+      "max_ms": 208.653
+    },
+    {
+      "start_s": 34,
+      "count": 581,
+      "ok": 580,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 580,
+        "Unavailable": 1
+      },
+      "success_rate": 0.9982788296041308,
+      "correct_rate": 0.9913941480206541,
+      "p50_ms": 126.175,
+      "p90_ms": 151.6,
+      "p99_ms": 179.557,
+      "p999_ms": 192.082,
+      "max_ms": 192.082
+    },
+    {
+      "start_s": 35,
+      "count": 581,
+      "ok": 568,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 568,
+        "Unavailable": 13
+      },
+      "success_rate": 0.9776247848537005,
+      "correct_rate": 0.9741824440619621,
+      "p50_ms": 131.594,
+      "p90_ms": 153.706,
+      "p99_ms": 174.895,
+      "p999_ms": 189.776,
+      "max_ms": 189.776
+    },
+    {
+      "start_s": 36,
+      "count": 581,
+      "ok": 563,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 563,
+        "Unavailable": 18
+      },
+      "success_rate": 0.9690189328743546,
+      "correct_rate": 0.9690189328743546,
+      "p50_ms": 133.048,
+      "p90_ms": 150.783,
+      "p99_ms": 169.307,
+      "p999_ms": 196.953,
+      "max_ms": 196.953
+    },
+    {
+      "start_s": 37,
+      "count": 581,
+      "ok": 556,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 556,
+        "Unavailable": 24
+      },
+      "success_rate": 0.9569707401032702,
+      "correct_rate": 0.955249569707401,
+      "p50_ms": 129.962,
+      "p90_ms": 151.507,
+      "p99_ms": 174.666,
+      "p999_ms": 206.711,
+      "max_ms": 206.711
+    },
+    {
+      "start_s": 38,
+      "count": 581,
+      "ok": 573,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 573,
+        "Unavailable": 8
+      },
+      "success_rate": 0.9862306368330465,
+      "correct_rate": 0.9845094664371773,
+      "p50_ms": 128.905,
+      "p90_ms": 151.941,
+      "p99_ms": 171.622,
+      "p999_ms": 193.533,
+      "max_ms": 193.533
+    },
+    {
+      "start_s": 39,
+      "count": 581,
+      "ok": 565,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 565,
+        "Unavailable": 15
+      },
+      "success_rate": 0.9724612736660929,
+      "correct_rate": 0.9690189328743546,
+      "p50_ms": 133.65,
+      "p90_ms": 157.305,
+      "p99_ms": 184.04,
+      "p999_ms": 213.199,
+      "max_ms": 213.199
+    },
+    {
+      "start_s": 40,
+      "count": 581,
+      "ok": 562,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 562,
+        "Unavailable": 19
+      },
+      "success_rate": 0.9672977624784854,
+      "correct_rate": 0.963855421686747,
+      "p50_ms": 136.578,
+      "p90_ms": 156.53,
+      "p99_ms": 177.393,
+      "p999_ms": 188.903,
+      "max_ms": 188.903
+    },
+    {
+      "start_s": 41,
+      "count": 581,
+      "ok": 557,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 557,
+        "Unavailable": 24
+      },
+      "success_rate": 0.9586919104991394,
+      "correct_rate": 0.955249569707401,
+      "p50_ms": 133.067,
+      "p90_ms": 154.052,
+      "p99_ms": 175.929,
+      "p999_ms": 196.574,
+      "max_ms": 196.574
+    },
+    {
+      "start_s": 42,
+      "count": 581,
+      "ok": 570,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 570,
+        "Unavailable": 11
+      },
+      "success_rate": 0.9810671256454389,
+      "correct_rate": 0.9793459552495697,
+      "p50_ms": 132.345,
+      "p90_ms": 155.078,
+      "p99_ms": 182.218,
+      "p999_ms": 192.934,
+      "max_ms": 192.934
+    },
+    {
+      "start_s": 43,
+      "count": 581,
+      "ok": 560,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 2,
+        "OK": 560,
+        "Unavailable": 19
+      },
+      "success_rate": 0.963855421686747,
+      "correct_rate": 0.9569707401032702,
+      "p50_ms": 129.138,
+      "p90_ms": 144.739,
+      "p99_ms": 169.275,
+      "p999_ms": 200.776,
+      "max_ms": 200.776
+    },
+    {
+      "start_s": 44,
+      "count": 581,
+      "ok": 577,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 577,
+        "Unavailable": 4
+      },
+      "success_rate": 0.9931153184165232,
+      "correct_rate": 0.9896729776247849,
+      "p50_ms": 128.191,
+      "p90_ms": 152.678,
+      "p99_ms": 172.81,
+      "p999_ms": 187.893,
+      "max_ms": 187.893
+    },
+    {
+      "start_s": 45,
+      "count": 581,
+      "ok": 561,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 561,
+        "Unavailable": 20
+      },
+      "success_rate": 0.9655765920826161,
+      "correct_rate": 0.963855421686747,
+      "p50_ms": 132.991,
+      "p90_ms": 155.464,
+      "p99_ms": 175.63,
+      "p999_ms": 196.465,
+      "max_ms": 196.465
+    },
+    {
+      "start_s": 46,
+      "count": 581,
+      "ok": 532,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 31,
+        "OK": 532,
+        "Unavailable": 18
+      },
+      "success_rate": 0.9156626506024096,
+      "correct_rate": 0.9139414802065404,
+      "p50_ms": 136.474,
+      "p90_ms": 177.999,
+      "p99_ms": 213.51,
+      "p999_ms": 225.503,
+      "max_ms": 225.503
+    },
+    {
+      "start_s": 47,
+      "count": 581,
+      "ok": 573,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 573,
+        "Unavailable": 8
+      },
+      "success_rate": 0.9862306368330465,
+      "correct_rate": 0.9827882960413081,
+      "p50_ms": 131.765,
+      "p90_ms": 152.298,
+      "p99_ms": 169.863,
+      "p999_ms": 180.413,
+      "max_ms": 180.413
+    },
+    {
+      "start_s": 48,
+      "count": 581,
+      "ok": 557,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 2,
+        "OK": 557,
+        "Unavailable": 22
+      },
+      "success_rate": 0.9586919104991394,
+      "correct_rate": 0.9518072289156626,
+      "p50_ms": 132.003,
+      "p90_ms": 154.259,
+      "p99_ms": 179.607,
+      "p999_ms": 200.582,
+      "max_ms": 200.582
+    },
+    {
+      "start_s": 49,
+      "count": 581,
+      "ok": 551,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 551,
+        "Unavailable": 30
+      },
+      "success_rate": 0.9483648881239243,
+      "correct_rate": 0.9449225473321858,
+      "p50_ms": 129.738,
+      "p90_ms": 151.293,
+      "p99_ms": 170.569,
+      "p999_ms": 190.709,
+      "max_ms": 190.709
+    },
+    {
+      "start_s": 50,
+      "count": 581,
+      "ok": 573,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 573,
+        "Unavailable": 7
+      },
+      "success_rate": 0.9862306368330465,
+      "correct_rate": 0.9827882960413081,
+      "p50_ms": 129.778,
+      "p90_ms": 155.119,
+      "p99_ms": 190.663,
+      "p999_ms": 216.715,
+      "max_ms": 216.715
+    },
+    {
+      "start_s": 51,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9982788296041308,
+      "p50_ms": 126.135,
+      "p90_ms": 143.587,
+      "p99_ms": 160.757,
+      "p999_ms": 167.648,
+      "max_ms": 167.648
+    },
+    {
+      "start_s": 52,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9982788296041308,
+      "p50_ms": 126.375,
+      "p90_ms": 146.793,
+      "p99_ms": 172.854,
+      "p999_ms": 194.74,
+      "max_ms": 194.74
+    },
+    {
+      "start_s": 53,
+      "count": 581,
+      "ok": 572,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 572,
+        "Unavailable": 9
+      },
+      "success_rate": 0.9845094664371773,
+      "correct_rate": 0.9810671256454389,
+      "p50_ms": 121.053,
+      "p90_ms": 144.951,
+      "p99_ms": 174.393,
+      "p999_ms": 189.466,
+      "max_ms": 189.466
+    },
+    {
+      "start_s": 54,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9948364888123924,
+      "p50_ms": 110.043,
+      "p90_ms": 128.127,
+      "p99_ms": 154.302,
+      "p999_ms": 194.284,
+      "max_ms": 194.284
+    },
+    {
+      "start_s": 55,
+      "count": 581,
+      "ok": 557,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 3,
+        "OK": 557,
+        "Unavailable": 21
+      },
+      "success_rate": 0.9586919104991394,
+      "correct_rate": 0.9586919104991394,
+      "p50_ms": 138.165,
+      "p90_ms": 165.011,
+      "p99_ms": 197.769,
+      "p999_ms": 207.095,
+      "max_ms": 207.095
+    },
+    {
+      "start_s": 56,
+      "count": 581,
+      "ok": 554,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 554,
+        "Unavailable": 27
+      },
+      "success_rate": 0.9535283993115319,
+      "correct_rate": 0.9518072289156626,
+      "p50_ms": 132.68,
+      "p90_ms": 154.32,
+      "p99_ms": 176.533,
+      "p999_ms": 214.541,
+      "max_ms": 214.541
+    },
+    {
+      "start_s": 57,
+      "count": 581,
+      "ok": 573,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 573,
+        "Unavailable": 8
+      },
+      "success_rate": 0.9862306368330465,
+      "correct_rate": 0.9810671256454389,
+      "p50_ms": 129.655,
+      "p90_ms": 152.64,
+      "p99_ms": 175.993,
+      "p999_ms": 182.524,
+      "max_ms": 182.524
+    },
+    {
+      "start_s": 58,
+      "count": 581,
+      "ok": 572,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 572,
+        "Unavailable": 9
+      },
+      "success_rate": 0.9845094664371773,
+      "correct_rate": 0.9810671256454389,
+      "p50_ms": 130.825,
+      "p90_ms": 150.247,
+      "p99_ms": 165.643,
+      "p999_ms": 177.77,
+      "max_ms": 177.77
+    },
+    {
+      "start_s": 59,
+      "count": 581,
+      "ok": 567,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 567,
+        "Unavailable": 14
+      },
+      "success_rate": 0.9759036144578314,
+      "correct_rate": 0.9741824440619621,
+      "p50_ms": 129.825,
+      "p90_ms": 153.243,
+      "p99_ms": 174.612,
+      "p999_ms": 191.742,
+      "max_ms": 191.742
+    },
+    {
+      "start_s": 60,
+      "count": 581,
+      "ok": 576,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 576,
+        "Unavailable": 5
+      },
+      "success_rate": 0.9913941480206541,
+      "correct_rate": 0.9879518072289156,
+      "p50_ms": 116.037,
+      "p90_ms": 137.436,
+      "p99_ms": 172.575,
+      "p999_ms": 186.36,
+      "max_ms": 186.36
+    },
+    {
+      "start_s": 61,
+      "count": 581,
+      "ok": 565,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 565,
+        "Unavailable": 16
+      },
+      "success_rate": 0.9724612736660929,
+      "correct_rate": 0.9690189328743546,
+      "p50_ms": 138.194,
+      "p90_ms": 164.111,
+      "p99_ms": 192.928,
+      "p999_ms": 202.971,
+      "max_ms": 202.971
+    },
+    {
+      "start_s": 62,
+      "count": 581,
+      "ok": 551,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 3,
+        "OK": 551,
+        "Unavailable": 27
+      },
+      "success_rate": 0.9483648881239243,
+      "correct_rate": 0.9449225473321858,
+      "p50_ms": 133.134,
+      "p90_ms": 154.218,
+      "p99_ms": 192.348,
+      "p999_ms": 205.463,
+      "max_ms": 205.463
+    },
+    {
+      "start_s": 63,
+      "count": 581,
+      "ok": 563,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 4,
+        "OK": 563,
+        "Unavailable": 14
+      },
+      "success_rate": 0.9690189328743546,
+      "correct_rate": 0.9672977624784854,
+      "p50_ms": 136.459,
+      "p90_ms": 167.527,
+      "p99_ms": 198.298,
+      "p999_ms": 204.805,
+      "max_ms": 204.805
+    },
+    {
+      "start_s": 64,
+      "count": 581,
+      "ok": 564,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 564,
+        "Unavailable": 17
+      },
+      "success_rate": 0.9707401032702238,
+      "correct_rate": 0.9672977624784854,
+      "p50_ms": 135.839,
+      "p90_ms": 156.859,
+      "p99_ms": 177.181,
+      "p999_ms": 188.18,
+      "max_ms": 188.18
+    },
+    {
+      "start_s": 65,
+      "count": 581,
+      "ok": 537,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 32,
+        "OK": 537,
+        "Unavailable": 12
+      },
+      "success_rate": 0.9242685025817556,
+      "correct_rate": 0.9225473321858864,
+      "p50_ms": 134.287,
+      "p90_ms": 192.1,
+      "p99_ms": 234.569,
+      "p999_ms": 257.987,
+      "max_ms": 257.987
+    },
+    {
+      "start_s": 66,
+      "count": 581,
+      "ok": 574,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 3,
+        "OK": 574,
+        "Unavailable": 4
+      },
+      "success_rate": 0.9879518072289156,
+      "correct_rate": 0.9845094664371773,
+      "p50_ms": 123.486,
+      "p90_ms": 141.797,
+      "p99_ms": 162.67,
+      "p999_ms": 214.91,
+      "max_ms": 214.91
+    },
+    {
+      "start_s": 67,
+      "count": 581,
+      "ok": 567,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 567,
+        "Unavailable": 14
+      },
+      "success_rate": 0.9759036144578314,
+      "correct_rate": 0.9707401032702238,
+      "p50_ms": 130.805,
+      "p90_ms": 152.063,
+      "p99_ms": 177.202,
+      "p999_ms": 202.092,
+      "max_ms": 202.092
+    },
+    {
+      "start_s": 68,
+      "count": 581,
+      "ok": 581,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "OK": 581
+      },
+      "success_rate": 1,
+      "correct_rate": 0.9982788296041308,
+      "p50_ms": 115.79,
+      "p90_ms": 136.332,
+      "p99_ms": 162.122,
+      "p999_ms": 184.749,
+      "max_ms": 184.749
+    },
+    {
+      "start_s": 69,
+      "count": 581,
+      "ok": 580,
+      "partial": 0,
+      "dropped": 0,
+      "codes": {
+        "DeadlineExceeded": 1,
+        "OK": 580
+      },
+      "success_rate": 0.9982788296041308,
+      "correct_rate": 0.9965576592082617,
+      "p50_ms": 84.241,
+      "p90_ms": 113.899,
+      "p99_ms": 155.223,
+      "p999_ms": 200.705,
+      "max_ms": 200.705
+    }
+  ],
+  "note": "Latency is measured from each request's scheduled send time (open loop, no coordinated omission)."
+}

@@ -5,7 +5,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | ID | Benchmark | Result |
 |---|---|---|
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small and fma_medium (below); full methodology on fma_medium [TBD] |
-| B2 | Max sustainable QPS under p99 SLO vs partitions | [TBD] |
+| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium P=1/2/4 (below); P=8 [TBD] |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
@@ -133,3 +133,18 @@ Same harness and quick methodology as the fma_small sweeps (5 s warmup, 15 s mea
 
 - Per-query work is ~2.8x fma_small's: postings per key rose from ~10.8 to ~30.5 as the reachable hash space filled (see B4 at medium), and low-load p50 rose by about that factor (P=1: 5.4 to 13.5 ms).
 - Knees fall correspondingly (P=1: 1,600 qps on small to ~400-600 here). Partitioning still trades throughput for latency on one host.
+
+## B2: max sustainable throughput under the SLO, fma_medium (Phase 4)
+
+SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send time (open loop). `bench/scripts/b2_slo.py`: bisect with 60 s probes, then confirm with the full methodology (30 s warmup, 120 s measured, 3 reps); a rate is confirmed when the median of the reps meets the SLO (D29), stepping down 5% otherwise. Single host, bare metal, RF=1, fma_medium indexes (23,985 tracks), 1,500 replay queries, 200 ms coordinator deadline. Commit 1479a69, clean, AC power, no sleep events during these runs (checked against `pmset -g log`). Raw: `bench/results/b2_medium/P{1,2,4}/`; plot `docs/figures/b2_medium.png`.
+
+| P | Max sustainable | p50 at that rate (median) | p99 median (each rep) | Complete answers (each rep) |
+|---|---|---|---|---|
+| 1 | **550 qps** | 22.8 ms | 69 ms (67, 69, 153) | 100.00%, 100.00%, 99.52% |
+| 2 | **472 qps** | 9.5 ms | 59 ms (171, 59, 24) | 98.70%, 100.00%, 100.00% |
+| 4 | **464 qps** | 6.9 ms | 40 ms (201, 40, 32) | 89.55%, 99.95%, 100.00% |
+| 8 | [TBD] | | | |
+
+- The rep spread is wide near the knee: at each confirmed rate, one of three 120 s runs breached the SLO (p99 150-200 ms) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice.
+- Throughput does not grow with P on one machine (550, 472, 464 qps), while latency at the rate falls (p50 at the confirmed rate in the table). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same cores and add fan-out work.
+- **P=8 was discarded:** that run was on battery power and the Mac slept repeatedly during it (`pmset -g log`), producing ~1 s latency spikes. The harness now aborts any run during which the machine slept (monotonic vs wall clock) or left AC power.

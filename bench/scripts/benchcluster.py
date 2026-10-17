@@ -106,11 +106,25 @@ def cluster(
 
 def run_loadgen(target: str, queries: Path, rate: float, warmup: int, duration: int,
                 out: Path, label: str, extra: list[str]) -> dict:  # fmt: skip
+    """Run one load test. Abort if the machine slept or left AC power during it.
+
+    macOS's monotonic clock stops while the machine sleeps and the wall clock
+    does not, so a gap between them means processes were frozen mid-run and
+    every latency in it is meaningless.
+    """
     cmd = [str(BIN / "loadgen"), "run", "-target", target, "-queries", str(queries),
            "-rate", str(rate), "-warmup", f"{warmup}s", "-duration", f"{duration}s",
            "-label", label, "-out", str(out), *extra]  # fmt: skip
+    wall0, mono0 = time.time(), time.monotonic()
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return json.loads((out / "summary.json").read_text())
+    slept = (time.time() - wall0) - (time.monotonic() - mono0)
+    summary = json.loads((out / "summary.json").read_text())
+    if slept > 2 or summary["machine"]["power"] != "ac":
+        raise SystemExit(
+            f"run {out} is invalid: power={summary['machine']['power']}, "
+            f"machine asleep ~{slept:.0f} s during it. Plug in, keep the lid open, rerun."
+        )
+    return summary
 
 
 def sweep(args: argparse.Namespace) -> None:

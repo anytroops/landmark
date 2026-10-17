@@ -1,0 +1,117 @@
+{
+ "partitions": 4,
+ "max_qps_under_slo": 464,
+ "slo_p99_ms": 100,
+ "slo_min_success": 0.999,
+ "rule": "median of reps (D29)",
+ "confirm_median": {
+  "p99_ms": 40.009,
+  "success_rate": 0.9994612068965517
+ },
+ "probes": [
+  {
+   "tag": "probe",
+   "rate": 200.0,
+   "pass": true,
+   "p99_ms": 10.957,
+   "p50_ms": 5.019,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 600.0,
+   "pass": false,
+   "p99_ms": 203.123,
+   "p50_ms": 195.102,
+   "success": 0.24725
+  },
+  {
+   "tag": "probe",
+   "rate": 400,
+   "pass": true,
+   "p99_ms": 13.084,
+   "p50_ms": 5.353,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 500,
+   "pass": false,
+   "p99_ms": 148.112,
+   "p50_ms": 17.352,
+   "success": 0.9969
+  },
+  {
+   "tag": "probe",
+   "rate": 450,
+   "pass": true,
+   "p99_ms": 50.338,
+   "p50_ms": 6.211,
+   "success": 0.9997777777777778
+  },
+  {
+   "tag": "probe",
+   "rate": 475,
+   "pass": true,
+   "p99_ms": 56.114,
+   "p50_ms": 7.857,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 488,
+   "pass": true,
+   "p99_ms": 76.801,
+   "p50_ms": 10.957,
+   "success": 0.999931693989071
+  },
+  {
+   "tag": "confirm_rep0",
+   "rate": 488,
+   "pass": true,
+   "p99_ms": 79.528,
+   "p50_ms": 11.091,
+   "success": 0.9999829234972678
+  },
+  {
+   "tag": "confirm_rep1",
+   "rate": 488,
+   "pass": false,
+   "p99_ms": 200.892,
+   "p50_ms": 12.281,
+   "success": 0.9766564207650273
+  },
+  {
+   "tag": "confirm_rep2",
+   "rate": 488,
+   "pass": false,
+   "p99_ms": 170.374,
+   "p50_ms": 12.116,
+   "success": 0.9939719945355191
+  },
+  {
+   "tag": "confirm_rep0",
+   "rate": 464,
+   "pass": false,
+   "p99_ms": 201.435,
+   "p50_ms": 26.898,
+   "success": 0.8954561781609195
+  },
+  {
+   "tag": "confirm_rep1",
+   "rate": 464,
+   "pass": true,
+   "p99_ms": 40.009,
+   "p50_ms": 6.895,
+   "success": 0.9994612068965517
+  },
+  {
+   "tag": "confirm_rep2",
+   "rate": 464,
+   "pass": true,
+   "p99_ms": 32.417,
+   "p50_ms": 6.872,
+   "success": 1
+  }
+ ]
+}
