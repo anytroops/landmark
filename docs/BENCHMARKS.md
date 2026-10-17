@@ -5,7 +5,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | ID | Benchmark | Result |
 |---|---|---|
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small and fma_medium (below); full methodology on fma_medium [TBD] |
-| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium P=1/2/4 (below); P=8 [TBD] |
+| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4/8 sustain 550/472/464/394 qps (below) |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
@@ -136,15 +136,16 @@ Same harness and quick methodology as the fma_small sweeps (5 s warmup, 15 s mea
 
 ## B2: max sustainable throughput under the SLO, fma_medium (Phase 4)
 
-SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send time (open loop). `bench/scripts/b2_slo.py`: bisect with 60 s probes, then confirm with the full methodology (30 s warmup, 120 s measured, 3 reps); a rate is confirmed when the median of the reps meets the SLO (D29), stepping down 5% otherwise. Single host, bare metal, RF=1, fma_medium indexes (23,985 tracks), 1,500 replay queries, 200 ms coordinator deadline. Commit 1479a69, clean, AC power, no sleep events during these runs (checked against `pmset -g log`). Raw: `bench/results/b2_medium/P{1,2,4}/`; plot `docs/figures/b2_medium.png`.
+SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send time (open loop). `bench/scripts/b2_slo.py`: bisect with 60 s probes, then confirm with the full methodology (30 s warmup, 120 s measured, 3 reps); a rate is confirmed when the median of the reps meets the SLO (D29), stepping down 5% otherwise. Single host, bare metal, RF=1, fma_medium indexes (23,985 tracks), 1,500 replay queries, 200 ms coordinator deadline. P=1/2/4 at commit 1479a69, P=8 at 0b9523f (only bench scripts changed in between; no Go or proto changes), clean, AC power, no sleep events during these runs (checked against `pmset -g log`; the P=8 rerun also had the harness's sleep guard). Raw: `bench/results/b2_medium/P{1,2,4,8}/`; plot `docs/figures/b2_medium.png`.
 
 | P | Max sustainable | p50 at that rate (median) | p99 median (each rep) | Complete answers (each rep) |
 |---|---|---|---|---|
 | 1 | **550 qps** | 22.8 ms | 69 ms (67, 69, 153) | 100.00%, 100.00%, 99.52% |
 | 2 | **472 qps** | 9.5 ms | 59 ms (171, 59, 24) | 98.70%, 100.00%, 100.00% |
 | 4 | **464 qps** | 6.9 ms | 40 ms (201, 40, 32) | 89.55%, 99.95%, 100.00% |
-| 8 | [TBD] | | | |
+| 8 | **394 qps** | 5.6 ms | 41 ms (38, 43, 41) | 100.00%, 100.00%, 100.00% |
 
-- The rep spread is wide near the knee: at each confirmed rate, one of three 120 s runs breached the SLO (p99 153, 171, and 201 ms for P = 1, 2, 4; P=4's was also only 89.6% complete) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice.
-- Throughput does not grow with P on one machine (550, 472, 464 qps), while latency at the rate falls (p50 at the confirmed rate in the table). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same cores and add fan-out work.
-- **P=8 was discarded:** that run was on battery power and the Mac slept repeatedly during it (`pmset -g log`), producing ~1 s latency spikes. The harness now aborts any run during which the machine slept (monotonic vs wall clock) or left AC power.
+- The rep spread is wide near the knee: for P = 1, 2, 4, one of three 120 s runs at the confirmed rate breached the SLO (p99 153, 171, and 201 ms; P=4's was also only 89.6% complete) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice. P=8's three reps were tight (p99 38 to 43 ms); with three reps per point, that could be luck rather than a real difference.
+- Throughput falls as P grows on one machine (550, 472, 464, 394 qps), while latency at the rate falls (p50 22.8 ms at P=1 vs 5.6 ms at P=8). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same 12 cores and each query pays for P shard RPCs instead of one.
+- The knee is sharp at every P. 5 to 10% above the confirmed rate, median latency jumps to the 200 ms deadline (60 s probes): P=1 goes from p50 23 ms at 550 qps to 130 ms at 581; P=8 from 6 ms at 394 to 139 ms at 434. Once arrivals outpace what the cores can serve, the queue grows until the deadline cuts requests off, so there is little middle ground between healthy and overloaded.
+- P=8's first run was discarded: it was on battery power and the Mac slept repeatedly during it (`pmset -g log`), producing ~1 s latency spikes. The rerun above was on AC with the lid open, and the harness now aborts any run during which the machine slept (monotonic vs wall clock) or left AC power.

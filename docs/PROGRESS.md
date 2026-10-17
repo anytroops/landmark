@@ -1,17 +1,17 @@
 # Progress
 
 ## Current phase: 4 (measure)
-Phases 0-3 are done. Phase 4 has B3, B4, B5, and quick B1 sweeps recorded; B2 and full-method B1 on fma_medium are next.
+Phases 0-3 are done. Phase 4 has B2, B3, B4, B5, and quick B1 sweeps recorded; full-method B1 on fma_medium is next.
 
 ## Done
 - 2026-10-14, Phase 0: repo, toolchain, CI, compose stack, FMA data verified and extracted.
 - 2026-10-14, Phase 1: Python fingerprinter (D9, D10), sorted-array index and matcher (D11), duplicate-aware splits (D12), eval harness with Wilson CIs, threshold calibration (D13), duplicate-aware ratio test (D14), 4-shift queries (D15), golden vectors. Interview Q&A for fingerprinter + matcher logged.
 - 2026-10-14, Phase 2: Go audio + fingerprint with exact parity to Python (D16-D18, max filter 3.6x faster after profiling); segment format v1 with mmap reader and fuzzing (D19-D21); Go ingest; Go matcher with exact parity (D22); shard server with bounded matcher pool and load shedding (D23); identify CLI. Done criterion: the test split through the Go stack matches Python on all 21,978 rows.
 - 2026-10-14, Phase 3: shard Info RPC and index manifest; cluster config; coordinator with per-attempt timeouts (D24), outlier ejection (D25), replica identity checks (D26), mutation-tested; 2x2 Docker cluster; open-loop loadgen with failure injection; Grafana dashboard. Done criterion (B3, 3 reps): kill -9 of a replica at 100 qps kept 100% complete answers, 2-3 of 6,000 requests per run over 50 ms.
-- 2026-10-14 to 16, Phase 4: bench harness with AC-power and clean-tree guards; profiling at saturation found vote sorting (D27, radix sort) and per-message protobuf overhead (D28, packed arrays); single-partition knee on fma_small 600 to 1,600 qps, p50 12.7 to 5.4 ms; B5 (3 reps); fma_medium downloaded, deduped, split, indexed at P=1/2/4/8 (102M postings), evaluated (clean 10 s 99.9%, SNR 0 dB 97.1%, FAR <= 0.1%); B4 at medium shows the reachable hash space ~80% used; quick B1 sweep on medium.
+- 2026-10-14 to 16, Phase 4: bench harness with AC-power and clean-tree guards; profiling at saturation found vote sorting (D27, radix sort) and per-message protobuf overhead (D28, packed arrays); single-partition knee on fma_small 600 to 1,600 qps, p50 12.7 to 5.4 ms; B5 (3 reps); fma_medium downloaded, deduped, split, indexed at P=1/2/4/8 (102M postings), evaluated (clean 10 s 99.9%, SNR 0 dB 97.1%, FAR <= 0.1%); B4 at medium shows the reachable hash space ~80% used; quick B1 sweep on medium; B2 on medium (median-of-3 rule, D29): P=1/2/4/8 sustain 550/472/464/394 qps under p99 <= 100 ms on one host.
 
 ## Next
-- B2 on fma_medium with the median-of-3 rule (D29), then full-method B1 (30 s warmup, 120 s measured, 3 reps) at fractions of each P's B2 rate.
+- Full-method B1 (30 s warmup, 120 s measured, 3 reps) at 25/50/75/100% of each P's B2 rate: `bench/scripts/b1_full.sh`, about 2 h.
 - Sean: decide how to handle the hash-space ceiling before fma_large (direct table per D20 option B, wider hash, or accept linear growth); measure postings scanned per query vs catalog size first.
 - Sean: multi-machine run for real throughput scaling (said "not now" to AWS on 2026-10-14).
 - Phase 5 (HTTP gateway + demo page).
