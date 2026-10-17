@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 from eval.backends import LocalBackend, ShardBackend, dense_tables
-from eval.degrade import add_noise, excerpt, reencode, speed, stretch
+from eval.degrade import add_noise, excerpt, keylock, reencode, speed, stretch
 from prototype import fingerprint as fp
 from prototype.audio import DecodeError, decode
 from prototype.build_index import machine_spec
@@ -56,8 +56,11 @@ CONDITIONS: dict[str, tuple[float, Degrade]] = {
 
 
 # Any tempo change by name: speed_{+x}pct_{n}s is turntable style (tempo and
-# pitch together), stretch_{+x}pct_{n}s is keylock style (tempo only).
-_SCALED = re.compile(r"(speed|stretch)_([+-]\d+(?:\.\d+)?)pct_(\d+)s")
+# pitch together); keylock_{+x}pct_{n}s keeps pitch by WSOLA, as DJ key lock
+# does; stretch_{+x}pct_{n}s keeps pitch with librosa's phase vocoder, a poor
+# model of key lock kept for the results that used it (degrade.stretch).
+_SCALED = re.compile(r"(speed|keylock|stretch)_([+-]\d+(?:\.\d+)?)pct_(\d+)s")
+_TEMPO = {"speed": speed, "keylock": keylock, "stretch": stretch}
 
 
 def condition(name: str) -> tuple[float, Degrade]:
@@ -67,7 +70,7 @@ def condition(name: str) -> tuple[float, Degrade]:
     m = _SCALED.fullmatch(name)
     if m is None:
         raise KeyError(f"unknown condition {name!r}")
-    fn = speed if m.group(1) == "speed" else stretch
+    fn = _TEMPO[m.group(1)]
     factor = 1 + float(m.group(2)) / 100
     return float(m.group(3)), lambda x, r: fn(x, factor)
 

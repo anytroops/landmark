@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.signal import resample_poly
 
-from eval.degrade import speed, stretch
+from eval.degrade import keylock, speed, stretch
 from eval.run_eval import condition
 
 SR = 11025
@@ -20,7 +20,7 @@ def test_speed_matches_the_old_ratio_for_existing_conditions(factor: float) -> N
     np.testing.assert_array_equal(speed(x, factor), old)
 
 
-@pytest.mark.parametrize("fn", [speed, stretch])
+@pytest.mark.parametrize("fn", [speed, stretch, keylock])
 @pytest.mark.parametrize("factor", [0.92, 0.9975, 1.005, 1.08])
 def test_tempo_changes_scale_length(fn, factor: float) -> None:  # noqa: ANN001
     x = tone()
@@ -36,12 +36,19 @@ def test_stretch_keeps_pitch_and_speed_shifts_it() -> None:
 
     x = tone(4.0)
     assert abs(peak_hz(stretch(x, 1.05)) - 440) < 3
+    assert abs(peak_hz(keylock(x, 1.05)) - 440) < 3
+    assert abs(peak_hz(keylock(x, 0.95)) - 440) < 3
     assert abs(peak_hz(speed(x, 1.05)) - 462) < 3
 
 
 @pytest.mark.parametrize(
     ("name", "secs"),
-    [("clean_10s", 10.0), ("speed_+0.25pct_10s", 10.0), ("stretch_-8pct_5s", 5.0)],
+    [
+        ("clean_10s", 10.0),
+        ("speed_+0.25pct_10s", 10.0),
+        ("stretch_-8pct_5s", 5.0),
+        ("keylock_+3pct_10s", 10.0),
+    ],
 )
 def test_condition_parses_names(name: str, secs: float) -> None:
     assert condition(name)[0] == secs
