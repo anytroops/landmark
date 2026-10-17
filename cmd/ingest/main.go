@@ -27,6 +27,7 @@ import (
 	"github.com/anytroops/landmark/internal/fingerprint"
 	"github.com/anytroops/landmark/internal/runinfo"
 	"github.com/anytroops/landmark/internal/segment"
+	"github.com/anytroops/landmark/internal/stoplist"
 )
 
 type manifest struct {
@@ -190,6 +191,12 @@ func writeIndex(dir string, nParts uint32, enc segment.Encoding, ids []int, clus
 	stats.BytesPerPosting = float64(stats.TotalBytes) / float64(max(stats.TotalPostings, 1))
 	stats.WriteWallSeconds = time.Since(start).Seconds()
 
+	stop, err := writeStoplist(dir, manifest.Segments, uint32(len(ids)))
+	if err != nil {
+		return fmt.Errorf("index with %d partitions: %w", nParts, err)
+	}
+	manifest.Stoplist = stop
+
 	if err := writeJSON(filepath.Join(dir, "catalog.json"), buildCatalog(ids, clusters, nParts)); err != nil {
 		return err
 	}
@@ -203,6 +210,32 @@ func writeIndex(dir string, nParts uint32, enc segment.Encoding, ids []int, clus
 		"bytes", stats.TotalBytes, "bytes_per_posting", fmt.Sprintf("%.3f", stats.BytesPerPosting),
 		"write_s", fmt.Sprintf("%.1f", stats.WriteWallSeconds))
 	return nil
+}
+
+// writeStoplist counts every hash's postings across the segments just
+// written and saves the stop list (D30) next to them.
+func writeStoplist(dir string, entries []ManifestEntry, nTracks uint32) (*stoplist.ManifestEntry, error) {
+	segs := make([]*segment.Segment, 0, len(entries))
+	defer func() {
+		for _, s := range segs {
+			_ = s.Close()
+		}
+	}()
+	for _, e := range entries {
+		s, err := segment.Open(filepath.Join(dir, e.File))
+		if err != nil {
+			return nil, err
+		}
+		segs = append(segs, s)
+	}
+	l, err := stoplist.FromSegments(segs, stoplist.MinCountFor(nTracks, stoplist.DefaultMinFraction))
+	if err != nil {
+		return nil, err
+	}
+	if err := l.Write(filepath.Join(dir, stoplist.FileName)); err != nil {
+		return nil, err
+	}
+	return &stoplist.ManifestEntry{File: stoplist.FileName, CRC32C: fmt.Sprintf("%08x", l.Checksum())}, nil
 }
 
 // fingerprintAll decodes and fingerprints tracks on cfg.workers goroutines.
@@ -294,9 +327,10 @@ type segStats struct {
 // IndexManifest (index.json) describes a built index: one segment per
 // partition and its checksum. The coordinator checks replicas against it (D26).
 type IndexManifest struct {
-	NPartitions uint32          `json:"n_partitions"`
-	NTracks     int             `json:"n_tracks"`
-	Segments    []ManifestEntry `json:"segments"`
+	NPartitions uint32                  `json:"n_partitions"`
+	NTracks     int                     `json:"n_tracks"`
+	Segments    []ManifestEntry         `json:"segments"`
+	Stoplist    *stoplist.ManifestEntry `json:"stoplist,omitempty"`
 }
 
 // ManifestEntry is one partition's segment.
