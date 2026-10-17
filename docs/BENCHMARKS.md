@@ -5,7 +5,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | ID | Benchmark | Result |
 |---|---|---|
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small and fma_medium (below); full methodology on fma_medium [TBD] |
-| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4/8 sustain 550/472/464/394 qps (below) |
+| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4 sustain 550/472/464 qps (below); P=8 [TBD], rerun pending |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
@@ -118,7 +118,7 @@ Docker compose cluster (`deploy/docker-compose.yml`): P=2 partitions x RF=2 repl
 | medium | 8 | 102,118,846 | 17,103,441 | 550,593,699 | 5.392 | 37% |
 
 - Postings grew 3.4x but distinct keys only 1.2x, so per-key overhead is amortized and bytes per posting fall (4.51 to 3.80 at P=1).
-- **The reachable hash space is nearly full.** D10 pairs peaks within +/-64 bins, so a hash can take about 512 x 129 x 63 = 4.16M values, not 2^24. fma_medium already uses 3.34M (~80%). From here, new tracks mostly lengthen existing posting lists, so per-query postings scanned, and query cost, grow roughly linearly with catalog size. For fma_large this argues for revisiting D20 (a direct table over ~4.2M reachable keys is dense) and the hash layout (more bits per landmark to keep lists short). Measure before deciding.
+- **The reachable hash space is nearly full.** D10 pairs peaks within +/-64 bins, so a hash can take about 512 x 129 x 63 = 4.16M values, not 2^24. fma_medium already uses 3.34M (~80%), so a direct table over the reachable keys (D20 option B) would now be dense. Fullness does not by itself make query cost grow faster: cost grows linearly with catalog size at any fill level (measured in "Postings scanned per query" below, which corrects an earlier version of this note).
 
 ## B1 quick sweep on fma_medium (Phase 4)
 
@@ -136,16 +136,40 @@ Same harness and quick methodology as the fma_small sweeps (5 s warmup, 15 s mea
 
 ## B2: max sustainable throughput under the SLO, fma_medium (Phase 4)
 
-SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send time (open loop). `bench/scripts/b2_slo.py`: bisect with 60 s probes, then confirm with the full methodology (30 s warmup, 120 s measured, 3 reps); a rate is confirmed when the median of the reps meets the SLO (D29), stepping down 5% otherwise. Single host, bare metal, RF=1, fma_medium indexes (23,985 tracks), 1,500 replay queries, 200 ms coordinator deadline. P=1/2/4 at commit 1479a69, P=8 at 0b9523f (only bench scripts changed in between; no Go or proto changes), clean, AC power, no sleep events during these runs (checked against `pmset -g log`; the P=8 rerun also had the harness's sleep guard). Raw: `bench/results/b2_medium/P{1,2,4,8}/`; plot `docs/figures/b2_medium.png`.
+SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send time (open loop). `bench/scripts/b2_slo.py`: bisect with 60 s probes, then confirm with the full methodology (30 s warmup, 120 s measured, 3 reps); a rate is confirmed when the median of the reps meets the SLO (D29), stepping down 5% otherwise. Single host, bare metal, RF=1, fma_medium indexes (23,985 tracks), 1,500 replay queries, 200 ms coordinator deadline. Commit 1479a69, clean, AC power with the battery at 100% and not charging, no sleep events (both checked against `pmset -g log`). Raw: `bench/results/b2_medium/P{1,2,4}/`; plot `docs/figures/b2_medium.png`.
 
 | P | Max sustainable | p50 at that rate (median) | p99 median (each rep) | Complete answers (each rep) |
 |---|---|---|---|---|
 | 1 | **550 qps** | 22.8 ms | 69 ms (67, 69, 153) | 100.00%, 100.00%, 99.52% |
 | 2 | **472 qps** | 9.5 ms | 59 ms (171, 59, 24) | 98.70%, 100.00%, 100.00% |
 | 4 | **464 qps** | 6.9 ms | 40 ms (201, 40, 32) | 89.55%, 99.95%, 100.00% |
-| 8 | **394 qps** | 5.6 ms | 41 ms (38, 43, 41) | 100.00%, 100.00%, 100.00% |
+| 8 | [TBD] | | | |
 
-- The rep spread is wide near the knee: for P = 1, 2, 4, one of three 120 s runs at the confirmed rate breached the SLO (p99 153, 171, and 201 ms; P=4's was also only 89.6% complete) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice. P=8's three reps were tight (p99 38 to 43 ms); with three reps per point, that could be luck rather than a real difference.
-- Throughput falls as P grows on one machine (550, 472, 464, 394 qps), while latency at the rate falls (p50 22.8 ms at P=1 vs 5.6 ms at P=8). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same 12 cores and each query pays for P shard RPCs instead of one.
-- The knee is sharp at every P. 5 to 10% above the confirmed rate, median latency jumps to the 200 ms deadline (60 s probes): P=1 goes from p50 23 ms at 550 qps to 130 ms at 581; P=8 from 6 ms at 394 to 139 ms at 434. Once arrivals outpace what the cores can serve, the queue grows until the deadline cuts requests off, so there is little middle ground between healthy and overloaded.
-- P=8's first run was discarded: it was on battery power and the Mac slept repeatedly during it (`pmset -g log`), producing ~1 s latency spikes. The rerun above was on AC with the lid open, and the harness now aborts any run during which the machine slept (monotonic vs wall clock) or left AC power.
+- The rep spread is wide near the knee: at each confirmed rate, one of three 120 s runs breached the SLO (p99 153, 171, and 201 ms for P = 1, 2, 4; P=4's was also only 89.6% complete) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice.
+- Throughput does not grow with P on one machine (550, 472, 464 qps), while latency at the rate falls (p50 22.8 ms at P=1 vs 6.9 ms at P=4). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same 12 cores and each query pays for P shard RPCs instead of one.
+- The knee is sharp. A few percent above the confirmed rate, median latency heads for the 200 ms deadline (60 s probes): P=1 goes from p50 23 ms at 550 qps to 130 ms at 581; P=4 from 11 ms at 488 to 195 ms at 600. Once arrivals outpace what the cores can serve, the queue grows until the deadline cuts requests off, so losing a few percent of capacity turns a passing rate into a failing one (see the charging note below).
+- P=8 has no valid result yet. The first run was on battery power with the Mac sleeping (~1 s latency spikes) and was discarded. The second (commit 0b9523f, 394 qps) ran while the battery charged from 82% on the 65 W adapter, which likely cut capacity; it is kept in `bench/results/b2_medium_charging/P8` for comparison and will be rerun at full charge.
+
+## Charging confound (Phase 4)
+
+The first full-method B1 attempt (commit 0e5a3be) ran P=1 while the battery charged from 82% to 99% on the laptop's 65 W adapter. At 550 qps, the rate B2 had confirmed at full charge with the same code and settings, all three 120 s runs were overloaded: p50 128 to 135 ms, p99 183 to 197 ms, 95.6% to 97.1% complete answers. B2's confirm runs at that rate had p50 22.7 to 26.9 ms. Below the knee the charging runs looked normal (p50 14.6 to 16.3 ms at 138 to 412 qps, 100% complete), which fits a capacity loss of a few percent: invisible at light load, decisive at the knee. Raw: `bench/results/b1_charging_medium`. This is a comparison across sessions, so charging is the likely cause, not a proven one; macOS recorded no thermal warnings.
+
+Since commit fe4c470 the harness waits for the battery to stop charging before every run, records battery state before and after (`harness.json`; `machine.battery` in `summary.json`), and marks a run invalid if the battery drained or began charging during it. That also tests whether the 65 W adapter keeps up with full load: a drain on AC would invalidate the run.
+
+## Postings scanned per query vs catalog size (hash-space check)
+
+`bench/postings` (commit 4d2fb2a, clean; `bench/results/postings_medium.json`) keeps a seeded random subset of the fma_medium P=1 index's tracks (nested subsets) and counts, for each of the 1,500 test-split queries (3,829 landmarks on average, 4 shifts), the postings under its hashes. That count is the number of votes the matcher sorts, its main cost (B1 profiles).
+
+| Tracks | Keys in use (of 4.16M reachable) | Mean list length | Postings scanned per query, mean / p99 | Per 1,000 tracks |
+|---|---|---|---|---|
+| 1,499 | 1.64M (39%) | 3.9 | 48,202 / 123,775 | 32,156 |
+| 2,998 | 2.12M (51%) | 6.0 | 97,749 / 255,955 | 32,605 |
+| 5,996 | 2.62M (63%) | 9.7 | 193,720 / 499,862 | 32,308 |
+| 11,992 | 3.04M (73%) | 16.8 | 385,200 / 991,613 | 32,121 |
+| 23,985 | 3.34M (80%) | 30.5 | 773,850 / 2,016,568 | 32,264 |
+
+- **Query cost grows linearly with catalog size at every fill level**: about 32,000 postings per query per 1,000 tracks whether 39% or 80% of the reachable keys are in use. How full the key space is does not cause the growth (the B4 note above said otherwise before this measurement); the number of distinct values a query's hashes can take sets the slope. Projected to fma_large's 106,574 tracks: about 3.4M postings per query, 4.4x medium (a projection, not measured).
+- **Queries hit the long lists.** A query landmark's list averages 202 postings (773,850 / 3,829), 6.6x the mean list length of 30.5.
+- **The cost sits in few keys.** The longest 0.1% of lists (length >= 879) produce 32% of all postings scanned while serving 4.2% of query landmarks; the longest 1% produce 64% while serving 17%.
+- **Those keys are held notes and low frequencies.** Of the longest 0.1%, 24% pair two peaks at the same frequency (0.8% of all keys), 32% pair peaks within 4 frames, ~93 ms (6.3% of all keys), and 41% anchor below bin 64, ~690 Hz (9.0% of all keys). These patterns genuinely repeat across songs, so finer quantization (a wider hash) would not split them.
+- **Skipping long lists** (a stop list, as text search does with "the"): a cap of 1,024 postings keeps 96.4% of query landmarks and removes 28% of postings scanned; 512 keeps 90.5% and removes 48%; 256 keeps 79.6% and removes 68%. The effect on accuracy is not measured yet.
