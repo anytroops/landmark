@@ -53,6 +53,7 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--deadline-ms", type=int, default=200)
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    ap.add_argument("--stop-fraction", type=float, default=0.0, help="coordinator stop list (D30)")
     args = ap.parse_args()
     require_ac_power()
     require_clean_tree()
@@ -61,9 +62,10 @@ def main() -> None:
     n_parts = json.loads((index / "index.json").read_text())["n_partitions"]
     out = Path(args.out) / f"P{n_parts}"
     label = (f"B2 single-host bare metal, P={n_parts} RF=1, SLO p99<={args.p99_ms:g} ms "
-             f"and success>={args.min_success}")  # fmt: skip
+             f"and success>={args.min_success}, stop_fraction {args.stop_fraction:g}")  # fmt: skip
     log: list[dict] = []
-    with cluster(index, 1, args.deadline_ms, args.workers) as (target, _):
+    with cluster(index, 1, args.deadline_ms, args.workers,
+                 stop_fraction=args.stop_fraction) as (target, _):  # fmt: skip
 
         def probe(rate: float, warmup: int, duration: int, tag: str) -> dict:
             s = run_loadgen(target, Path(args.queries), rate, warmup, duration,
@@ -103,7 +105,8 @@ def main() -> None:
                 raise SystemExit(f"no rate >= --lo {args.lo} confirmed; widen the search")
             rate = round(rate * 0.95)
 
-    result = {"partitions": n_parts, "max_qps_under_slo": rate, "slo_p99_ms": args.p99_ms,
+    result = {"partitions": n_parts, "stop_fraction": args.stop_fraction,
+              "max_qps_under_slo": rate, "slo_p99_ms": args.p99_ms,
               "slo_min_success": args.min_success, "rule": "median of reps (D29)",
               "confirm_median": med, "probes": log}  # fmt: skip
     (out / "result.json").write_text(json.dumps(result, indent=1) + "\n")
