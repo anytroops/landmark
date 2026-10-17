@@ -145,6 +145,6 @@ SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send ti
 | 4 | **464 qps** | 6.9 ms | 40 ms (201, 40, 32) | 89.55%, 99.95%, 100.00% |
 | 8 | [TBD] | | | |
 
-- The rep spread is wide near the knee: at each confirmed rate, one of three 120 s runs breached the SLO (p99 150-200 ms) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice.
+- The rep spread is wide near the knee: at each confirmed rate, one of three 120 s runs breached the SLO (p99 153, 171, and 201 ms for P = 1, 2, 4; P=4's was also only 89.6% complete) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice.
 - Throughput does not grow with P on one machine (550, 472, 464 qps), while latency at the rate falls (p50 at the confirmed rate in the table). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same cores and add fan-out work.
 - **P=8 was discarded:** that run was on battery power and the Mac slept repeatedly during it (`pmset -g log`), producing ~1 s latency spikes. The harness now aborts any run during which the machine slept (monotonic vs wall clock) or left AC power.
