@@ -50,8 +50,11 @@ def cluster(
     workers: int,
     base_port: int = 7100,
     shard_procs: int = 0,
+    stop_fraction: float = 0.0,
 ) -> Iterator[tuple[str, list[subprocess.Popen]]]:
     """Start rf replicas of every partition in index/ plus a coordinator.
+
+    stop_fraction > 0 turns on the coordinator's stop list (D30).
 
     shard_procs > 0 sets GOMAXPROCS for each shard (default: all cores each,
     which oversubscribes the host when many shards share it).
@@ -82,7 +85,8 @@ def cluster(
                 port += 1
             partitions.append({"id": seg["partition"], "replicas": replicas})
         cfg = {"index_dir": str(index.resolve()), "deadline_ms": deadline_ms, "t_abs": 30,
-               "t_ratio": 1.0, "partitions": partitions}  # fmt: skip
+               "t_ratio": 1.0, "stop_fraction": stop_fraction,
+               "partitions": partitions}  # fmt: skip
         (tmp / "cluster.json").write_text(json.dumps(cfg, indent=1))
         coord_addr = f"127.0.0.1:{base_port + 500}"
         clog = tmp / "coordinator.log"
@@ -192,16 +196,15 @@ def run_loadgen(target: str, queries: Path, rate: float, warmup: int, duration: 
 def sweep(args: argparse.Namespace) -> None:
     index = Path(args.index)
     n_parts = json.loads((index / "index.json").read_text())["n_partitions"]
-    with cluster(index, args.rf, args.deadline_ms, args.workers, shard_procs=args.shard_procs) as (
-        target,
-        _,
-    ):
+    with cluster(index, args.rf, args.deadline_ms, args.workers, shard_procs=args.shard_procs,
+                 stop_fraction=args.stop_fraction) as (target, _):  # fmt: skip
         for rate in args.rates:
             for rep in range(args.reps):
                 out = Path(args.out) / f"P{n_parts}_rf{args.rf}_r{rate:g}_rep{rep}"
                 label = (f"single-host bare metal, P={n_parts} RF={args.rf}, workers/shard="
                          f"{args.workers}, GOMAXPROCS/shard={args.shard_procs or 'all'}, "
-                         f"deadline {args.deadline_ms} ms")  # fmt: skip
+                         f"deadline {args.deadline_ms} ms, "
+                         f"stop_fraction {args.stop_fraction:g}")  # fmt: skip
                 s = run_loadgen(target, Path(args.queries), rate, args.warmup, args.duration,
                                 out, label, args.loadgen_args)  # fmt: skip
                 m = s["measured"]
@@ -269,6 +272,20 @@ def profile(args: argparse.Namespace) -> None:
     print("average CPU (% of one core):", avg)
 
 
+def equiv(args: argparse.Namespace) -> None:
+    """Run two clusters side by side and check they answer identically."""
+    a, b = Path(args.index_a), Path(args.index_b)
+    with (
+        cluster(a, 1, args.deadline_ms, args.workers, base_port=7100,
+                stop_fraction=args.stop_fraction) as (addr_a, _),
+        cluster(b, 1, args.deadline_ms, args.workers, base_port=7300,
+                stop_fraction=args.stop_fraction) as (addr_b, _),
+    ):  # fmt: skip
+        label = f"{a.name} vs {b.name}, stop_fraction {args.stop_fraction:g}"
+        subprocess.run([str(BIN / "equiv"), "-a", addr_a, "-b", addr_b, "-queries", args.queries,
+                        "-label", label, "-out", args.out], check=True)  # fmt: skip
+
+
 def require_clean_tree() -> None:
     """Refuse to benchmark uncommitted code: results must trace to a commit."""
     out = subprocess.run(
@@ -304,6 +321,7 @@ def main() -> None:
     sw.add_argument("--queries", default=str(ROOT / "data/queries/test_10s_seed0.gob"))
     sw.add_argument("--out", required=True)
     sw.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
+    sw.add_argument("--stop-fraction", type=float, default=0.0, help="coordinator stop list (D30)")
     sw.add_argument("loadgen_args", nargs="*", help="extra flags passed to loadgen run after --")
     pr = sub.add_parser("profile")
     pr.add_argument("--index", required=True)
@@ -315,6 +333,14 @@ def main() -> None:
     pr.add_argument("--queries", default=str(ROOT / "data/queries/test_10s_seed0.gob"))
     pr.add_argument("--out", required=True)
     pr.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
+    eq = sub.add_parser("equiv", help="check two indexes answer identically (e.g. P=1 vs P=8)")
+    eq.add_argument("--index-a", required=True)
+    eq.add_argument("--index-b", required=True)
+    eq.add_argument("--stop-fraction", type=float, default=0.0)
+    eq.add_argument("--deadline-ms", type=int, default=5000, help="generous: no load, no partials")
+    eq.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    eq.add_argument("--queries", default=str(ROOT / "data/queries/medium_test_10s_seed0.gob"))
+    eq.add_argument("--out", required=True)
     args = ap.parse_args()
     require_ac_power()
     require_clean_tree()
@@ -322,6 +348,8 @@ def main() -> None:
         sweep(args)
     elif args.cmd == "profile":
         profile(args)
+    elif args.cmd == "equiv":
+        equiv(args)
     else:
         sys.exit(2)
 
