@@ -5,7 +5,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | ID | Benchmark | Result |
 |---|---|---|
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small and fma_medium (below); full methodology on fma_medium [TBD] |
-| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4 sustain 550/472/464 qps (below); P=8 [TBD], rerun pending |
+| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4/8 sustain 550/472/464/374 qps (below); P=1's limit varies about 520-550 between sessions |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
@@ -143,16 +143,18 @@ SLO: p99 <= 100 ms and >= 99.9% complete answers, latency from scheduled send ti
 | 1 | **550 qps** | 22.8 ms | 69 ms (67, 69, 153) | 100.00%, 100.00%, 99.52% |
 | 2 | **472 qps** | 9.5 ms | 59 ms (171, 59, 24) | 98.70%, 100.00%, 100.00% |
 | 4 | **464 qps** | 6.9 ms | 40 ms (201, 40, 32) | 89.55%, 99.95%, 100.00% |
-| 8 | [TBD] | | | |
+| 8 | **374 qps** | 4.8 ms | 58 ms (84, 58, 18) | 99.96%, 99.98%, 100.00% |
 
 - The rep spread is wide near the knee: at each confirmed rate, one of three 120 s runs breached the SLO (p99 153, 171, and 201 ms for P = 1, 2, 4; P=4's was also only 89.6% complete) while the other two were well inside it. That is what running at ~90% of capacity looks like: bursts of arrivals briefly queue. A rate where every rep passes would be lower; D29 explains the median choice.
 - Throughput does not grow with P on one machine (550, 472, 464 qps), while latency at the rate falls (p50 22.8 ms at P=1 vs 6.9 ms at P=4). Same trade as the B1 sweeps: partitions parallelize a query, but on one host they share the same 12 cores and each query pays for P shard RPCs instead of one.
 - The knee is sharp. A few percent above the confirmed rate, median latency heads for the 200 ms deadline (60 s probes): P=1 goes from p50 23 ms at 550 qps to 130 ms at 581; P=4 from 11 ms at 488 to 195 ms at 600. Once arrivals outpace what the cores can serve, the queue grows until the deadline cuts requests off, so losing a few percent of capacity turns a passing rate into a failing one (see the charging note below).
-- P=8 has no valid result yet. The first run was on battery power with the Mac sleeping (~1 s latency spikes) and was discarded. The second (commit 0b9523f, 394 qps) ran while the battery charged from 82% on the 65 W adapter, which likely cut capacity; it is kept in `bench/results/b2_medium_charging/P8` for comparison and will be rerun at full charge.
+- P=8 ran at commit e33b868 with the battery guard: every run started and ended at "100%; charged" (`harness.json`). Two earlier P=8 runs were set aside: one on battery with the Mac sleeping (discarded), and one while the battery charged from 82% (commit 0b9523f, 394 qps, kept in `bench/results/b2_medium_charging/P8`). That charging run came out 5% higher, not lower, which is within session-to-session variation.
 
 ## Charging confound (Phase 4)
 
 The first full-method B1 attempt (commit 0e5a3be) ran P=1 while the battery charged from 82% to 99% on the laptop's 65 W adapter. At 550 qps, the rate B2 had confirmed at full charge with the same code and settings, all three 120 s runs were overloaded: p50 128 to 135 ms, p99 183 to 197 ms, 95.6% to 97.1% complete answers. B2's confirm runs at that rate had p50 22.7 to 26.9 ms. Below the knee the charging runs looked normal (p50 14.6 to 16.3 ms at 138 to 412 qps, 100% complete), which fits a capacity loss of a few percent: invisible at light load, decisive at the knee. Raw: `bench/results/b1_charging_medium`. This is a comparison across sessions, so charging is the likely cause, not a proven one; macOS recorded no thermal warnings.
+
+The full-charge rerun (commit e33b868, `bench/results/b1_full_medium`) settles part of it. P=1 at 550 qps did not collapse: p50 22.5, 42.7, 48.3 ms, p99 66, 140, 123 ms, 99.95% to 100% complete. But the median p99 (123 ms) misses the SLO in this session, where B2's confirm runs passed with 69 ms. So charging turned a rate at the edge into a collapse, and P=1's limit on this laptop is about 520 to 550 qps depending on the session. Within each set of three runs, latency rose from run to run (here and in B2's confirm runs), which may be the laptop heating under sustained load; macOS recorded no thermal warnings, so that is unconfirmed.
 
 Since commit fe4c470 the harness waits for the battery to stop charging before every run, records battery state before and after (`harness.json`; `machine.battery` in `summary.json`), and marks a run invalid if the battery drained or began charging during it. That also tests whether the 65 W adapter keeps up with full load: a drain on AC would invalidate the run.
 
