@@ -102,6 +102,24 @@ Accuracy at threshold / raw top-1 (%):
 - **The phase-vocoder rows are an artifact of that stretcher, not of key lock.** An earlier version of this section concluded that keylock "breaks the vote" from those rows. librosa's phase vocoder accumulates phase errors along its input, smearing the spectral peaks a few seconds in (on one track at +1.8%: 20% of the clean score kept in the first 10 s, 2% from 3.3 s in), and it degrades slowing down much more than speeding up (median clean score kept 16% at -0.25% vs 85% at +0.25%). WSOLA shows neither effect, so the WSOLA rows are the keylock model used from here on (eval.degrade.keylock).
 - With the stop list at 4%, the same pattern holds with a slightly narrower tolerance (turntable at +/-1%: 76% instead of 87%; WSOLA keylock at +/-8%: 88 to 91% instead of 96%).
 
+## DJ-mix tracklisting on synthetic mixes (D31 option A, D32)
+
+Mixes from `eval.mixgen` (ground truth in `eval/mixes/`): 10 calibration mixes from val tracks (`val_mixed8`, 100 segments, 81 indexed, 30 min) and 20 test mixes from test tracks (`test_mixed8`, 200 segments, 166 indexed, 59 min). Each segment is 18 to 26 s of a 30 s clip, equal-power crossfades of 3 to 8 s, tempo change 0 for 20% of segments and otherwise uniform in +/-8%, half turntable and half keylock (WSOLA); 15% of segments are never-indexed tracks that must not be reported. Clean audio: no noise, EQ, or effects. `eval.tracklist` searches 10 s windows every 2.5 s through a Go P=1 shard with the stop list at 4%, under 33 hypotheses (unchanged, plus turntable and keylock at +/-1% to +/-8% in 1% steps); turntable is undone on the audio, keylock on the landmarks. "Today's system" uses only the unchanged hypothesis. `eval.tracklist_score` decodes with smoothing (D32 option i) or per-track line fits plus Viterbi (options ii + iii); each decoder's parameters were chosen by F1 on the calibration mixes, then frozen for the test mixes. An oracle check (`eval.tracklist oracle`) first confirmed the ground truth: every known smoke-mix segment, undone at its true speed, matched at the predicted offset (within 40 ms). Commit 060bace. Raw: `eval/results/tracklist/`.
+
+Test mixes:
+
+| Method | Songs found (recall) | Entries / correct | Precision | Start within 10 s | Median start error | Median speed error |
+|---|---|---|---|---|---|---|
+| Today's system, smoothing | 122 / 166 (73.5%) | 128 / 125 | 97.7% | 97% | 5.1 s | 1.40 points |
+| Today's system, line fits + Viterbi | 111 / 166 (66.9%) | 112 / 112 | 100% | 97% | 5.5 s | 0.27 points |
+| Speed grid, smoothing | 165 / 166 (99.4%) | 167 / 166 | 99.4% | 100% | 4.0 s | 0.20 points |
+| Speed grid, line fits + Viterbi | 165 / 166 (99.4%) | 167 / 167 | 100% | 100% | 4.1 s | 0.06 points |
+
+- **The speed grid recovers the tracks today's system misses**: recall 67 to 74% becomes 99.4%, with no false entries from the line-fit decoder. Without it, most turntable segments past about +/-1% go unrecognized (speed tolerance section).
+- **Line fits estimate the tempo change to 0.06 percentage points** (median), against 0.2 for the grid's own 1% steps, because the slope of reference time against mix time is the speed.
+- Start errors of about 4 s reflect the 2.5 s window hop and transitions placed at the crossfade midpoint; all are within 10 s.
+- **These mixes are easy**: clean audio, short 30 s source clips, and no EQ, filtering, reverb, or crowd noise. Both decoders are near-perfect on them, so they do not yet separate the methods; harder mixes and real ones (Mixotic) are next. The cost is 33 searches per window instead of 1.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.

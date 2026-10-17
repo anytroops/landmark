@@ -241,11 +241,19 @@ def main() -> None:
     ap.add_argument("--manifest", default=str(ROOT / "eval/manifests/splits_medium_seed0.json"))
     ap.add_argument("--calibrate", action="store_true", help="grid-search decoder parameters (val)")
     ap.add_argument("--params", type=Path, help="calibration result JSON to apply (test)")
+    ap.add_argument(
+        "--identity-only",
+        action="store_true",
+        help="use only the unchanged-window hypothesis: today's system, no speed grid",
+    )
     args = ap.parse_args()
 
     gt = json.loads((ROOT / "eval" / "mixes" / f"{args.mixes}.json").read_text())
     stem = f"windows_{args.mixes}{args.tag}"
     w = pd.read_csv(RES / f"{stem}.csv.gz")
+    suffix = ""
+    if args.identity_only:
+        w, suffix = w[w["mode"] == "none"], "_identity"
     window = json.loads((RES / f"{stem}.meta.json").read_text())["window_s"]
     _, cluster = dense_tables(json.loads(Path(args.manifest).read_text()))
 
@@ -261,7 +269,7 @@ def main() -> None:
             results = [evaluate(w, gt, cluster, decoder, p, window) for p in grid]
             out[decoder] = max(results, key=lambda r: r["f1"])
             print(decoder, json.dumps({k: v for k, v in out[decoder].items()}, default=float))
-        path = RES / f"calibration_{args.mixes}{args.tag}.json"
+        path = RES / f"calibration_{args.mixes}{args.tag}{suffix}.json"
     else:
         params = json.loads(args.params.read_text())
         out = {
@@ -269,7 +277,7 @@ def main() -> None:
         }
         for d, r in out.items():
             print(d, json.dumps(r, default=float))
-        path = RES / f"score_{args.mixes}{args.tag}.json"
+        path = RES / f"score_{args.mixes}{args.tag}{suffix}.json"
     path.write_text(json.dumps(out, indent=1, default=float) + "\n")
     print(path)
 
