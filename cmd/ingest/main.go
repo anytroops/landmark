@@ -4,6 +4,12 @@
 // Dense track ids are positions in the manifest's sorted "indexed" list
 // (same as the Python prototype). Partition = dense mod P (D2). Decode
 // failures are logged, counted, and skipped.
+//
+// -extra adds audio files that are not FMA tracks (e.g. a DJ-mix benchmark's
+// reference songs), listed one per line as name<TAB>path. They follow the
+// manifest's tracks in dense order (or stand alone with -manifest ""), get
+// catalog fma_id -1, -2, ... in list order, are their own duplicate clusters,
+// and are named in extras.json next to catalog.json.
 package main
 
 import (
@@ -48,6 +54,7 @@ type CatalogTrack struct {
 
 type config struct {
 	manifest, data, out string
+	extra               string
 	partitions          []int
 	encoding            segment.Encoding
 	workers             int
@@ -56,7 +63,8 @@ type config struct {
 func main() {
 	var cfg config
 	var enc string
-	flag.StringVar(&cfg.manifest, "manifest", "eval/manifests/splits_small_seed0.json", "split manifest")
+	flag.StringVar(&cfg.manifest, "manifest", "eval/manifests/splits_small_seed0.json", "split manifest (\"\" for none)")
+	flag.StringVar(&cfg.extra, "extra", "", "extra audio files to index, one name<TAB>path per line")
 	flag.StringVar(&cfg.data, "data", "data", "dataset root")
 	flag.StringVar(&cfg.out, "out", "", "output directory (required); with several -partitions, one subdirectory pN each")
 	parts := flag.String("partitions", "1", "partition count P, or a comma list (1,2,4,8) to build several indexes from one fingerprint pass")
@@ -102,23 +110,73 @@ type fpResult struct {
 	err   error
 }
 
-func run(ctx context.Context, cfg config) error {
-	b, err := os.ReadFile(cfg.manifest)
-	if err != nil {
-		return fmt.Errorf("read manifest: %w", err)
+// Extra is one non-FMA audio file to index (-extra).
+type Extra struct {
+	Dense uint32 `json:"dense"`
+	FMAID int    `json:"fma_id"` // -1, -2, ... in list order
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+}
+
+// parseExtras reads name<TAB>path lines; blank lines and # comments are skipped.
+func parseExtras(text string) ([]Extra, error) {
+	var out []Extra
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		name, path, ok := strings.Cut(line, "\t")
+		if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(path) == "" {
+			return nil, fmt.Errorf("extra list line %d: want name<TAB>path, got %q", i+1, line)
+		}
+		out = append(out, Extra{FMAID: -(len(out) + 1), Name: strings.TrimSpace(name), Path: strings.TrimSpace(path)})
 	}
+	return out, nil
+}
+
+func run(ctx context.Context, cfg config) error {
 	var m manifest
-	if err := json.Unmarshal(b, &m); err != nil {
-		return fmt.Errorf("parse manifest: %w", err)
+	if cfg.manifest != "" {
+		b, err := os.ReadFile(cfg.manifest)
+		if err != nil {
+			return fmt.Errorf("read manifest: %w", err)
+		}
+		if err := json.Unmarshal(b, &m); err != nil {
+			return fmt.Errorf("parse manifest: %w", err)
+		}
 	}
 	ids := slices.Sorted(slices.Values(m.Indexed))
+	var extras []Extra
+	if cfg.extra != "" {
+		b, err := os.ReadFile(cfg.extra)
+		if err != nil {
+			return fmt.Errorf("read extra list: %w", err)
+		}
+		if extras, err = parseExtras(string(b)); err != nil {
+			return err
+		}
+		for k := range extras {
+			extras[k].Dense = uint32(len(ids))
+			ids = append(ids, extras[k].FMAID)
+		}
+	}
+	if len(ids) == 0 {
+		return errors.New("nothing to index: empty manifest and no -extra")
+	}
+	path := func(id int) string {
+		if id < 0 {
+			return extras[-id-1].Path
+		}
+		return trackPath(cfg.data, m.Meta.Subset, id)
+	}
 
 	// Fingerprint every track once; each requested P reuses the landmarks.
 	start := time.Now()
 	lms := make([][]fingerprint.Landmark, len(ids))
 	var audioSecs float64
 	var failures []int
-	for r := range fingerprintAll(ctx, cfg, m.Meta.Subset, ids) {
+	for r := range fingerprintAll(ctx, cfg, path, ids) {
 		if r.err != nil {
 			if errors.Is(r.err, audio.ErrDecode) {
 				slog.Warn("decode failed, skipping", "fma_id", ids[r.dense], "err", r.err)
@@ -145,6 +203,11 @@ func run(ctx context.Context, cfg config) error {
 		}
 		if err := writeIndex(dir, uint32(nParts), cfg.encoding, ids, m.Clusters, lms, &stats); err != nil {
 			return err
+		}
+		if len(extras) > 0 {
+			if err := writeJSON(filepath.Join(dir, "extras.json"), extras); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -240,7 +303,7 @@ func writeStoplist(dir string, entries []ManifestEntry, nTracks uint32) (*stopli
 
 // fingerprintAll decodes and fingerprints tracks on cfg.workers goroutines.
 // The returned channel closes once every track has a result.
-func fingerprintAll(ctx context.Context, cfg config, subset string, ids []int) <-chan fpResult {
+func fingerprintAll(ctx context.Context, cfg config, path func(int) string, ids []int) <-chan fpResult {
 	jobs := make(chan uint32)
 	results := make(chan fpResult, cfg.workers)
 	var wg sync.WaitGroup
@@ -250,7 +313,7 @@ func fingerprintAll(ctx context.Context, cfg config, subset string, ids []int) <
 			defer wg.Done()
 			fp := fingerprint.New(fingerprint.DefaultParams()) // one per goroutine: not shareable
 			for dense := range jobs {
-				pcm, err := audio.Decode(ctx, trackPath(cfg.data, subset, ids[dense]), audio.SampleRate)
+				pcm, err := audio.Decode(ctx, path(ids[dense]), audio.SampleRate)
 				r := fpResult{dense: dense, err: err}
 				if err == nil {
 					r.lms = fp.Fingerprint(pcm)
