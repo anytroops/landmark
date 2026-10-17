@@ -211,3 +211,18 @@ Same harness and SLO as B2 (bisect with 60 s probes, confirm with 3 x 120 s runs
 - Each confirmed rate is again at the edge (one of three runs breached p99 at each), as with every B2 point.
 - The price is accuracy in heavy noise (EVAL.md); clean and compressed audio are unchanged. Which cutoff to run by default is a product choice; the coordinator default stays off.
 
+## Before/after D27 + D28 at full methodology, fma_medium, P=1 (Phase 4)
+
+The quick sweeps on fma_small (above) put the D27 (radix vote sort) + D28 (packed request arrays) gain at 2.7x. This repeats it on fma_medium with the full methodology. "Before" is commit 8f76046 (just before D27), built in a separate worktree and run under the current harness via `LANDMARK_BIN` (each run's `harness.json` records `bin_repo_commit` 8f76046); "after" is commit f83d491. Same session, back to back, every run at "100%; charged". Script: `bench/scripts/before_after.sh`. Raw: `bench/results/before_after_medium/{before,after}/`, `bench/results/b2_capacity_medium_{before,after}/P1/`.
+
+| | Before (8f76046) | After (f83d491) | Change |
+|---|---|---|---|
+| p50 at 100 qps (3 x 120 s, median) | 39.1 ms | 14.8 ms | 2.6x lower |
+| p99 at 100 qps | 108.3 ms | 36.2 ms | 3.0x lower |
+| p99.9 at 100 qps | 147.6 ms | 48.4 ms | 3.0x lower |
+| Capacity: max rate with >= 99.9% answered within the 200 ms deadline (B2 search, median of 3) | 170 qps | 398 qps | 2.3x |
+
+- **Latency is the robust number**: the three runs on each side agree within 0.6 ms at p50 and 0.7 ms at p99.
+- **The old code cannot meet the 100 ms p99 SLO at any load**: a single probe at 25 qps already had p99 100.1 ms (`bench/results/b2_medium_pre_d27/P1/probe_r25`), because its slowest 1% of queries take about 100 ms of service time on their own. That is why capacity is compared against the deadline instead.
+- **The capacity ratio is noisy, and 2.3x is a low estimate.** In this run, the "after" code failed 412 qps on completeness (99.63%: 91 requests shed or timed out) with p99 136 ms, yet it sustained 550 qps under the stricter 100 ms SLO about 90 minutes earlier (`b2_medium_sameday`). The capacity search ran after nearly an hour of continuous load, including overload probes at 1,200 and 750 qps just before; heat is a plausible cause but unconfirmed (no backup was running, macOS recorded no thermal warnings). Against that earlier result the gain would be 3.2x. Claim "more than doubled".
+
