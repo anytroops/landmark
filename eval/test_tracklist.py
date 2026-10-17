@@ -14,6 +14,14 @@ def test_hypotheses_grid() -> None:
     assert hyps[0] == ("none", 1.0)
     assert len(hyps) == 1 + 2 * 2 * 2  # identity + 2 modes x 2 steps x 2 signs
     assert ("speed", 1.02) in hyps and ("keylock", 0.98) in hyps
+    extra = hypotheses(max_pct=1.0, step_pct=1.0, modes=["speed"], extra=(2.0, 0.5))
+    assert extra == [
+        ("none", 1.0),
+        ("speed", 1.01),
+        ("speed", 0.99),
+        ("speed", 2.0),
+        ("speed", 0.5),
+    ]
 
 
 def test_rescale_identity() -> None:

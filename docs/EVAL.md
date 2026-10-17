@@ -118,7 +118,19 @@ Test mixes:
 - **The speed grid recovers the tracks today's system misses**: recall 67 to 74% becomes 99.4%, with no false entries from the line-fit decoder. Without it, most turntable segments past about +/-1% go unrecognized (speed tolerance section).
 - **Line fits estimate the tempo change to 0.06 percentage points** (median), against 0.2 for the grid's own 1% steps, because the slope of reference time against mix time is the speed.
 - Start errors of about 4 s reflect the 2.5 s window hop and transitions placed at the crossfade midpoint; all are within 10 s.
-- **These mixes are easy**: clean audio, short 30 s source clips, and no EQ, filtering, reverb, or crowd noise. Both decoders are near-perfect on them, so they do not yet separate the methods; harder mixes and real ones (Mixotic) are next. The cost is 33 searches per window instead of 1.
+- **These mixes are easy**: clean audio, short 30 s source clips, and no EQ, filtering, reverb, or crowd noise. Both decoders are near-perfect on them, so they do not separate the methods. The cost is 33 searches per window instead of 1.
+
+**Harder mixes** (`val_hard8`, 10 mixes, 88 indexed segments; `test_hard8`, 20 mixes, 168 indexed segments): the same recipe plus random shelf EQ within +/-6 dB per segment (200 Hz and 3 kHz), bass-swap high-passing (250 Hz) of every incoming fade-in, pink noise at a per-mix SNR drawn from 5 to 15 dB (a stand-in for room and crowd noise; no recorded crowd), and an MP3 128 kbps round trip of the finished mix. Same pipeline and procedure (calibrate on val, freeze, score test), commit da43fa6.
+
+| Method, hard test mixes | Songs found (recall) | Entries / correct | Precision | Start within 10 s | Median speed error |
+|---|---|---|---|---|---|
+| Today's system, smoothing | 106 / 168 (63.1%) | 107 / 106 | 99.1% | 98% | 1.35 points |
+| Today's system, line fits + Viterbi | 91 / 168 (54.2%) | 92 / 92 | 100% | 99% | 0.24 points |
+| Speed grid, smoothing | 168 / 168 (100%) | 169 / 169 | 100% | 99% | 0.20 points |
+| Speed grid, line fits + Viterbi | 166 / 168 (98.8%) | 168 / 168 | 100% | 100% | 0.07 points |
+
+- The booth degradations cost today's system 4 to 13 more points of recall than the clean mixes, and cost the speed grid nothing measurable: the fingerprint already tolerates noise, EQ, and MP3 (the conditions table above), and what defeats it is turntable tempo change.
+- Still no separation between the two decoders; external mixes (UnmixDB, next) and cost are the remaining tests.
 
 ## Go system parity (Phase 2 done criterion)
 

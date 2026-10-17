@@ -36,7 +36,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from eval.backends import dense_tables
+from eval.tracklist import cluster_table
 
 ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "eval" / "results" / "tracklist"
@@ -180,7 +180,10 @@ def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -
     def same(a: int, b: int) -> bool:
         return a >= 0 and b >= 0 and cluster[a] == cluster[b]
 
+    # Ignored segments (e.g. cut off by a truncated file) neither count toward
+    # recall nor make an entry that names them a false positive.
     known = [s for s in segments if s["known"]]
+    scored = [i for i, s in enumerate(known) if not s.get("ignore")]
     found = set()
     correct = 0
     start_err, speed_err = [], []
@@ -194,14 +197,14 @@ def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -
             continue
         correct += 1
         i = hits[0]
-        if i in found:
-            continue  # a second entry for one segment counts as correct but adds no recall
+        if i in found or known[i].get("ignore"):
+            continue  # correct, but adds no recall (repeat entry, or an ignored segment)
         found.add(i)
         s = known[i]
         transition = s["mix_start"] + s["fade_in"] / 2
         start_err.append(abs(e.start - transition))
         speed_err.append(abs((e.factor - 1) * 100 - s["pct"]))
-    return {"entries": len(entries), "correct": correct, "known": len(known),
+    return {"entries": len(entries), "correct": correct, "known": len(scored),
             "found": len(found), "start_err": start_err, "speed_err": speed_err}  # fmt: skip
 
 
@@ -239,6 +242,7 @@ def main() -> None:
     ap.add_argument("--mixes", required=True)
     ap.add_argument("--tag", default="")
     ap.add_argument("--manifest", default=str(ROOT / "eval/manifests/splits_medium_seed0.json"))
+    ap.add_argument("--catalog", help="catalog.json of the searched index (default: manifest)")
     ap.add_argument("--calibrate", action="store_true", help="grid-search decoder parameters (val)")
     ap.add_argument("--params", type=Path, help="calibration result JSON to apply (test)")
     ap.add_argument(
@@ -255,7 +259,7 @@ def main() -> None:
     if args.identity_only:
         w, suffix = w[w["mode"] == "none"], "_identity"
     window = json.loads((RES / f"{stem}.meta.json").read_text())["window_s"]
-    _, cluster = dense_tables(json.loads(Path(args.manifest).read_text()))
+    cluster = cluster_table(args.manifest, args.catalog)
 
     if args.calibrate:
         grids = {

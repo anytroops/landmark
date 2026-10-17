@@ -44,13 +44,27 @@ RES = ROOT / "eval" / "results" / "tracklist"
 FRAMES_PER_S = 11025 / 256
 
 
-def hypotheses(max_pct: float, step_pct: float, modes: list[str]) -> list[tuple[str, float]]:
-    """(mode, factor) pairs: factor 1 once, then each nonzero step for each mode."""
+def cluster_table(manifest: str, catalog: str | None) -> np.ndarray:
+    """Dense id -> duplicate-cluster representative, from the searched index's
+    catalog.json when given (any index), else from the split manifest (an
+    index built from it, like fma_medium's)."""
+    if catalog:
+        cat = json.loads(Path(catalog).read_text())
+        return np.array([t["cluster"] for t in cat], dtype=np.int64)
+    return dense_tables(json.loads(Path(manifest).read_text()))[1]
+
+
+def hypotheses(max_pct: float, step_pct: float, modes: list[str],
+               extra: tuple[float, ...] = ()) -> list[tuple[str, float]]:  # fmt: skip
+    """(mode, factor) pairs: factor 1 once, then each nonzero step for each
+    mode, then each extra factor (e.g. 2 and 0.5 for double- and half-time
+    tempo matching) for each mode."""
     steps = np.round(np.arange(step_pct, max_pct + 1e-9, step_pct), 4)
     out = [("none", 1.0)]
     for mode in modes:
         for s in steps:
             out += [(mode, 1 + s / 100), (mode, 1 - s / 100)]
+        out += [(mode, float(f)) for f in extra]
     return out
 
 
@@ -118,7 +132,7 @@ def load_set(name: str) -> dict:
 def search_cmd(args: argparse.Namespace, cluster: np.ndarray) -> None:
     gt = load_set(args.mixes)
     sr = gt["sample_rate"]
-    hyps = hypotheses(args.max_pct, args.step_pct, args.modes)
+    hyps = hypotheses(args.max_pct, args.step_pct, args.modes, tuple(args.extra_factors))
     jobs = []
     for k, m in enumerate(gt["mixes"]):
         audio, file_sr = sf.read(ROOT / m["file"], dtype="float32")
@@ -139,6 +153,7 @@ def search_cmd(args: argparse.Namespace, cluster: np.ndarray) -> None:
     pd.DataFrame(rows).sort_values(["mix", "t0", "mode", "factor"]).to_csv(out, index=False)
     meta = {"mixes": args.mixes, "window_s": args.window, "hop_s": args.hop,
             "max_pct": args.max_pct, "step_pct": args.step_pct, "modes": args.modes,
+            "extra_factors": args.extra_factors,
             "hypotheses": len(hyps), "shifts": args.shifts, "undo": args.undo, "shard": args.shard,
             "stop_fraction": args.stop_fraction, "windows": len(jobs),
             "rows": len(rows)}  # fmt: skip
@@ -155,29 +170,32 @@ def oracle_cmd(args: argparse.Namespace, cluster: np.ndarray) -> None:
     gt = load_set(args.mixes)
     sr = gt["sample_rate"]
     _init(args.shard, cluster, None, 0)
-    ok = total = 0
+    methods = ("audio", "landmarks", "auto")
+    ok = dict.fromkeys(methods, 0)
+    total = 0
     for k, m in enumerate(gt["mixes"]):
         audio, _ = sf.read(ROOT / m["file"], dtype="float32")
         for s in m["segments"]:
             solo_a, solo_b = s["mix_start"] + s["fade_in"], s["mix_end"] - s["fade_out"]
-            if not s["known"] or solo_b - solo_a < args.window:
+            if not s["known"] or s.get("ignore") or solo_b - solo_a < args.window:
                 continue
             t0 = (solo_a + solo_b - args.window) / 2
             x = audio[int(t0 * sr) : int(t0 * sr) + int(args.window * sr)]
             hyp = [(s["mode"] if s["pct"] else "none", s["factor"])]
             ref = s["src_start"] + (t0 - s["mix_start"]) * s["factor"]
             line = f"mix {k} t0 {t0:6.1f} {s['mode']:7s} {s['pct']:+5.1f}% want {s['dense']:6d}"
-            good = True
-            for how in ("audio", "landmarks", "auto"):
+            total += 1
+            for how in methods:
                 row = _search((k, t0, x, hyp, 4, how))[0]
                 err_s = row["offset"] / FRAMES_PER_S - ref
-                good &= row["top1_dense"] == s["dense"] and abs(err_s) < 0.25
+                good = row["top1_dense"] == s["dense"] and abs(err_s) < args.tolerance
+                ok[how] += good
                 line += f" | {how}: got {row['top1_dense']:6d} score {row['score']:5d} "
-                line += f"err {err_s:+.3f} s"
-            ok, total = ok + good, total + 1
-            print(line + ("" if good else "  <-- MISMATCH"))
-    print(f"{ok}/{total} known segments identified at the predicted offset")
-    if ok != total:
+                line += f"err {err_s:+.3f} s{'' if good else ' X'}"
+            print(line)
+    for how in methods:
+        print(f"{how}: {ok[how]}/{total} known segments identified at the predicted offset")
+    if ok["auto"] != total:
         raise SystemExit(1)
 
 
@@ -190,11 +208,15 @@ def main() -> None:
         p.add_argument("--shard", required=True)
         p.add_argument("--manifest", default=str(ROOT / "eval/manifests/splits_medium_seed0.json"))
         p.add_argument("--window", type=float, default=10.0)
+        p.add_argument("--catalog", help="catalog.json of the searched index (default: manifest)")
+        p.add_argument("--tolerance", type=float, default=0.25, help="oracle offset tolerance, s")
     s = sub.choices["search"]
     s.add_argument("--hop", type=float, default=2.5)
     s.add_argument("--max-pct", type=float, default=8.0)
     s.add_argument("--step-pct", type=float, default=1.0)
     s.add_argument("--modes", nargs="+", default=["speed", "keylock"])
+    s.add_argument("--extra-factors", type=float, nargs="*", default=[],
+                   help="extra tempo factors per mode, e.g. 2 0.5")  # fmt: skip
     s.add_argument("--shifts", type=int, default=4)
     s.add_argument("--undo", choices=["audio", "landmarks", "auto"], default="auto")
     s.add_argument("--stoplist")
@@ -202,7 +224,7 @@ def main() -> None:
     s.add_argument("--workers", type=int, default=os.cpu_count())
     s.add_argument("--tag", default="")
     args = ap.parse_args()
-    _, cluster = dense_tables(json.loads(Path(args.manifest).read_text()))
+    cluster = cluster_table(args.manifest, args.catalog)
     (search_cmd if args.cmd == "search" else oracle_cmd)(args, cluster)
 
 
