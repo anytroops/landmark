@@ -6,6 +6,10 @@ Positives: one excerpt per {split}_pos track. Negatives: NEG_REPS excerpts per
 {split}_neg track (never indexed).
 
 Output: eval/results/queries_{split}_seed{seed}.csv.gz (committed).
+
+With --stop-fractions, each query is fingerprinted once and searched once
+per cutoff, dropping the landmarks the coordinator's stop list would drop
+(D30); each cutoff above 0 writes its own file, tagged _stop{fraction}.
 """
 
 import argparse
@@ -26,6 +30,7 @@ from prototype import fingerprint as fp
 from prototype.audio import DecodeError, decode
 from prototype.build_index import machine_spec
 from prototype.fma import DATA_DIR, audio_path
+from prototype.stoplist import StopList
 
 ROOT = Path(__file__).resolve().parent.parent
 NEG_REPS = 2
@@ -90,6 +95,11 @@ def main() -> None:
     ap.add_argument(
         "--shard", default="", help="host:port of a cmd/shard to query instead of the Python index"
     )
+    ap.add_argument(
+        "--stop-fractions", type=float, nargs="+", default=[0.0],
+        help="stop list cutoffs to evaluate, as fractions of catalog tracks (0 = off, D30)",
+    )  # fmt: skip
+    ap.add_argument("--stoplist", type=Path, help="stoplist.lmst of the searched index")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -102,6 +112,15 @@ def main() -> None:
         backend = LocalBackend(DATA_DIR / "index" / f"{args.manifest.stem}.npz")
         assert np.array_equal(backend.index.fma_ids, dense_to_fma), "index and manifest disagree"
     cluster = {t: int(k) for k, members in manifest["clusters"].items() for t in members}
+    stop = StopList.load(args.stoplist) if args.stoplist else None
+    if any(f > 0 for f in args.stop_fractions) and stop is None:
+        raise SystemExit("--stop-fractions above 0 need --stoplist")
+    if stop is not None and stop.n_tracks != len(dense_to_fma):
+        raise SystemExit(
+            f"{args.stoplist} covers {stop.n_tracks} tracks, the index has {len(dense_to_fma)}"
+        )
+    # fraction -> largest posting count kept, or None for no stop list
+    limits = {f: (stop.limit(f) if f > 0 else None) for f in args.stop_fractions}
     lim = args.limit or None
     jobs = [
         (f, "pos", 0, args.seed, subset, args.conditions, args.query_shifts)
@@ -113,55 +132,68 @@ def main() -> None:
         for r in range(NEG_REPS)
     ]
 
-    out_rows: list[dict[str, object]] = []
+    out_rows: dict[float, list[dict[str, object]]] = {f: [] for f in limits}
+    search_secs = dict.fromkeys(limits, 0.0)
     t0 = time.perf_counter()
-    search_secs = 0.0
     with Pool(args.workers) as pool:
         for i, rows in enumerate(pool.imap_unordered(_work, jobs, chunksize=4), 1):
             for r in rows:
                 if "error" in r:
                     log.warning("skip %s: %s", r["fma_id"], r["error"])
-                    out_rows.append(r)
+                    for f in limits:
+                        out_rows[f].append(dict(r))
                     continue
-                s0 = time.perf_counter()
-                hit = backend.search(r.pop("hashes"), r.pop("times"))
-                search_secs += time.perf_counter() - s0
-                top1 = int(dense_to_fma[hit.top1_dense]) if hit.top1_dense >= 0 else -1
-                r.update(
-                    top1_fma=top1,
-                    top1_score=hit.top1_score,
-                    runner_up_score=hit.runner_up,
-                    top1_offset=hit.top1_offset,
-                    postings_scanned=hit.postings_scanned,
-                    correct=bool(
-                        r["label"] == "pos"
-                        and cluster.get(top1, top1) == cluster.get(r["fma_id"], r["fma_id"])
-                    ),
-                )
-                out_rows.append(r)
+                hashes, times = r.pop("hashes"), r.pop("times")
+                for f, limit in limits.items():
+                    h, t = hashes, times
+                    if limit is not None:
+                        keep = stop.keep(hashes, limit)
+                        h, t = hashes[keep], times[keep]
+                    s0 = time.perf_counter()
+                    hit = backend.search(h, t)
+                    search_secs[f] += time.perf_counter() - s0
+                    top1 = int(dense_to_fma[hit.top1_dense]) if hit.top1_dense >= 0 else -1
+                    row = dict(r)
+                    row.update(
+                        n_landmarks_searched=len(h),
+                        top1_fma=top1,
+                        top1_score=hit.top1_score,
+                        runner_up_score=hit.runner_up,
+                        top1_offset=hit.top1_offset,
+                        postings_scanned=hit.postings_scanned,
+                        correct=bool(
+                            r["label"] == "pos"
+                            and cluster.get(top1, top1) == cluster.get(r["fma_id"], r["fma_id"])
+                        ),
+                    )
+                    out_rows[f].append(row)
             if i % 200 == 0:
                 log.info("%d/%d tracks", i, len(jobs))
 
-    df = pd.DataFrame(out_rows)
-    out = ROOT / "eval" / "results" / f"queries_{args.split}_seed{args.seed}{args.tag}.csv.gz"
-    df.sort_values(["label", "fma_id", "rep", "cond"]).to_csv(out, index=False)
-    meta = {
-        "split": args.split, "seed": args.seed, "manifest": args.manifest.name,
-        "conditions": args.conditions, "limit": args.limit,
-        "query_shifts": args.query_shifts, "tag": args.tag,
-        "backend": f"shard {args.shard}" if args.shard else "python",
-        "backend_retries": getattr(backend, "retries", 0), "rows": len(df),
-        "wall_seconds": round(time.perf_counter() - t0, 1),
-        "mean_search_ms": round(1000 * search_secs / max(len(df), 1), 3),
-        "machine": machine_spec(),
-    }  # fmt: skip
-    out.with_name(f"queries_{args.split}_seed{args.seed}{args.tag}.meta.json").write_text(
-        json.dumps(meta, indent=2) + "\n"
-    )
-    log.info(
-        "wrote %s: %d rows, %.1fs wall, %.3f ms mean search",
-        out, len(df), time.perf_counter() - t0, 1000 * search_secs / max(len(df), 1),
-    )  # fmt: skip
+    for f, limit in limits.items():
+        tag = args.tag + (f"_stop{f:g}" if f > 0 else "")
+        df = pd.DataFrame(out_rows[f])
+        out = ROOT / "eval" / "results" / f"queries_{args.split}_seed{args.seed}{tag}.csv.gz"
+        df.sort_values(["label", "fma_id", "rep", "cond"]).to_csv(out, index=False)
+        meta = {
+            "split": args.split, "seed": args.seed, "manifest": args.manifest.name,
+            "conditions": args.conditions, "limit": args.limit,
+            "query_shifts": args.query_shifts, "tag": tag,
+            "stop_fraction": f, "stop_limit": limit,
+            "stoplist": (f"{args.stoplist} crc32c {stop.crc:08x}" if stop is not None else None),
+            "backend": f"shard {args.shard}" if args.shard else "python",
+            "backend_retries": getattr(backend, "retries", 0), "rows": len(df),
+            "wall_seconds": round(time.perf_counter() - t0, 1),
+            "mean_search_ms": round(1000 * search_secs[f] / max(len(df), 1), 3),
+            "machine": machine_spec(),
+        }  # fmt: skip
+        out.with_name(f"queries_{args.split}_seed{args.seed}{tag}.meta.json").write_text(
+            json.dumps(meta, indent=2) + "\n"
+        )
+        log.info(
+            "wrote %s: %d rows, %.3f ms mean search",
+            out, len(df), 1000 * search_secs[f] / max(len(df), 1),
+        )  # fmt: skip
 
 
 if __name__ == "__main__":
