@@ -149,7 +149,7 @@ def make_set(args: argparse.Namespace) -> dict:
             audio = audio + noise * np.sqrt(p_sig / (p_noise * 10 ** (snr / 10)))
         if args.mp3:
             audio = encode_decode_mp3(audio, args.mp3)
-        audio *= 0.9 / max(float(np.abs(audio).max()), 1e-6)
+        audio = audio * (0.9 / max(float(np.abs(audio).max()), 1e-6))  # MP3 output is read-only
         path = out_dir / f"mix_{k:03d}.wav"
         sf.write(path, audio, sr, subtype="PCM_16")
         mixes.append({"file": str(path.relative_to(ROOT)), "seconds": round(len(audio) / sr, 3),
