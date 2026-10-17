@@ -63,6 +63,40 @@ type skewRow struct {
 	MinListLen    int     `json:"min_list_len"`
 	ShareOfScan   float64 `json:"share_of_scanned"`
 	ShareOfLookup float64 `json:"share_of_query_landmarks"`
+	Shape         shape   `json:"shape"`
+}
+
+// shape is what kind of peak pairs a set of keys encodes, as fractions of
+// the keys. Bins are 11025/1024 = 10.8 Hz and frames 256/11025 = 23 ms.
+type shape struct {
+	SameFreq float64 `json:"same_frequency"`      // f2 == f1: a held note
+	ShortDT  float64 `json:"dt_at_most_4_frames"` // pair within ~93 ms
+	LowFreq  float64 `json:"f1_below_bin_64"`     // anchor under ~690 Hz
+}
+
+// shapeOf describes the keys k for which keep(k) is true.
+func shapeOf(keys []uint32, keep func(k int) bool) shape {
+	var n, same, short, low int
+	for k, h := range keys {
+		if !keep(k) {
+			continue
+		}
+		f1, f2, dt := h>>15, (h>>6)&511, h&63
+		n++
+		if f1 == f2 {
+			same++
+		}
+		if dt <= 4 {
+			short++
+		}
+		if f1 < 64 {
+			low++
+		}
+	}
+	if n == 0 {
+		return shape{}
+	}
+	return shape{float64(same) / float64(n), float64(short) / float64(n), float64(low) / float64(n)}
 }
 
 func main() {
@@ -131,6 +165,7 @@ func run(segPath, qPath string, seed uint64, out string) error {
 		Reachable  int               `json:"reachable_keys"`
 		Seed       uint64            `json:"seed"`
 		Sizes      []sizeRow         `json:"sizes"`
+		AllKeys    shape             `json:"all_keys_shape"`
 		Skew       []skewRow         `json:"skew_full_catalog"`
 		Caps       []capRow          `json:"caps_full_catalog"`
 		Machine    map[string]string `json:"machine"`
@@ -201,8 +236,10 @@ func run(segPath, qPath string, seed uint64, out string) error {
 		}
 		row.ShareOfScan = float64(scan) / float64(totalScan)
 		row.ShareOfLookup = float64(hits) / float64(landmarks)
+		row.Shape = shapeOf(keys, func(k int) bool { return full[k] >= minLen })
 		res.Skew = append(res.Skew, row)
 	}
+	res.AllKeys = shapeOf(keys, func(int) bool { return true })
 	for _, maxLen := range []int{64, 128, 256, 512, 1024} {
 		row := capRow{MaxListLen: maxLen}
 		var dropped int
@@ -228,10 +265,16 @@ func run(segPath, qPath string, seed uint64, out string) error {
 		fmt.Printf("tracks=%6d keys=%8d (%.0f%% of reachable) mean_list=%6.1f scanned/query mean=%9.0f p50=%8d p99=%8d per_1k_tracks=%.0f\n",
 			r.Tracks, r.KeysUsed, 100*r.ReachableUsed, r.MeanListLen, r.ScannedMean, r.ScannedP50, r.ScannedP99, r.ScannedPerTrack)
 	}
+	printShape := func(name string, sh shape) {
+		fmt.Printf("  %-12s same freq %5.1f%%, dt <= 4 frames %5.1f%%, f1 < bin 64 %5.1f%%\n",
+			name, 100*sh.SameFreq, 100*sh.ShortDT, 100*sh.LowFreq)
+	}
 	for _, r := range res.Skew {
 		fmt.Printf("top %.1f%% of keys (len >= %d): %.1f%% of scanned, %.1f%% of query landmarks\n",
 			100*r.TopKeys, r.MinListLen, 100*r.ShareOfScan, 100*r.ShareOfLookup)
+		printShape("their shape:", r.Shape)
 	}
+	printShape("all keys:", res.AllKeys)
 	for _, r := range res.Caps {
 		fmt.Printf("cap %4d: drops %.2f%% of keys, keeps %.1f%% of query landmarks and %.1f%% of scanned\n",
 			r.MaxListLen, 100*r.KeysDropped, 100*r.LandmarksKept, 100*r.ScannedKept)
