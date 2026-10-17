@@ -132,6 +132,20 @@ Test mixes:
 - The booth degradations cost today's system 4 to 13 more points of recall than the clean mixes, and cost the speed grid nothing measurable: the fingerprint already tolerates noise, EQ, and MP3 (the conditions table above), and what defeats it is turntable tempo change.
 - Still no separation between the two decoders; external mixes (UnmixDB, next) and cost are the remaining tests.
 
+## DJ-mix tracklisting on UnmixDB, first set (preliminary)
+
+UnmixDB (Schwarz and Fourer, ISMIR 2018 late-breaking; zenodo.org/records/1422385, CC BY-NC-ND 4.0) is a public set of DJ mixes built by other researchers from the Creative Commons dance tracks of the Mixotic set (the ISMIR 2016 DJ-mix benchmark, whose own files are no longer publicly downloadable). Each mix chains 3 reference excerpts beat-synchronously with linear crossfades, in 12 versions: tempo unchanged ("none"), turntable ("resample"), or keylock ("stretch", sox's tempo effect), times 4 effects (none, bass, compressor, distortion). Some tempo factors are about 2 (double-time matching), so the grid gains x2 and x0.5 hypotheses (37 in all). This is the first of six sets (`set222`: 13 reference excerpts, 48 mixes, 141 scored segments); the rest are still downloading. `eval.unmixdb` converts its labels to our ground-truth format; 15 of the 48 published mix files are truncated by more than 5 s (e.g. 67 s of audio for 112 s of labels), so segments are clipped to the audio present and 3 left with under 10 s are ignored. Oracle check: 131/141 segments matched at the labeled offset within 0.25 s; most misses are one excerpt consistently about 1 s off and double-time keylock segments with low scores. The index holds only the 13 reference excerpts (fma_medium as distractors comes with the full set). Decoder settings are the hard-mix calibration, frozen: UnmixDB played no part in choosing them. Commit 75ae4e3. Raw: `eval/results/tracklist/*unmixdb_set222*`.
+
+| Tempo variant (segments) | Today's system, smoothing | Speed grid, smoothing | Speed grid, line fits + Viterbi |
+|---|---|---|---|
+| none (48) | 48 found, precision 100% | 48, 98.0% | 48, 100% |
+| resample, turntable (45) | 23 (51%), 85.2% | 43 (96%), 97.7% | 38 (84%), 100% |
+| stretch, keylock (48) | 43 (90%), 100% | 47 (98%), 97.9% | 40 (83%), 100% |
+| All (141) | 114 (80.9%), 96.6% | 138 (97.9%), 97.9% | 126 (89.4%), 100% |
+
+- **The synthetic result carries over to mixes built by others from real club tracks with effects**: today's system finds half the turntable-shifted songs, the speed grid 96%. Keylock costs little even without it (90%), as the WSOLA tolerance curve predicted.
+- **The line-fit decoder's calibration does not transfer.** Tuned on 20 s clean synthetic segments, its low switch penalty lets it drop to "unknown" inside UnmixDB's 40 s effected segments and come back, splitting songs (181 entries for 126 found). Smoothing transfers. The fair fix is to calibrate on UnmixDB sets and test on others once all six are here.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.

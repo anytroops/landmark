@@ -245,6 +245,7 @@ def main() -> None:
     ap.add_argument("--catalog", help="catalog.json of the searched index (default: manifest)")
     ap.add_argument("--calibrate", action="store_true", help="grid-search decoder parameters (val)")
     ap.add_argument("--params", type=Path, help="calibration result JSON to apply (test)")
+    ap.add_argument("--group-by", help="also score subsets by a mix field, e.g. timescale")
     ap.add_argument(
         "--identity-only",
         action="store_true",
@@ -281,6 +282,22 @@ def main() -> None:
         }
         for d, r in out.items():
             print(d, json.dumps(r, default=float))
+        if args.group_by:
+            groups = {}
+            for value in sorted({m[args.group_by] for m in gt["mixes"]}):
+                idx = [i for i, m in enumerate(gt["mixes"]) if m[args.group_by] == value]
+                sub_gt = {**gt, "mixes": [gt["mixes"][i] for i in idx]}
+                sub_w = w[w["mix"].isin(idx)].copy()
+                sub_w["mix"] = sub_w["mix"].map({old: new for new, old in enumerate(idx)})
+                groups[value] = {
+                    d: evaluate(sub_w, sub_gt, cluster, d, params[d]["params"], window)
+                    for d in ("smooth", "align")
+                }
+                for d, r in groups[value].items():
+                    print(
+                        value, d, f"found {r['found']}/{r['known']} precision {r['precision']:.3f}"
+                    )
+            out["by_" + args.group_by] = groups
         path = RES / f"score_{args.mixes}{args.tag}{suffix}.json"
     path.write_text(json.dumps(out, indent=1, default=float) + "\n")
     print(path)
