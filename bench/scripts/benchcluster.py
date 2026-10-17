@@ -17,6 +17,8 @@ import argparse
 import contextlib
 import json
 import os
+import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -104,26 +106,86 @@ def cluster(
                 p.kill()
 
 
+CHARGING = ("charging", "finishing charge")
+
+
+def battery() -> tuple[str, int, str]:
+    """Power source, charge percent, and charge state, e.g. ("ac", 100, "charged")."""
+    out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
+    return parse_battery(out)
+
+
+def parse_battery(out: str) -> tuple[str, int, str]:
+    """Parse `pmset -g batt` output; (source, -1, "none") without a battery."""
+    source = "ac" if "AC Power" in out else "battery" if "Battery Power" in out else "unknown"
+    m = re.search(r"(\d+)%; ([^;]+);", out)
+    return (source, int(m.group(1)), m.group(2).strip()) if m else (source, -1, "none")
+
+
+def wait_until_not_charging(poll_s: float = 30) -> tuple[str, int, str]:
+    """Block while the battery charges, then return the battery state.
+
+    Charging draws from the same adapter as the CPU. On this laptop's 65 W
+    adapter, P=1 at 550 qps failed all three B1 runs while the battery charged
+    from 82%, after passing B2 at full charge.
+    """
+    announced = False
+    while True:
+        b = battery()
+        if os.environ.get("LANDMARK_ALLOW_BATTERY"):
+            return b
+        if b[0] != "ac":
+            raise SystemExit("on battery power: plug in, or set LANDMARK_ALLOW_BATTERY=1")
+        if b[2] not in CHARGING:
+            return b
+        if not announced:
+            print(f"battery {b[1]}% {b[2]}: waiting until it stops charging", flush=True)
+            announced = True
+        time.sleep(poll_s)
+
+
 def run_loadgen(target: str, queries: Path, rate: float, warmup: int, duration: int,
                 out: Path, label: str, extra: list[str]) -> dict:  # fmt: skip
-    """Run one load test. Abort if the machine slept or left AC power during it.
+    """Run one load test, after waiting for the battery to stop charging.
 
-    macOS's monotonic clock stops while the machine sleeps and the wall clock
-    does not, so a gap between them means processes were frozen mid-run and
-    every latency in it is meaningless.
+    The run is invalid (its directory renamed to *.invalid, and the harness
+    stops) if the machine slept, left AC power, or the battery drained or
+    began charging during it. macOS's monotonic clock stops while the machine
+    sleeps and the wall clock does not, so a gap between them means processes
+    were frozen mid-run and every latency in it is meaningless. A battery that
+    drains on AC means the adapter could not supply the load. Battery state
+    before and after goes to harness.json next to loadgen's summary.json.
     """
     cmd = [str(BIN / "loadgen"), "run", "-target", target, "-queries", str(queries),
            "-rate", str(rate), "-warmup", f"{warmup}s", "-duration", f"{duration}s",
            "-label", label, "-out", str(out), *extra]  # fmt: skip
+    before = wait_until_not_charging()
     wall0, mono0 = time.time(), time.monotonic()
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     slept = (time.time() - wall0) - (time.monotonic() - mono0)
+    after = battery()
     summary = json.loads((out / "summary.json").read_text())
-    if slept > 2 or summary["machine"]["power"] != "ac":
-        raise SystemExit(
-            f"run {out} is invalid: power={summary['machine']['power']}, "
-            f"machine asleep ~{slept:.0f} s during it. Plug in, keep the lid open, rerun."
-        )
+
+    problems = []
+    if slept > 2:
+        problems.append(f"machine asleep ~{slept:.0f} s")
+    if not os.environ.get("LANDMARK_ALLOW_BATTERY"):
+        if summary["machine"]["power"] != "ac" or after[0] != "ac":
+            problems.append("left AC power")
+        if after[1] < before[1]:
+            problems.append(f"battery fell {before[1]}% to {after[1]}% on AC")
+        if after[2] in CHARGING:
+            problems.append(f"battery began charging ({after[1]}%)")
+    harness = {"battery_before": f"{before[1]}%; {before[2]}",
+               "battery_after": f"{after[1]}%; {after[2]}",
+               "slept_s": round(slept, 1), "valid": not problems, "problems": problems}  # fmt: skip
+    (out / "harness.json").write_text(json.dumps(harness, indent=1) + "\n")
+    if problems:
+        bad = out.with_name(out.name + ".invalid")
+        shutil.rmtree(bad, ignore_errors=True)
+        out.rename(bad)
+        raise SystemExit(f"run {out} is invalid ({'; '.join(problems)}); moved to {bad.name}. "
+                         "Plug in, keep the lid open, rerun.")  # fmt: skip
     return summary
 
 
