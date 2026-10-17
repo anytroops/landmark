@@ -16,6 +16,7 @@ type metrics struct {
 	attempts  *prometheus.CounterVec   // by partition, replica, outcome
 	retries   prometheus.Counter
 	ejections *prometheus.CounterVec // by replica
+	stopped   prometheus.Counter     // query landmarks dropped by the stop list (D30)
 }
 
 func newMetrics(reg prometheus.Registerer, c *Coordinator) (*metrics, error) {
@@ -37,8 +38,11 @@ func newMetrics(reg prometheus.Registerer, c *Coordinator) (*metrics, error) {
 		ejections: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "landmark_coordinator_ejections_total", Help: "Replicas ejected after consecutive failures.",
 		}, []string{"replica"}),
+		stopped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "landmark_coordinator_landmarks_stopped_total", Help: "Query landmarks dropped by the stop list.",
+		}),
 	}
-	collectors := []prometheus.Collector{m.identify, m.responded, m.attempts, m.retries, m.ejections}
+	collectors := []prometheus.Collector{m.identify, m.responded, m.attempts, m.retries, m.ejections, m.stopped}
 	for _, reps := range c.parts {
 		for _, r := range reps {
 			labels := prometheus.Labels{"partition": fmt.Sprint(r.partition), "replica": r.addr}

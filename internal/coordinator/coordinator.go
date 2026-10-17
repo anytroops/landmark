@@ -9,7 +9,10 @@
 // and reinstated by health checks (D25), and are only used once verified to
 // serve the expected segment (D26). Partitions are disjoint by track, so the
 // global top-k is an exact merge of per-partition top-k lists. A partition
-// that never answers makes the response partial rather than an error.
+// that never answers makes the response partial rather than an error. With a
+// stop list configured (D30), landmarks whose hash has a very long posting
+// list across the whole index are dropped once, before fan-out, so every
+// partition searches the same landmarks.
 package coordinator
 
 import (
@@ -184,6 +187,15 @@ func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 		return nil, status.Errorf(codes.InvalidArgument, "top_k %d exceeds limit %d", topK, MaxTopK)
 	case topK == 0:
 		topK = DefaultTopK
+	}
+
+	if c.cl.Stop != nil {
+		var dropped int
+		hashes, times, dropped = c.cl.Stop.Filter(hashes, times, c.cl.StopLimit)
+		c.metrics.stopped.Add(float64(dropped))
+		if len(hashes) == 0 { // every landmark was uninformative: no evidence for any track
+			return &landmarkv1.IdentifyResponse{PartitionsResponded: n, PartitionsTotal: n}, nil
+		}
 	}
 
 	// The caller's deadline wins if it is earlier than ours.
