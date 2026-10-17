@@ -82,6 +82,24 @@ Test accuracy at threshold (median postings scanned per query in parentheses):
 - FAR stays within the 0.1% target at every cutoff.
 - Speed conditions stay broken (under 1.2%) at every cutoff; that is D31's job.
 
+## Speed tolerance of the current fingerprint (D31 step 1)
+
+fma_medium test positives (1,000 per point), clean 10 s excerpts with a tempo change: turntable (`speed_`, resampled, so tempo and pitch move together) or keylock (`stretch_`, librosa phase-vocoder time stretch, tempo only), from 0.25% to 8% either way. Go P=1 shard, commit 5177a69, stop list off, fma_medium thresholds (t_abs 24, t_ratio 3.0). Raw: `eval/results/queries_test_seed0_medium_speedtol*.csv.gz`; tables `speedtol_seed0_medium_speedtol*.md`; figures `docs/figures/speed_tolerance_medium*.png` (the `_stop0.04` variants use the 4% stop list and its thresholds).
+
+Accuracy at threshold / raw top-1 (%):
+
+| Tempo change | -8% | -4% | -2% | -1% | -0.5% | +0.5% | +1% | +2% | +4% | +8% |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Turntable, at threshold | 0.0 | 0.0 | 0.7 | 86.7 | 99.9 | 99.9 | 86.8 | 0.6 | 0.0 | 0.0 |
+| Turntable, raw top-1 | 0.0 | 1.5 | 63.4 | 99.3 | 99.9 | 99.9 | 99.9 | 61.0 | 1.9 | 0.1 |
+| Keylock, at threshold | 2.7 | 27.6 | 84.1 | 99.3 | 99.8 | 99.9 | 99.9 | 99.8 | 97.8 | 40.5 |
+| Keylock, raw top-1 | 91.7 | 99.3 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 98.6 |
+
+- **Turntable changes break the hashes.** Tolerance is about +/-0.75% (98.6% or better at threshold), and nothing survives +/-2%: a 1% change moves bin 250 by 2.5 bins, so (f1, f2) pairs stop matching. For D31 option A, a grid in 1% steps (at most 0.5% from the truth) keeps every query in the 99.9% zone; +/-8% takes 17 grid points.
+- **Keylock changes break the vote, not the hashes.** The right track is still ranked first for 92% to 99.9% of queries even at +/-8%, because frequencies do not move and most short-gap pairs survive. What fails is the threshold: the query-to-reference offset drifts across the window (about 0.4 s over 10 s at 4%), spreading the votes over many offset bins (median clean score kept: 6% at +4%). Voting that models the drift, as D31 option B votes on (track, offset, speed), should recover most of these; for option A, a 2% keylock grid keeps 99.3% or better.
+- **Slowing down loses evidence faster than speeding up** under keylock (median clean score kept 16% at -0.25% vs 85% at +0.25%). The cause was not investigated; it may be specific to librosa's phase vocoder, so the keylock numbers describe this stretcher, not DJ software in general.
+- With the stop list at 4%, the same pattern holds with a slightly narrower turntable tolerance (at +/-1%: 76% instead of 87% at threshold).
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
