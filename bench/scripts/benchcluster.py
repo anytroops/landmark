@@ -28,7 +28,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BIN = ROOT / "bin"
+# LANDMARK_BIN runs other binaries under this harness, e.g. ones built from an
+# older commit in a separate worktree for a before/after comparison; each
+# run's harness.json records which commit that directory's repo is at.
+BIN = Path(os.environ.get("LANDMARK_BIN", ROOT / "bin")).resolve()
 
 
 def wait_for(log: Path, needle: str, timeout_s: float = 30.0) -> None:
@@ -180,7 +183,10 @@ def run_loadgen(target: str, queries: Path, rate: float, warmup: int, duration: 
             problems.append(f"battery fell {before[1]}% to {after[1]}% on AC")
         if after[2] in CHARGING:
             problems.append(f"battery began charging ({after[1]}%)")
-    harness = {"battery_before": f"{before[1]}%; {before[2]}",
+    bin_commit = subprocess.run(["git", "-C", str(BIN), "rev-parse", "--short", "HEAD"],
+                                capture_output=True, text=True).stdout.strip()  # fmt: skip
+    harness = {"bin": str(BIN), "bin_repo_commit": bin_commit or "unknown",
+               "battery_before": f"{before[1]}%; {before[2]}",
                "battery_after": f"{after[1]}%; {after[2]}",
                "slept_s": round(slept, 1), "valid": not problems, "problems": problems}  # fmt: skip
     (out / "harness.json").write_text(json.dumps(harness, indent=1) + "\n")
