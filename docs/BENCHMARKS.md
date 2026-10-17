@@ -5,7 +5,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 | ID | Benchmark | Result |
 |---|---|---|
 | B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | full methodology on fma_medium, P=1/2/4/8 (below); quick sweeps on fma_small and fma_medium |
-| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4/8 sustain 550/472/464/374 qps (below); P=1's limit varies about 520-550 between sessions |
+| B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4/8 sustain 550/472/464/374 qps (below); P=1's limit varies about 520-550 between sessions. With the stop list (D30) at 2%: P=1 925 qps |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
 | B5 | Ingest throughput vs worker count | fma_small, AC, 3 reps (below) |
@@ -195,4 +195,19 @@ Complete answers were 100% in every run except one P=1 run at 550 qps (99.95%) a
 - **At similar load, partitioning cuts latency about 4 to 5x on one host**: at 232 to 280 qps, p50 falls from 14.6 ms (P=1) to 8.4 (P=2), 5.2 (P=4), and 3.4 ms (P=8), and p99 from 36.3 to 19.2, 10.9, and 7.4 ms. Each partition scans 1/P of a query's postings in parallel.
 - **At its B2 rate, P=1 is on the knee** (p99 66 to 140 ms across runs, so the median misses the SLO in this session; see the charging note), while P=2, P=4, and P=8 stay well inside the SLO at theirs (p99 at most 49 ms). Their B2 confirm runs each had one run breach the SLO; these did not. Rates at the edge vary from session to session.
 - **Light load is slightly slower than moderate load at P=4 and P=8** (P=8 p50 5.3 ms at 94 qps, 3.4 ms at 280 qps). This is consistent with the thread wake-up overhead the below-knee profiles showed: at low rates, idle threads sleep between requests and pay to wake. Not separately measured.
+
+## B2 with the stop list (D30), fma_medium, P=1 (Phase 4)
+
+Same harness and SLO as B2 (bisect with 60 s probes, confirm with 3 x 120 s runs, median rule D29), coordinator `stop_fraction` 0.02 and 0.04, P=1, commit e43d1ea, every run at "100%; charged". Raw: `bench/results/b2_medium_stop{0.02,0.04}/P1/`. Accuracy per cutoff is in EVAL.md (stop list section).
+
+| Stop list | Max sustainable | p50 at that rate (each run) | p99 (each run) | Postings scanned per query, clean 10 s (median) | SNR 0 dB accuracy |
+|---|---|---|---|---|---|
+| off (B2 above) | 550 qps | 22.8, 22.7, 26.9 ms | 67, 69, 153 ms | 689k | 97.1% |
+| 4% of tracks | **719 qps** | 15.7, 15.8, 15.0 ms | 85, 113, 33 ms | 524k | 95.5% |
+| 2% of tracks | **925 qps** | 11.5, 11.7, 10.8 ms | 90, 142, 45 ms | 388k | 94.4% |
+
+- Throughput rises 1.3x at 4% and 1.7x at 2%, roughly in line with the drop in postings scanned (24% and 44%): vote sorting is the main per-query cost. The baseline was measured in an earlier session, and P=1's limit varies about 5 to 10% between sessions, so the ratios carry about that much uncertainty.
+- At the same load latency falls too: at 400 qps (60 s probes) p50 / p99 were 9.6 / 12.7 ms at 2% and 12.2 / 20.7 ms at 4%, against 15.5 / 38.2 ms at 412 qps with the stop list off (B1).
+- Each confirmed rate is again at the edge (one of three runs breached p99 at each), as with every B2 point.
+- The price is accuracy in heavy noise (EVAL.md); clean and compressed audio are unchanged. Which cutoff to run by default is a product choice; the coordinator default stays off.
 

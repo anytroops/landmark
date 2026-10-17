@@ -57,6 +57,31 @@ Index: 23,985 tracks (fma_medium minus held-out negatives and undecodable files)
 
 Accuracy and false accepts hold at 3.4x the catalog. Do not read the differences from the fma_small table as improvements: thresholds and test tracks differ, and most intervals overlap.
 
+## Stop list (D30): accuracy per cutoff, fma_medium (Phase 4)
+
+Same queries as the fma_medium section (seed 0, 1,000 positives and 1,000 negatives per condition per split), fingerprinted once and searched through a Go P=1 shard at four cutoffs: off, and dropping query landmarks whose hash has more postings than 1%, 2%, or 4% of the catalog's 23,985 tracks (239, 479, 959 postings). Thresholds recalibrated per cutoff on val (D13, FAR <= 0.1%). The "off" run reproduces the committed `_medium` rows exactly (all 22,000 rows per split, every column). Commit 8d50412. Raw: `eval/results/queries_{val,test}_seed0_medium_d30*.csv.gz`, summaries `summary_seed0_medium_d30*.md`, paired tests `compare_seed0_medium_d30_vs_medium_d30_stop*.md`.
+
+Test accuracy at threshold (median postings scanned per query in parentheses):
+
+| Condition | Off | 4% | 2% | 1% |
+|---|---|---|---|---|
+| clean_10s | 99.9 (689k) | 99.9 (524k) | 99.9 (388k) | 99.9 (238k) |
+| clean_5s | 99.8 | 99.8 | 99.8 | 99.8 |
+| mp3_128k_10s | 99.9 | 99.9 | 99.9 | 99.9 |
+| mp3_64k_10s | 99.9 | 99.9 | 99.9 | 99.9 |
+| white_snr15_10s | 99.6 | 99.6 | 99.6 | 99.6 |
+| white_snr10_10s | 99.6 | 99.6 | 99.6 | 99.5 |
+| white_snr5_10s | 99.4 | 98.7 | 98.7 | 98.5 |
+| white_snr5_5s | 96.7 | 96.1 | 95.5 | 94.2 |
+| white_snr0_10s | 97.1 | 95.5 | 94.4 | 93.6 |
+| Pooled test FAR (non-speed) | 0.056% | 0.044% | 0.022% | 0.067% |
+| Thresholds (t_abs, t_ratio) | 24, 3.0 | 2, 4.0 | 2, 4.0 | 16, 3.0 |
+
+- **Clean and compressed audio are unaffected at every cutoff**, while the postings each query scans fall by 24%, 44%, and 65% (clean 10 s, median).
+- **Heavy noise pays for it.** At SNR 0 dB the losses are 1.6, 2.7, and 3.5 points (exact McNemar p = 1.5e-4, 1.5e-8, 5.8e-11; the discordant queries go almost entirely one way). Under heavy noise the peaks that survive are disproportionately the strong low-frequency and held-note ones, which are exactly the hashes the stop list removes.
+- FAR stays within the 0.1% target at every cutoff.
+- Speed conditions stay broken (under 1.2%) at every cutoff; that is D31's job.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
