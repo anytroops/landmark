@@ -106,7 +106,8 @@ func run(cfgPath, listen, admin string) error {
 	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	hs.SetServingStatus(landmarkv1.CoordinatorService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 	slog.Info("serving", "grpc", lis.Addr().String(), "admin", admin, "partitions", len(cl.Partitions),
-		"deadline", cl.Deadline(), "t_abs", cl.TAbs, "t_ratio", cl.TRatio)
+		"deadline", cl.Deadline(), "t_abs", cl.TAbs, "t_ratio", cl.TRatio,
+		"stop_fraction", cl.StopFraction, "stop_limit", cl.StopLimit)
 	err = gs.Serve(lis)
 	stop()
 	<-shutdownDone

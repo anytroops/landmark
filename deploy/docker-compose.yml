@@ -1,9 +1,14 @@
 # Local cluster: 2 partitions x 2 replicas, a coordinator, Prometheus, Grafana.
 #
-#   INDEX=p2_varint docker compose -f deploy/docker-compose.yml up -d --build
+#   docker compose -f deploy/docker-compose.yml up -d --build
 #
-# INDEX names a directory under data/segments built by:
-#   bin/ingest -out data/segments/p2_varint -partitions 2
+# INDEX names a directory under data/segments, default medium/p2 (fma_medium,
+# 2 partitions, built by bench/scripts/medium_pipeline.sh; it must have a
+# stoplist.lmst, which cmd/ingest writes and cmd/stoplist adds to older
+# indexes). cluster.p2.json runs the stop list at 4% of tracks (D30) with the
+# thresholds calibrated for that cutoff on fma_medium (t_abs 2, t_ratio 4.0,
+# EVAL.md); another index needs its own calibration. B3 (BENCHMARKS) ran on
+# fma_small (INDEX=p2_varint) before this default changed.
 #
 # Caveat for benchmarks: every container shares one machine (and, inside the
 # Colima VM, one page cache), so replicas do not duplicate memory and P
@@ -15,7 +20,7 @@ name: landmark
 x-shard: &shard
   image: landmark-shard:dev
   pull_policy: never
-  volumes: ["../data/segments/${INDEX:-p2_varint}:/index:ro"]
+  volumes: ["../data/segments/${INDEX:-medium/p2}:/index:ro"]
   restart: "no" # failure tests kill replicas on purpose; do not resurrect them
 
 services:
@@ -40,7 +45,7 @@ services:
     command: ["-config", "/etc/landmark/cluster.json", "-listen", ":7000", "-admin", ":9100"]
     volumes:
       - "./cluster.p2.json:/etc/landmark/cluster.json:ro"
-      - "../data/segments/${INDEX:-p2_varint}:/index:ro"
+      - "../data/segments/${INDEX:-medium/p2}:/index:ro"
     ports: ["127.0.0.1:7000:7000"] # gRPC only; admin ports stay inside the network
     depends_on: [shard-0a, shard-0b, shard-1a, shard-1b]
 
