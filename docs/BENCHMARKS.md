@@ -4,7 +4,7 @@ Methodology: see `docs/PROJECT_BRIEF.md` section 14. Every number here traces to
 
 | ID | Benchmark | Result |
 |---|---|---|
-| B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | quick sweeps on fma_small and fma_medium (below); full methodology on fma_medium [TBD] |
+| B1 | Latency p50/p95/p99/p99.9 vs offered QPS, per partition count | full methodology on fma_medium, P=1/2/4/8 (below); quick sweeps on fma_small and fma_medium |
 | B2 | Max sustainable QPS under p99 SLO vs partitions | fma_medium, one host: P=1/2/4/8 sustain 550/472/464/374 qps (below); P=1's limit varies about 520-550 between sessions |
 | B3 | Failure-injection timeline around a replica kill | single-host Docker, fma_small (below) |
 | B4 | Index size: raw vs encoded, bytes per posting | fma_small and fma_medium (below); fma_large [TBD] |
@@ -175,3 +175,24 @@ Since commit fe4c470 the harness waits for the battery to stop charging before e
 - **The cost sits in few keys.** The longest 0.1% of lists (length >= 879) produce 32% of all postings scanned while serving 4.2% of query landmarks; the longest 1% produce 64% while serving 17%.
 - **Those keys are held notes and low frequencies.** Of the longest 0.1%, 24% pair two peaks at the same frequency (0.8% of all keys), 32% pair peaks within 4 frames, ~93 ms (6.3% of all keys), and 41% anchor below bin 64, ~690 Hz (9.0% of all keys). These patterns genuinely repeat across songs, so finer quantization (a wider hash) would not split them.
 - **Skipping long lists** (a stop list, as text search does with "the"): a cap of 1,024 postings keeps 96.4% of query landmarks and removes 28% of postings scanned; 512 keeps 90.5% and removes 48%; 256 keeps 79.6% and removes 68%. The effect on accuracy is not measured yet.
+
+## B1: latency vs load, full methodology, fma_medium (Phase 4)
+
+Each P at 25, 50, 75, and 100% of its B2 rate; 30 s warmup, 120 s measured, 3 reps per point; open loop; single host, bare metal, RF=1, 1,500 replay queries, 200 ms deadline. Every run started and ended at "100%; charged" (`harness.json`, battery guard). Two sessions on identical code: commit e33b868 (P=1, and P=2 up to 354 qps; night of 2026-10-16) and eb6a96a (P=2 at 472 qps, P=4, P=8; 2026-10-17 afternoon; only docs and results changed in between). Raw: `bench/results/b1_full_medium` (48 runs); plot `docs/figures/b1_full_medium.png`.
+
+p50 / p99 in ms, medians of 3 runs (p99 range across runs where it exceeds 2 ms):
+
+| P | 25% | 50% | 75% | 100% (B2 rate) |
+|---|---|---|---|---|
+| 1 | 138 qps: 14.7 / 36.6 | 275 qps: 14.6 / 36.3 | 412 qps: 15.5 / 38.2 | 550 qps: 42.7 / 123 (66 to 140) |
+| 2 | 118 qps: 8.7 / 19.5 | 236 qps: 8.4 / 19.2 | 354 qps: 8.5 / 19.5 | 472 qps: 9.9 / 48 (27 to 49) |
+| 4 | 116 qps: 5.7 / 11.4 | 232 qps: 5.2 / 10.9 | 348 qps: 5.2 / 11.2 | 464 qps: 6.3 / 25 (24 to 29) |
+| 8 | 94 qps: 5.3 / 9.1 | 187 qps: 3.6 / 6.7 | 280 qps: 3.4 / 7.4 | 374 qps: 4.4 / 23 (18 to 35) |
+
+Complete answers were 100% in every run except one P=1 run at 550 qps (99.95%) and one P=8 run at 374 qps (99.99%).
+
+- **Up to 75% of each B2 rate, latency is flat and repeatable**: the three runs at each of those points agree within 1 ms at p99. All the variation sits in the last 25%, at the knee.
+- **At similar load, partitioning cuts latency about 4 to 5x on one host**: at 232 to 280 qps, p50 falls from 14.6 ms (P=1) to 8.4 (P=2), 5.2 (P=4), and 3.4 ms (P=8), and p99 from 36.3 to 19.2, 10.9, and 7.4 ms. Each partition scans 1/P of a query's postings in parallel.
+- **At its B2 rate, P=1 is on the knee** (p99 66 to 140 ms across runs, so the median misses the SLO in this session; see the charging note), while P=2, P=4, and P=8 stay well inside the SLO at theirs (p99 at most 49 ms). Their B2 confirm runs each had one run breach the SLO; these did not. Rates at the edge vary from session to session.
+- **Light load is slightly slower than moderate load at P=4 and P=8** (P=8 p50 5.3 ms at 94 qps, 3.4 ms at 280 qps). This is consistent with the thread wake-up overhead the below-knee profiles showed: at low rates, idle threads sleep between requests and pay to wake. Not separately measured.
+
