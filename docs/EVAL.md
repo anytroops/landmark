@@ -84,7 +84,7 @@ Test accuracy at threshold (median postings scanned per query in parentheses):
 
 ## Speed tolerance of the current fingerprint (D31 step 1)
 
-fma_medium test positives (1,000 per point), clean 10 s excerpts with a tempo change: turntable (`speed_`, resampled, so tempo and pitch move together) or keylock (`stretch_`, librosa phase-vocoder time stretch, tempo only), from 0.25% to 8% either way. Go P=1 shard, commit 5177a69, stop list off, fma_medium thresholds (t_abs 24, t_ratio 3.0). Raw: `eval/results/queries_test_seed0_medium_speedtol*.csv.gz`; tables `speedtol_seed0_medium_speedtol*.md`; figures `docs/figures/speed_tolerance_medium*.png` (the `_stop0.04` variants use the 4% stop list and its thresholds).
+fma_medium test positives (1,000 per point), clean 10 s excerpts with a tempo change, from 0.25% to 8% either way: turntable (`speed_`, resampled, so tempo and pitch move together), keylock by WSOLA (`keylock_`, time-domain overlap-add, tempo only, the family SoundTouch belongs to), and keylock by librosa's phase vocoder (`stretch_`). Go P=1 shard, stop list off, fma_medium thresholds (t_abs 24, t_ratio 3.0). Commits 5177a69 (turntable, phase vocoder) and 377644e (WSOLA). Raw: `eval/results/queries_test_seed0_medium_speedtol*.csv.gz`; tables `speedtol_seed0_medium_speedtol*.md`; figures `docs/figures/speed_tolerance_medium*.png` (the `_stop0.04` variants use the 4% stop list and its thresholds).
 
 Accuracy at threshold / raw top-1 (%):
 
@@ -92,13 +92,15 @@ Accuracy at threshold / raw top-1 (%):
 |---|---|---|---|---|---|---|---|---|---|---|
 | Turntable, at threshold | 0.0 | 0.0 | 0.7 | 86.7 | 99.9 | 99.9 | 86.8 | 0.6 | 0.0 | 0.0 |
 | Turntable, raw top-1 | 0.0 | 1.5 | 63.4 | 99.3 | 99.9 | 99.9 | 99.9 | 61.0 | 1.9 | 0.1 |
-| Keylock, at threshold | 2.7 | 27.6 | 84.1 | 99.3 | 99.8 | 99.9 | 99.9 | 99.8 | 97.8 | 40.5 |
-| Keylock, raw top-1 | 91.7 | 99.3 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 98.6 |
+| Keylock (WSOLA), at threshold | 95.8 | 99.5 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.8 | 99.5 | 95.6 |
+| Keylock (WSOLA), raw top-1 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.8 |
+| Keylock (phase vocoder), at threshold | 2.7 | 27.6 | 84.1 | 99.3 | 99.8 | 99.9 | 99.9 | 99.8 | 97.8 | 40.5 |
+| Keylock (phase vocoder), raw top-1 | 91.7 | 99.3 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 99.9 | 98.6 |
 
 - **Turntable changes break the hashes.** Tolerance is about +/-0.75% (98.6% or better at threshold), and nothing survives +/-2%: a 1% change moves bin 250 by 2.5 bins, so (f1, f2) pairs stop matching. For D31 option A, a grid in 1% steps (at most 0.5% from the truth) keeps every query in the 99.9% zone; +/-8% takes 17 grid points.
-- **Keylock changes break the vote, not the hashes.** The right track is still ranked first for 92% to 99.9% of queries even at +/-8%, because frequencies do not move and most short-gap pairs survive. What fails is the threshold: the query-to-reference offset drifts across the window (about 0.4 s over 10 s at 4%), spreading the votes over many offset bins (median clean score kept: 6% at +4%). Voting that models the drift, as D31 option B votes on (track, offset, speed), should recover most of these; for option A, a 2% keylock grid keeps 99.3% or better.
-- **Slowing down loses evidence faster than speeding up** under keylock (median clean score kept 16% at -0.25% vs 85% at +0.25%). The cause was not investigated; it may be specific to librosa's phase vocoder, so the keylock numbers describe this stretcher, not DJ software in general.
-- With the stop list at 4%, the same pattern holds with a slightly narrower turntable tolerance (at +/-1%: 76% instead of 87% at threshold).
+- **Keylock barely hurts, once it is simulated realistically.** With WSOLA, today's fingerprint stays at 99% or better at threshold out to +/-6% and about 96% at +/-8%, with no correction, symmetric in direction: frequencies do not move and WSOLA copies waveform pieces intact, so most hashes survive; the query-to-reference offset still drifts (median clean score kept 9% at 4%), but the right track's peak stays far above the runner-up. The real obstacle for DJ mixes is therefore turntable-style changes.
+- **The phase-vocoder rows are an artifact of that stretcher, not of key lock.** An earlier version of this section concluded that keylock "breaks the vote" from those rows. librosa's phase vocoder accumulates phase errors along its input, smearing the spectral peaks a few seconds in (on one track at +1.8%: 20% of the clean score kept in the first 10 s, 2% from 3.3 s in), and it degrades slowing down much more than speeding up (median clean score kept 16% at -0.25% vs 85% at +0.25%). WSOLA shows neither effect, so the WSOLA rows are the keylock model used from here on (eval.degrade.keylock).
+- With the stop list at 4%, the same pattern holds with a slightly narrower tolerance (turntable at +/-1%: 76% instead of 87%; WSOLA keylock at +/-8%: 88 to 91% instead of 96%).
 
 ## Go system parity (Phase 2 done criterion)
 

@@ -28,7 +28,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 RES = Path(__file__).resolve().parent / "results"
 ROOT = RES.parent.parent
-NAME = re.compile(r"(speed|stretch)_([+-]\d+(?:\.\d+)?)pct_10s")
+NAME = re.compile(r"(speed|keylock|stretch)_([+-]\d+(?:\.\d+)?)pct_10s")
+LABELS = {
+    "speed": "turntable (tempo + pitch)",
+    "keylock": "keylock, WSOLA (tempo only)",
+    "stretch": "keylock, phase vocoder (tempo only)",
+}
 
 
 def main() -> None:
@@ -88,8 +93,8 @@ def main() -> None:
     if args.figure:
         fig, (ax_a, ax_s) = plt.subplots(1, 2, figsize=(11, 4))
         base = next(r for r in rows if r["kind"] == "clean")
-        kinds = (("speed", "turntable (tempo + pitch)"), ("stretch", "keylock (tempo only)"))
-        for kind, label in kinds:
+        kinds = [k for k in LABELS if any(r["kind"] == k for r in rows)]
+        for kind, label in ((k, LABELS[k]) for k in kinds):
             rs = sorted([r for r in rows if r["kind"] == kind] + [base], key=lambda r: r["pct"])
             xs = [r["pct"] for r in rs]
             acc = [100 * r["accuracy"] for r in rs]
