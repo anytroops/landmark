@@ -191,6 +191,32 @@ def merge_repeats(entries: list[Entry], gap: float) -> list[Entry]:
     return out
 
 
+# Hybrid (D36): the pair searches kept from a speed-grid run, and the
+# weights tried for pair scores relative to B2 scores.
+PAIR_HYPOTHESES = {("none", 1.0), ("keylock", 2.0), ("keylock", 0.5)}
+ALPHAS = (1.0, 1.5, 2.0, 3.0)
+
+
+def pair_rows(w: pd.DataFrame) -> pd.DataFrame:
+    """The hybrid's pair searches from a speed-grid run: the unchanged window
+    and keylock double- and half-time (undone on landmarks)."""
+    keep = [(m, f) in PAIR_HYPOTHESES for m, f in zip(w["mode"], w["factor"], strict=True)]
+    return w[keep]
+
+
+def combine(w: pd.DataFrame, pairs: pd.DataFrame | None, alpha: float | None) -> pd.DataFrame:
+    """B2 rows plus pair rows whose score and runner-up are scaled by alpha
+    (scores of the two fingerprints are on different scales), in the order
+    the decoders expect."""
+    if pairs is None:
+        return w
+    p = pairs.copy()
+    p["score"] = p["score"] * alpha
+    p["runner_up"] = p["runner_up"] * alpha
+    both = pd.concat([w, p], ignore_index=True)
+    return both.sort_values(["mix", "t0", "mode", "factor"]).reset_index(drop=True)
+
+
 def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -> dict:
     """Match entries to known segments; returns counts and errors."""
 
@@ -269,6 +295,11 @@ def main() -> None:
     ap.add_argument("--group-by", help="also score subsets by a mix field, e.g. timescale")
     ap.add_argument("--sets", nargs="+", help="only mixes whose 'set' field is one of these")
     ap.add_argument(
+        "--pair-tag",
+        help="hybrid (D36): also use the pair searches from windows_<mixes><pair-tag>, scaled "
+        "by a weight calibrated with the decoder settings (results get a _hybrid suffix)",
+    )
+    ap.add_argument(
         "--merge-gap",
         type=float,
         default=-1,
@@ -286,14 +317,25 @@ def main() -> None:
     gt = json.loads((ROOT / "eval" / "mixes" / f"{args.mixes}.json").read_text())
     stem = f"windows_{args.mixes}{args.tag}"
     w = pd.read_csv(RES / f"{stem}.csv.gz")
+    pairs = None
+    if args.pair_tag:
+        pairs = pair_rows(pd.read_csv(RES / f"windows_{args.mixes}{args.pair_tag}.csv.gz"))
     if args.sets:  # keep only the chosen sets, renumbering mixes as the window rows do
         idx = [i for i, m in enumerate(gt["mixes"]) if m.get("set") in args.sets]
         gt = {**gt, "mixes": [gt["mixes"][i] for i in idx]}
+        renumber = {old: new for new, old in enumerate(idx)}
         w = w[w["mix"].isin(idx)].copy()
-        w["mix"] = w["mix"].map({old: new for new, old in enumerate(idx)})
+        w["mix"] = w["mix"].map(renumber)
+        if pairs is not None:
+            pairs = pairs[pairs["mix"].isin(idx)].copy()
+            pairs["mix"] = pairs["mix"].map(renumber)
     suffix = "_" + "-".join(args.sets) if args.sets else ""
     if args.identity_only:
         w, suffix = w[w["mode"].isin(["none", "b2"])], suffix + "_identity"
+        if pairs is not None:
+            pairs = pairs[pairs["mode"] == "none"]
+    if pairs is not None:
+        suffix = "_hybrid" + suffix
     if args.merge_gap >= 0:
         suffix += "_merged"
     window = json.loads((RES / f"{stem}.meta.json").read_text())["window_s"]
@@ -307,15 +349,23 @@ def main() -> None:
                       for s in (1, 2, 4, 8, 16)],
         }  # fmt: skip
         out = {}
+        alphas = ALPHAS if pairs is not None else (None,)
+        frames = {a: combine(w, pairs, a) for a in alphas}
         for decoder, grid in grids.items():
-            results = [evaluate(w, gt, cluster, decoder, p, window, args.merge_gap) for p in grid]
+            results = [evaluate(frames[a], gt, cluster, decoder, {**p, "alpha": a}, window,
+                                args.merge_gap)
+                       for a in alphas for p in grid]  # fmt: skip
             out[decoder] = max(results, key=lambda r: r["f1"])
             print(decoder, json.dumps({k: v for k, v in out[decoder].items()}, default=float))
         path = RES / f"calibration_{args.mixes}{args.tag}{suffix}.json"
     else:
         params = json.loads(args.params.read_text())
+
+        def rows(d: str) -> pd.DataFrame:
+            return combine(w, pairs, params[d]["params"].get("alpha"))
+
         out = {
-            d: evaluate(w, gt, cluster, d, params[d]["params"], window, args.merge_gap)
+            d: evaluate(rows(d), gt, cluster, d, params[d]["params"], window, args.merge_gap)
             for d in ("smooth", "align")
         }
         for d, r in out.items():
@@ -325,11 +375,16 @@ def main() -> None:
             for value in sorted({m[args.group_by] for m in gt["mixes"]}):
                 idx = [i for i, m in enumerate(gt["mixes"]) if m[args.group_by] == value]
                 sub_gt = {**gt, "mixes": [gt["mixes"][i] for i in idx]}
-                sub_w = w[w["mix"].isin(idx)].copy()
-                sub_w["mix"] = sub_w["mix"].map({old: new for new, old in enumerate(idx)})
+
+                def sub(d: str, idx: list[int] = idx) -> pd.DataFrame:
+                    x = rows(d)
+                    x = x[x["mix"].isin(idx)].copy()
+                    x["mix"] = x["mix"].map({old: new for new, old in enumerate(idx)})
+                    return x
+
                 groups[value] = {
                     d: evaluate(
-                        sub_w, sub_gt, cluster, d, params[d]["params"], window, args.merge_gap
+                        sub(d), sub_gt, cluster, d, params[d]["params"], window, args.merge_gap
                     )
                     for d in ("smooth", "align")
                 }

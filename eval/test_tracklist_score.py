@@ -107,3 +107,27 @@ def test_merge_repeats_joins_one_play_split_by_unknown() -> None:
         (1, 0, 42, 1.0, 900), (2, 40, 80, 0.98, 500), (3, 70, 107, 1.016, 800),
         (2, 100, 110, 0.977, 50)]  # fmt: skip
     assert entries[1].end == 65  # inputs untouched
+
+
+def test_combine_scales_pair_rows_and_keeps_decoder_order() -> None:
+    from eval.tracklist_score import combine, pair_rows
+
+    b2 = pd.DataFrame({"mix": [0, 0], "t0": [0.0, 2.5], "mode": ["b2", "b2"],
+                       "factor": [1.02, 1.0], "top1_dense": [4, 4], "score": [600, 50],
+                       "runner_up": [3, 40], "offset": [10, 120]})  # fmt: skip
+    grid = pd.DataFrame({"mix": [0, 0, 0], "t0": [0.0, 0.0, 2.5],
+                         "mode": ["none", "speed", "keylock"], "factor": [1.0, 1.02, 2.0],
+                         "top1_dense": [4, 4, 9], "score": [300, 310, 80],
+                         "runner_up": [5, 5, 10], "offset": [10, 10, 7]})  # fmt: skip
+    pairs = pair_rows(grid)
+    assert list(pairs["mode"]) == ["none", "keylock"]  # the speed hypothesis is not hybrid
+    both = combine(b2, pairs, 2.0)
+    assert list(zip(both["t0"], both["mode"], strict=True)) == [
+        (0.0, "b2"),
+        (0.0, "none"),
+        (2.5, "b2"),
+        (2.5, "keylock"),
+    ]
+    assert list(both["score"]) == [600, 600, 50, 160]
+    assert list(both["runner_up"]) == [3, 10, 40, 20]
+    assert combine(b2, None, None) is b2
