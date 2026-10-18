@@ -30,6 +30,7 @@ class Hit:
     top1_offset: int
     runner_up: int  # best score outside the top-1's duplicate cluster
     postings_scanned: int
+    scale: float = 0.0  # triplet index: fitted tempo factor; 0 for pairs
 
 
 class LocalBackend:
@@ -59,7 +60,15 @@ class ShardBackend:
         self._grpc = grpc
         self.retries = 0  # transient failures retried; recorded in run metadata
 
-    def search(self, hashes: np.ndarray, times: np.ndarray) -> Hit:
+    def search(
+        self,
+        hashes: np.ndarray,
+        times: np.ndarray,
+        spans: np.ndarray | None = None,
+        bands: np.ndarray | None = None,
+    ) -> Hit:
+        """Pair landmarks, or with spans and bands, triplet landmarks (for a
+        shard serving a triplet index)."""
         if len(hashes) == 0:
             # Silent excerpts fingerprint to nothing. The shard rejects empty
             # queries as INVALID_ARGUMENT, so answer "no match" locally, as the
@@ -68,6 +77,9 @@ class ShardBackend:
         req = self._pb.SearchRequest(
             top_k=SHARD_TOP_K, hashes=hashes.tolist(), times=times.tolist()
         )
+        if spans is not None and bands is not None:
+            req.spans = np.asarray(spans, np.uint8).tobytes()
+            req.bands = np.asarray(bands, np.uint8).tobytes()
         resp = self._search_with_retry(req)
         cands = resp.candidates
         if not cands:
@@ -75,7 +87,7 @@ class ShardBackend:
         top = cands[0]
         top_cluster = self._cluster[top.track_id]
         runner = next((c.score for c in cands[1:] if self._cluster[c.track_id] != top_cluster), 0)
-        return Hit(top.track_id, top.score, top.offset, runner, resp.postings_scanned)
+        return Hit(top.track_id, top.score, top.offset, runner, resp.postings_scanned, top.scale)
 
     def _search_with_retry(self, req, attempts: int = 3):  # noqa: ANN001, ANN202
         """Retry timeouts and unavailability: an eval run should not die on one
