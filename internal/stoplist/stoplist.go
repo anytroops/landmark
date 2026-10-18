@@ -133,28 +133,50 @@ func (l *List) Count(hash uint32) uint32 {
 	return l.counts[i]
 }
 
+// Keep reports which landmarks survive: keep[i] is false when hashes[i] has
+// more than limit postings. It returns a nil keep when every landmark
+// survives, and how many were dropped.
+func (l *List) Keep(hashes []uint32, limit uint32) (keep []bool, dropped int) {
+	for i, h := range hashes {
+		kept := l.Count(h) <= limit
+		if !kept && keep == nil { // first drop: everything before it was kept
+			keep = make([]bool, len(hashes))
+			for j := range i {
+				keep[j] = true
+			}
+		}
+		if keep != nil {
+			keep[i] = kept
+		}
+		if !kept {
+			dropped++
+		}
+	}
+	return keep, dropped
+}
+
+// Compact returns the elements of xs that keep marks (xs itself when keep is
+// nil), as a new slice; xs is never modified. Apply it to every array of a
+// query (hashes, times, and for triplets spans and bands) to keep them in step.
+func Compact[T any](xs []T, keep []bool) []T {
+	if keep == nil {
+		return xs
+	}
+	out := make([]T, 0, len(xs))
+	for i, x := range xs {
+		if keep[i] {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
 // Filter returns the landmarks whose hash has at most limit postings, and
 // how many were dropped. It returns the inputs unchanged when nothing is
 // dropped, and otherwise new slices; the inputs are never modified.
 func (l *List) Filter(hashes, times []uint32, limit uint32) ([]uint32, []uint32, int) {
-	drop := 0
-	for _, h := range hashes {
-		if l.Count(h) > limit {
-			drop++
-		}
-	}
-	if drop == 0 {
-		return hashes, times, 0
-	}
-	keptH := make([]uint32, 0, len(hashes)-drop)
-	keptT := make([]uint32, 0, len(hashes)-drop)
-	for i, h := range hashes {
-		if l.Count(h) <= limit {
-			keptH = append(keptH, h)
-			keptT = append(keptT, times[i])
-		}
-	}
-	return keptH, keptT, drop
+	keep, dropped := l.Keep(hashes, limit)
+	return Compact(hashes, keep), Compact(times, keep), dropped
 }
 
 // FromSegments counts every hash's postings across all partitions of one

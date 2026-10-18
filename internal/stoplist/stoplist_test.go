@@ -202,3 +202,28 @@ func TestFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestKeep(t *testing.T) {
+	l := &List{nTracks: 6, minCount: 4, hashes: []uint32{5, 10, 30}, counts: []uint32{4, 5, 4}}
+	tests := []struct {
+		name     string
+		hashes   []uint32
+		wantKeep []bool
+		wantDrop int
+	}{
+		{"nothing dropped gives nil", []uint32{1, 5, 30}, nil, 0},
+		{"first landmark dropped", []uint32{10, 1, 10}, []bool{false, true, false}, 2},
+		{"later landmark dropped", []uint32{1, 5, 10, 99}, []bool{true, true, false, true}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keep, drop := l.Keep(tt.hashes, 4)
+			if !slices.Equal(keep, tt.wantKeep) || drop != tt.wantDrop || (tt.wantKeep == nil) != (keep == nil) {
+				t.Fatalf("Keep = %v, %d; want %v, %d", keep, drop, tt.wantKeep, tt.wantDrop)
+			}
+			if got := Compact([]byte("abcd")[:len(tt.hashes)], keep); len(got) != len(tt.hashes)-drop {
+				t.Errorf("Compact kept %d of %d, want %d", len(got), len(tt.hashes), len(tt.hashes)-drop)
+			}
+		})
+	}
+}

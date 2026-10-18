@@ -70,12 +70,14 @@ type testShard struct {
 	real     *shard.Server
 	mode     atomic.Int32
 	searches atomic.Int64
+	last     atomic.Pointer[landmarkv1.SearchRequest] // most recent request
 }
 
 func (s *testShard) set(m mode) { s.mode.Store(int32(m)) }
 
 func (s *testShard) Search(ctx context.Context, req *landmarkv1.SearchRequest) (*landmarkv1.SearchResponse, error) {
 	s.searches.Add(1)
+	s.last.Store(req)
 	switch mode(s.mode.Load()) {
 	case hang:
 		<-ctx.Done()
@@ -518,5 +520,40 @@ func TestStoplistLeavesUnlistedQueriesAlone(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(tc.coord.metrics.stopped); got != 0 {
 		t.Errorf("landmarks_stopped_total = %v, want 0", got)
+	}
+}
+
+func TestStoplistFiltersTripletArraysInStep(t *testing.T) {
+	tc := newTestClusterWith(t, 1.0, Options{}, withStoplist(t, 3000, 5, 20))
+	q := query(3) // hashes 3005..3049; 3005..3019 are dropped
+	for _, h := range q.Hashes {
+		q.Spans = append(q.Spans, byte(h-3000))
+		q.Bands = append(q.Bands, byte(h-2900))
+	}
+	// The test shards serve pair segments and reject triplet arrays; what
+	// matters here is what reached them.
+	if _, err := tc.coord.Identify(context.Background(), q); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("code %v, want InvalidArgument from the pair shards", status.Code(err))
+	}
+	req := tc.reps[1][0].shard.last.Load()
+	if req == nil {
+		req = tc.reps[1][1].shard.last.Load()
+	}
+	if req == nil || len(req.GetHashes()) != 30 {
+		t.Fatalf("shard request = %v, want the 30 landmarks left after the stop list", req)
+	}
+	for i, h := range req.GetHashes() {
+		if req.GetSpans()[i] != byte(h-3000) || req.GetBands()[i] != byte(h-2900) {
+			t.Fatalf("landmark %d: hash %d with span %d band %d: arrays out of step", i, h, req.GetSpans()[i], req.GetBands()[i])
+		}
+	}
+
+	before := tc.searches()
+	q.Bands = q.Bands[1:]
+	if _, err := tc.coord.Identify(context.Background(), q); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("bands shorter than spans: code %v, want InvalidArgument", status.Code(err))
+	}
+	if n := tc.searches() - before; n != 0 {
+		t.Errorf("%d shard searches for a malformed request, want 0", n)
 	}
 }

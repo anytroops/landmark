@@ -35,6 +35,7 @@ import (
 	"github.com/anytroops/landmark/internal/cluster"
 	"github.com/anytroops/landmark/internal/match"
 	"github.com/anytroops/landmark/internal/shard"
+	"github.com/anytroops/landmark/internal/stoplist"
 )
 
 const (
@@ -174,10 +175,15 @@ func (c *Coordinator) Identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
 	n := uint32(len(c.parts))
 	topK := int(req.GetTopK())
-	hashes, times := req.GetHashes(), req.GetTimes()
+	hashes, times, spans, bands := req.GetHashes(), req.GetTimes(), req.GetSpans(), req.GetBands()
 	switch {
 	case len(hashes) != len(times):
 		return nil, status.Errorf(codes.InvalidArgument, "%d hashes but %d times", len(hashes), len(times))
+	case len(spans) != len(bands) || (len(spans) != 0 && len(spans) != len(hashes)):
+		// Shards check the landmark kind against their index; here only
+		// that the arrays line up, so the stop list can filter them together.
+		return nil, status.Errorf(codes.InvalidArgument,
+			"%d hashes, %d spans, %d bands: triplet arrays must match the hashes", len(hashes), len(spans), len(bands))
 	case len(hashes) == 0:
 		// Silent audio fingerprints to nothing: a complete answer of "no match".
 		return &landmarkv1.IdentifyResponse{PartitionsResponded: n, PartitionsTotal: n}, nil
@@ -190,8 +196,11 @@ func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 	}
 
 	if c.cl.Stop != nil {
-		var dropped int
-		hashes, times, dropped = c.cl.Stop.Filter(hashes, times, c.cl.StopLimit)
+		keep, dropped := c.cl.Stop.Keep(hashes, c.cl.StopLimit)
+		hashes, times = stoplist.Compact(hashes, keep), stoplist.Compact(times, keep)
+		if len(spans) != 0 {
+			spans, bands = stoplist.Compact(spans, keep), stoplist.Compact(bands, keep)
+		}
 		c.metrics.stopped.Add(float64(dropped))
 		if len(hashes) == 0 { // every landmark was uninformative: no evidence for any track
 			return &landmarkv1.IdentifyResponse{PartitionsResponded: n, PartitionsTotal: n}, nil
@@ -202,7 +211,7 @@ func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 	ctx, cancel := context.WithTimeout(ctx, c.cl.Deadline())
 	defer cancel()
 	// The same arrays go to every partition; the request is only read.
-	shardReq := &landmarkv1.SearchRequest{Hashes: hashes, Times: times, TopK: shardTopK}
+	shardReq := &landmarkv1.SearchRequest{Hashes: hashes, Times: times, Spans: spans, Bands: bands, TopK: shardTopK}
 
 	results := make([]*landmarkv1.SearchResponse, n)
 	errs := make([]error, n)
