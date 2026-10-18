@@ -18,6 +18,15 @@ type Posting struct {
 	T     uint32
 }
 
+// AuxPosting is a posting of a version 2 segment (D34): with the triplet
+// span and the anchor band of the B2 fingerprint.
+type AuxPosting struct {
+	Track uint32
+	T     uint32
+	Span  uint8
+	Band  uint8
+}
+
 // Segment is a read-only view over segment bytes, usually memory-mapped.
 // It is safe for concurrent use: lookups only read.
 type Segment struct {
@@ -44,8 +53,12 @@ func FromBytes(b []byte) (*Segment, error) {
 	}
 	h := unmarshalHeader(b)
 	switch {
-	case h.Version != Version:
-		return nil, fmt.Errorf("%w: version %d, want %d", ErrCorrupt, h.Version, Version)
+	case h.Version != Version && h.Version != VersionAux:
+		return nil, fmt.Errorf("%w: version %d, want %d or %d", ErrCorrupt, h.Version, Version, VersionAux)
+	case h.aux() != (h.Version == VersionAux):
+		return nil, fmt.Errorf("%w: version %d with flags %#x", ErrCorrupt, h.Version, h.Flags)
+	case h.Flags&^flagKnownMask != 0:
+		return nil, fmt.Errorf("%w: unknown flags %#x", ErrCorrupt, h.Flags)
 	case h.Flags&flagLookupMask != 0:
 		return nil, fmt.Errorf("%w: unsupported lookup flags %#x", ErrCorrupt, h.Flags)
 	case h.encoding() != EncodingFixed && h.encoding() != EncodingVarint:
@@ -80,8 +93,8 @@ func FromBytes(b []byte) (*Segment, error) {
 			return nil, fmt.Errorf("%w: offsets decrease at %d", ErrCorrupt, i)
 		}
 	}
-	if h.encoding() == EncodingFixed && uint64(len(s.postings)) != 8*h.NPostings {
-		return nil, fmt.Errorf("%w: fixed postings blob is %d bytes, want %d", ErrCorrupt, len(s.postings), 8*h.NPostings)
+	if pb := uint64(h.postingBytes()); h.encoding() == EncodingFixed && uint64(len(s.postings)) != pb*h.NPostings {
+		return nil, fmt.Errorf("%w: fixed postings blob is %d bytes, want %d", ErrCorrupt, len(s.postings), pb*h.NPostings)
 	}
 	return s, nil
 }
@@ -117,6 +130,9 @@ func (s *Segment) Checksum() uint32 {
 // Version returns the format version.
 func (s *Segment) Version() uint16 { return s.hdr.Version }
 
+// HasAux reports whether postings carry span and band (version 2, D34).
+func (s *Segment) HasAux() bool { return s.hdr.aux() }
+
 // SizeBytes returns the total file size.
 func (s *Segment) SizeBytes() int { return len(s.data) }
 
@@ -126,20 +142,30 @@ func (s *Segment) GlobalTrack(local uint32) uint32 {
 	return local*s.hdr.NPartitions + s.hdr.Partition
 }
 
-// AppendPostings appends the postings for hash to dst. A missing hash
-// appends nothing. It returns ErrCorrupt rather than panicking on bad data.
-func (s *Segment) AppendPostings(dst []Posting, hash uint32) ([]Posting, error) {
+// run returns the encoded postings of hash, or nil if it is absent.
+func (s *Segment) run(hash uint32) []byte {
 	n := uint64(s.hdr.NKeys)
 	i := uint64(sort.Search(int(n), func(i int) bool { return s.key(uint64(i)) >= hash }))
 	if i == n || s.key(i) != hash {
+		return nil
+	}
+	return s.postings[s.offset(i):s.offset(i+1)]
+}
+
+// AppendPostings appends the postings for hash to dst (in a version 2
+// segment, without span and band). A missing hash appends nothing. It
+// returns ErrCorrupt rather than panicking on bad data.
+func (s *Segment) AppendPostings(dst []Posting, hash uint32) ([]Posting, error) {
+	run := s.run(hash)
+	if len(run) == 0 {
 		return dst, nil
 	}
-	run := s.postings[s.offset(i):s.offset(i+1)]
 	if s.hdr.encoding() == EncodingFixed {
-		if len(run)%8 != 0 {
+		pb := s.hdr.postingBytes()
+		if len(run)%pb != 0 {
 			return dst, fmt.Errorf("%w: key %d: fixed run of %d bytes", ErrCorrupt, hash, len(run))
 		}
-		for p := 0; p < len(run); p += 8 {
+		for p := 0; p < len(run); p += pb {
 			dst = append(dst, Posting{
 				Track: binary.LittleEndian.Uint32(run[p:]),
 				T:     binary.LittleEndian.Uint32(run[p+4:]),
@@ -147,10 +173,37 @@ func (s *Segment) AppendPostings(dst []Posting, hash uint32) ([]Posting, error) 
 		}
 		return dst, nil
 	}
-	return decodeVarint(dst, run, hash, s.hdr.NTracks)
+	return decodeVarint(dst, run, hash, s.hdr.NTracks, s.hdr.aux())
 }
 
-func decodeVarint(dst []Posting, run []byte, hash, nTracks uint32) ([]Posting, error) {
+// AppendAuxPostings appends the postings for hash with their span and band.
+// It fails on a version 1 segment, whose postings carry neither.
+func (s *Segment) AppendAuxPostings(dst []AuxPosting, hash uint32) ([]AuxPosting, error) {
+	if !s.hdr.aux() {
+		return dst, fmt.Errorf("segment: version %d postings carry no span and band", s.hdr.Version)
+	}
+	run := s.run(hash)
+	if len(run) == 0 {
+		return dst, nil
+	}
+	if s.hdr.encoding() == EncodingFixed {
+		if len(run)%10 != 0 {
+			return dst, fmt.Errorf("%w: key %d: fixed run of %d bytes", ErrCorrupt, hash, len(run))
+		}
+		for p := 0; p < len(run); p += 10 {
+			dst = append(dst, AuxPosting{
+				Track: binary.LittleEndian.Uint32(run[p:]),
+				T:     binary.LittleEndian.Uint32(run[p+4:]),
+				Span:  run[p+8],
+				Band:  run[p+9],
+			})
+		}
+		return dst, nil
+	}
+	return decodeVarintAux(dst, run, hash, s.hdr.NTracks)
+}
+
+func decodeVarint(dst []Posting, run []byte, hash, nTracks uint32, aux bool) ([]Posting, error) {
 	var track, t uint64
 	for first := true; len(run) > 0; first = false {
 		a, n := binary.Uvarint(run)
@@ -175,7 +228,48 @@ func decodeVarint(dst []Posting, run []byte, hash, nTracks uint32) ([]Posting, e
 		if track >= uint64(nTracks) || t > 0xFFFFFFFF {
 			return dst, fmt.Errorf("%w: key %d: posting (%d, %d) out of range", ErrCorrupt, hash, track, t)
 		}
+		if aux {
+			if len(run) < 2 {
+				return dst, fmt.Errorf("%w: key %d: posting cut off before span and band", ErrCorrupt, hash)
+			}
+			run = run[2:]
+		}
 		dst = append(dst, Posting{Track: uint32(track), T: uint32(t)})
+	}
+	return dst, nil
+}
+
+// decodeVarintAux is decodeVarint for version 2 postings, keeping span and band.
+func decodeVarintAux(dst []AuxPosting, run []byte, hash, nTracks uint32) ([]AuxPosting, error) {
+	var track, t uint64
+	for first := true; len(run) > 0; first = false {
+		a, n := binary.Uvarint(run)
+		if n <= 0 {
+			return dst, fmt.Errorf("%w: key %d: bad track varint", ErrCorrupt, hash)
+		}
+		run = run[n:]
+		b, n := binary.Uvarint(run)
+		if n <= 0 {
+			return dst, fmt.Errorf("%w: key %d: bad t varint", ErrCorrupt, hash)
+		}
+		run = run[n:]
+		switch {
+		case first:
+			track, t = a, b
+		case a == 0:
+			t += b
+		default:
+			track += a
+			t = b
+		}
+		if track >= uint64(nTracks) || t > 0xFFFFFFFF {
+			return dst, fmt.Errorf("%w: key %d: posting (%d, %d) out of range", ErrCorrupt, hash, track, t)
+		}
+		if len(run) < 2 {
+			return dst, fmt.Errorf("%w: key %d: posting cut off before span and band", ErrCorrupt, hash)
+		}
+		dst = append(dst, AuxPosting{Track: uint32(track), T: uint32(t), Span: run[0], Band: run[1]})
+		run = run[2:]
 	}
 	return dst, nil
 }

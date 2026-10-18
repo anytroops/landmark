@@ -1,4 +1,4 @@
-// Package segment reads and writes immutable index segments (format v1).
+// Package segment reads and writes immutable index segments (formats v1, v2).
 //
 // A segment holds every posting for one partition's tracks. Layout, all
 // little-endian:
@@ -13,6 +13,12 @@
 // Track ids are local to the partition: local = global / NPartitions (D19).
 // Keys are found by binary search (D20); Flags reserves bits so a direct
 // lookup table can be added without a version bump.
+//
+// Version 2 (D34) is version 1 with flagAux set: every posting carries two
+// more bytes after its (track, t), the triplet span and the anchor band of
+// the B2 fingerprint (D31, D33), in both encodings. A version 1 reader
+// would misread those bytes, so it rejects the version number; this
+// package reads both versions.
 package segment
 
 import (
@@ -23,8 +29,13 @@ import (
 // Magic identifies a segment file.
 const Magic = "LMRK"
 
-// Version is the format version this package writes and reads.
-const Version = 1
+// Version is the format of pair-fingerprint segments; VersionAux is the
+// format of segments whose postings carry span and band (D34). This package
+// reads both.
+const (
+	Version    = 1
+	VersionAux = 2
+)
 
 const (
 	headerSize = 32
@@ -50,6 +61,10 @@ const (
 	// Bits 2-3 are reserved for the key lookup structure; 0 = sorted keys
 	// with binary search, the only one v1 implements (D20).
 	flagLookupMask = 0xC
+	// Bit 4: postings carry span and band bytes (version 2 only, D34).
+	flagAux = 0x10
+	// Every other bit must be zero.
+	flagKnownMask = flagEncodingMask | flagLookupMask | flagAux
 )
 
 // header is the fixed 32-byte prefix:
@@ -73,6 +88,16 @@ type header struct {
 }
 
 func (h header) encoding() Encoding { return Encoding(h.Flags & flagEncodingMask) }
+
+func (h header) aux() bool { return h.Flags&flagAux != 0 }
+
+// postingBytes is the size of one fixed-encoding posting.
+func (h header) postingBytes() int {
+	if h.aux() {
+		return 10
+	}
+	return 8
+}
 
 func (h header) marshal() []byte {
 	b := make([]byte, headerSize)

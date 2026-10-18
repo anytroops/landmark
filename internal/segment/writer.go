@@ -11,11 +11,14 @@ import (
 	"slices"
 )
 
-// Entry is one posting to write: a hash, a local track id, an anchor frame.
+// Entry is one posting to write: a hash, a local track id, an anchor frame,
+// and for triplet segments (Meta.Aux) the span and anchor band.
 type Entry struct {
 	Hash  uint32
 	Track uint32
 	T     uint32
+	Span  uint8
+	Band  uint8
 }
 
 // Meta describes the segment being written.
@@ -24,6 +27,7 @@ type Meta struct {
 	NPartitions uint32
 	NTracks     uint32 // local tracks; every Entry.Track must be below this
 	Encoding    Encoding
+	Aux         bool // write version 2: postings carry Span and Band (D34)
 }
 
 // Write writes entries as a segment at path. It sorts entries in place by
@@ -37,7 +41,8 @@ func Write(path string, meta Meta, entries []Entry) (err error) {
 		return fmt.Errorf("segment: unknown encoding %d", meta.Encoding)
 	}
 	slices.SortFunc(entries, func(a, b Entry) int {
-		return cmp.Or(cmp.Compare(a.Hash, b.Hash), cmp.Compare(a.Track, b.Track), cmp.Compare(a.T, b.T))
+		return cmp.Or(cmp.Compare(a.Hash, b.Hash), cmp.Compare(a.Track, b.Track), cmp.Compare(a.T, b.T),
+			cmp.Compare(a.Span, b.Span), cmp.Compare(a.Band, b.Band))
 	})
 	for _, e := range entries {
 		if e.Track >= meta.NTracks {
@@ -45,10 +50,14 @@ func Write(path string, meta Meta, entries []Entry) (err error) {
 		}
 	}
 
-	keys, offsets, blob := encode(entries, meta.Encoding)
+	keys, offsets, blob := encode(entries, meta.Encoding, meta.Aux)
+	version, flags := uint16(Version), uint16(meta.Encoding)
+	if meta.Aux {
+		version, flags = VersionAux, flags|flagAux
+	}
 	hdr := header{
-		Version:     Version,
-		Flags:       uint16(meta.Encoding),
+		Version:     version,
+		Flags:       flags,
 		NKeys:       uint32(len(keys)),
 		NTracks:     meta.NTracks,
 		NPostings:   uint64(len(entries)),
@@ -117,7 +126,7 @@ func writeBody(w io.Writer, hdr header, keys []uint32, offsets []uint64, blob []
 }
 
 // encode turns sorted entries into keys, offsets, and the postings blob.
-func encode(entries []Entry, enc Encoding) (keys []uint32, offsets []uint64, blob []byte) {
+func encode(entries []Entry, enc Encoding, aux bool) (keys []uint32, offsets []uint64, blob []byte) {
 	offsets = []uint64{0}
 	for i := 0; i < len(entries); {
 		j := i
@@ -125,18 +134,21 @@ func encode(entries []Entry, enc Encoding) (keys []uint32, offsets []uint64, blo
 			j++
 		}
 		keys = append(keys, entries[i].Hash)
-		blob = appendPostings(blob, entries[i:j], enc)
+		blob = appendPostings(blob, entries[i:j], enc, aux)
 		offsets = append(offsets, uint64(len(blob)))
 		i = j
 	}
 	return keys, offsets, blob
 }
 
-func appendPostings(dst []byte, run []Entry, enc Encoding) []byte {
+func appendPostings(dst []byte, run []Entry, enc Encoding, aux bool) []byte {
 	if enc == EncodingFixed {
 		for _, e := range run {
 			dst = binary.LittleEndian.AppendUint32(dst, e.Track)
 			dst = binary.LittleEndian.AppendUint32(dst, e.T)
+			if aux {
+				dst = append(dst, e.Span, e.Band)
+			}
 		}
 		return dst
 	}
@@ -152,6 +164,9 @@ func appendPostings(dst []byte, run []Entry, enc Encoding) []byte {
 		default:
 			dst = binary.AppendUvarint(dst, 0)
 			dst = binary.AppendUvarint(dst, uint64(e.T-prevT))
+		}
+		if aux {
+			dst = append(dst, e.Span, e.Band)
 		}
 		prevTrack, prevT = e.Track, e.T
 	}

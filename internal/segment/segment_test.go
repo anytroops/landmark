@@ -212,6 +212,16 @@ func TestFromBytesRejectsCorruption(t *testing.T) {
 // FromBytes and AppendPostings must return errors, never panic.
 func FuzzFromBytes(f *testing.F) {
 	f.Add(validSegmentBytes(f))
+	path := filepath.Join(f.TempDir(), "aux.lmrk")
+	if err := Write(path, Meta{NPartitions: 1, NTracks: 40, Encoding: EncodingVarint, Aux: true},
+		auxEntries(5, 300, 30, 40, 500)); err != nil {
+		f.Fatal(err)
+	}
+	aux, err := os.ReadFile(path)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(aux)
 	f.Fuzz(func(_ *testing.T, b []byte) {
 		check := func(b []byte) {
 			s, err := FromBytes(b)
@@ -220,6 +230,9 @@ func FuzzFromBytes(f *testing.F) {
 			}
 			for i := 0; i < s.NKeys(); i++ {
 				_, _ = s.AppendPostings(nil, s.key(uint64(i)))
+				if s.HasAux() {
+					_, _ = s.AppendAuxPostings(nil, s.key(uint64(i)))
+				}
 			}
 		}
 		check(b)
@@ -236,4 +249,103 @@ func encName(e Encoding) string {
 		return "fixed"
 	}
 	return "varint"
+}
+
+// auxEntries is randomEntries with span and band derived from each entry.
+func auxEntries(seed uint64, n, nKeys, nTracks int, maxT uint32) []Entry {
+	out := randomEntries(seed, n, nKeys, nTracks, maxT)
+	for i := range out {
+		out[i].Span = uint8(1 + (out[i].T+out[i].Track)%63)
+		out[i].Band = uint8((out[i].Hash ^ out[i].T) % 234)
+	}
+	return out
+}
+
+func TestAuxRoundTrip(t *testing.T) {
+	for _, enc := range []Encoding{EncodingFixed, EncodingVarint} {
+		t.Run(encName(enc), func(t *testing.T) {
+			entries := auxEntries(7, 4000, 300, 40, 5000)
+			want := map[uint32][]AuxPosting{}
+			for _, e := range entries {
+				want[e.Hash] = append(want[e.Hash], AuxPosting{Track: e.Track, T: e.T, Span: e.Span, Band: e.Band})
+			}
+			s := writeAndOpen(t, Meta{Partition: 0, NPartitions: 1, NTracks: 40, Encoding: enc, Aux: true}, entries)
+			if s.Version() != VersionAux || !s.HasAux() {
+				t.Fatalf("version %d, HasAux %v; want %d, true", s.Version(), s.HasAux(), VersionAux)
+			}
+			for h, ps := range want {
+				slices.SortFunc(ps, func(a, b AuxPosting) int {
+					return cmp.Or(cmp.Compare(a.Track, b.Track), cmp.Compare(a.T, b.T),
+						cmp.Compare(a.Span, b.Span), cmp.Compare(a.Band, b.Band))
+				})
+				got, err := s.AppendAuxPostings(nil, h)
+				if err != nil || !slices.Equal(got, ps) {
+					t.Fatalf("hash %d: AppendAuxPostings = %v, %v; want %v", h, got, err, ps)
+				}
+				// The generic reader sees the same (track, t) postings.
+				plain, err := s.AppendPostings(nil, h)
+				if err != nil || len(plain) != len(ps) {
+					t.Fatalf("hash %d: AppendPostings = %d postings, %v; want %d", h, len(plain), err, len(ps))
+				}
+				for i := range ps {
+					if plain[i].Track != ps[i].Track || plain[i].T != ps[i].T {
+						t.Fatalf("hash %d posting %d: %v, want %v", h, i, plain[i], ps[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAuxPostingsNeedVersion2(t *testing.T) {
+	s := writeAndOpen(t, Meta{NPartitions: 1, NTracks: 10, Encoding: EncodingVarint}, randomEntries(3, 50, 5, 10, 100))
+	if s.Version() != Version || s.HasAux() {
+		t.Fatalf("pair segment: version %d, HasAux %v", s.Version(), s.HasAux())
+	}
+	if _, err := s.AppendAuxPostings(nil, s.Key(0)); err == nil {
+		t.Fatal("AppendAuxPostings on a version 1 segment succeeded")
+	}
+}
+
+func TestFromBytesRejectsVersionFlagMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aux.lmrk")
+	if err := Write(path, Meta{NPartitions: 1, NTracks: 40, Encoding: EncodingVarint, Aux: true},
+		auxEntries(5, 300, 30, 40, 500)); err != nil {
+		t.Fatal(err)
+	}
+	aux, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair := validSegmentBytes(t)
+	tests := []struct {
+		name string
+		b    []byte
+	}{
+		{"version 2 without the aux flag", func() []byte { b := slices.Clone(aux); b[6] &^= flagAux; return reseal(b) }()},
+		{"version 1 with the aux flag", func() []byte { b := slices.Clone(pair); b[6] |= flagAux; return reseal(b) }()},
+		{"unknown flag bit", func() []byte { b := slices.Clone(pair); b[7] |= 0x80; return reseal(b) }()},
+		{"aux bytes cut off", func() []byte {
+			b := slices.Clone(aux)
+			// Drop the last posting's band byte from the blob: shrink the
+			// final offset by one and move the footer up.
+			body := b[:len(b)-footerSize]
+			body = body[:len(body)-1]
+			nKeys := binary.LittleEndian.Uint32(b[8:])
+			off := offsetsStart(uint64(nKeys)) + 8*uint64(nKeys)
+			binary.LittleEndian.PutUint64(body[off:], binary.LittleEndian.Uint64(body[off:])-1)
+			return reseal(append(body, 0, 0, 0, 0))
+		}()},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := FromBytes(tc.b)
+			if err == nil { // structurally valid: decoding the damaged run must fail instead
+				_, err = s.AppendAuxPostings(nil, s.Key(s.NKeys()-1))
+			}
+			if !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("err = %v, want ErrCorrupt", err)
+			}
+		})
+	}
 }
