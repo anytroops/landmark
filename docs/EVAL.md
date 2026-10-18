@@ -241,6 +241,7 @@ Hybrid with smoothing, by tempo variant: unchanged 382/384, turntable 336/367 (g
 - **Merged as `cmd/tracklist` prints it** (`--merge-gap 2.5`): the same songs found, entries 1,258 to 1,122 and repeat entries 143 to 10, precision 97.9%.
 - **Start times**: 94.3% within 10 s (smoothing).
 - The line-fit decoder gains less from the hybrid here (92.2%); smoothing is the better decoder for it on this data.
+- **The shipped command reproduces it.** `cmd/tracklist` (Go fingerprints, both clusters through their coordinators, calibrated defaults) run over set044's 96 mixes gives the same entries as the eval's decode of those mixes, to within 10 ms in start and end and 0.01 points in tempo, on all 96: 273 of 285 songs found (95.8%), precision 97.2%, in both. Check: `eval/score_cli.py`; the command's output: `eval/results/tracklist/cli_runs_unmixdb_s8_set044.jsonl`.
 
 ## Go system parity (Phase 2 done criterion)
 

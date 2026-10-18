@@ -242,7 +242,7 @@ func (s searcher) searchWindows(ctx context.Context, pcm []float32) ([]tracklist
 			fp := fingerprinters{trip: triplet.New(triplet.DefaultParams()),
 				pair: fingerprint.New(fingerprint.DefaultParams())}
 			for i := range jobs {
-				t0 := float64(starts[i]) / audio.SampleRate
+				t0 := math.Round(float64(starts[i])/audio.SampleRate*1000) / 1000 // ms, as eval.tracklist
 				r, p, err := s.windowRows(ctx, pcm[starts[i]:starts[i]+w], t0, fp)
 				if err != nil {
 					errs[i] = fmt.Errorf("window at %.1f s: %w", t0, err)
