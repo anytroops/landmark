@@ -8,6 +8,10 @@
 // one uint64, the slice is radix-sorted (D27), and equal runs are counted. The result
 // matches prototype/match.py exactly, including tie-breaking, and buffers are
 // reused across queries so a query allocates almost nothing.
+//
+// TripletMatcher (triplet.go) does the same for the tempo-invariant triplet
+// fingerprint (D31 option B2): votes per (scale, offset), then a line fit,
+// so a query played faster or slower still lines up.
 package match
 
 import (
