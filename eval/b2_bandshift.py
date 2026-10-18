@@ -31,7 +31,6 @@ import argparse
 import json
 import multiprocessing as mp
 import os
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -47,7 +46,6 @@ from prototype.fma import audio_path
 ROOT = Path(__file__).resolve().parent.parent
 VARIANTS = ("base", "dual", "interp")
 T_ABS, T_RATIO = 2, 2.5  # eval.b2_eval's val calibration for B2
-HALF_BAND = replace(b2.DEFAULT, fmin=b2.DEFAULT.fmin * 2 ** (1 / (2 * b2.DEFAULT.bands_per_octave)))
 
 
 def conditions() -> list[str]:
@@ -90,9 +88,9 @@ def union(parts: list[b2.Landmarks]) -> b2.Landmarks:
 
 def query_landmarks(q: np.ndarray, variant: str, shifts: int = 4) -> b2.Landmarks:
     if variant == "base":
-        return b2.fingerprint_query(q, shifts)
-    if variant == "dual":
-        return union([b2.fingerprint_query(q, shifts), b2.fingerprint_query(q, shifts, HALF_BAND)])
+        return b2.fingerprint_query(q, shifts, dual=False)
+    if variant == "dual":  # what fingerprint_query does by default since D35
+        return b2.fingerprint_query(q, shifts, dual=True)
     step = b2.DEFAULT.hop // shifts
     return union([fingerprint_interp(q[k * step :]) for k in range(shifts)])
 

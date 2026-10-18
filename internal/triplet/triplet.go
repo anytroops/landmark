@@ -130,6 +130,7 @@ func sparse(fb [][]float64) []band {
 // safe for concurrent use: give each goroutine its own.
 type Fingerprinter struct {
 	p      Params
+	half   *Fingerprinter // HalfBand(p), built on first FingerprintQuery (D35)
 	fft    *fourier.FFT
 	window []float64
 	bands  []band
@@ -238,17 +239,30 @@ func (fp *Fingerprinter) Fingerprint(pcm []float32) []Landmark {
 	return Triplets(fingerprint.FindPeaks(fp.Spectrogram(pcm), fp.p.peakParams()), fp.p)
 }
 
-// FingerprintQuery fingerprints pcm on nShifts sub-hop grids (D15) and
-// returns the union sorted by (Hash, T, Span, Band) without exact duplicates,
-// as prototype.b2.fingerprint_query does.
+// HalfBand returns p with every filterbank center half a band higher (D35).
+func HalfBand(p Params) Params {
+	p.FMin *= math.Pow(2, 1/(2*float64(p.BandsPerOctave)))
+	return p
+}
+
+// FingerprintQuery fingerprints pcm on nShifts sub-hop grids (D15), on both
+// this filterbank and the HalfBand one (D35: a turntable pitch shift near
+// half a band still lines up with one of them), and returns the union
+// sorted by (Hash, T, Span, Band) without exact duplicates, as
+// prototype.b2.fingerprint_query does. The index side uses Fingerprint.
 func (fp *Fingerprinter) FingerprintQuery(pcm []float32, nShifts int) []Landmark {
+	if fp.half == nil {
+		fp.half = New(HalfBand(fp.p))
+	}
 	step := fp.p.Hop / nShifts
 	var all []Landmark
-	for k := 0; k < nShifts; k++ {
-		if k*step >= len(pcm) {
-			break
+	for _, f := range []*Fingerprinter{fp, fp.half} {
+		for k := 0; k < nShifts; k++ {
+			if k*step >= len(pcm) {
+				break
+			}
+			all = append(all, f.Fingerprint(pcm[k*step:])...)
 		}
-		all = append(all, fp.Fingerprint(pcm[k*step:])...)
 	}
 	key := func(l Landmark) uint64 {
 		return uint64(l.Hash)<<32 | uint64(l.T)<<16 | uint64(l.Span)<<8 | uint64(l.Band)

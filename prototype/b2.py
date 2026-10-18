@@ -28,7 +28,7 @@ over query span is the time scale; the anchor band difference is the pitch
 shift (turntable) or 0 (key lock).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 
 import numpy as np
@@ -163,11 +163,21 @@ def fingerprint(pcm: np.ndarray, p: Params = DEFAULT) -> Landmarks:
     return triplets(pk.t, pk.f, p)
 
 
-def fingerprint_query(pcm: np.ndarray, n_shifts: int = 4, p: Params = DEFAULT) -> Landmarks:
-    """Query-side fingerprint over n_shifts sub-hop offsets (as D15), with
-    exact duplicate landmarks dropped."""
+def half_band(p: Params = DEFAULT) -> Params:
+    """p with every filterbank center half a band higher (D35)."""
+    return replace(p, fmin=p.fmin * 2 ** (1 / (2 * p.bands_per_octave)))
+
+
+def fingerprint_query(
+    pcm: np.ndarray, n_shifts: int = 4, p: Params = DEFAULT, dual: bool = True
+) -> Landmarks:
+    """Query-side fingerprint over n_shifts sub-hop offsets (as D15) and, with
+    dual (D35), on both p's filterbank and half_band(p)'s, so a turntable
+    pitch shift near half a band still lines up with one of them; exact
+    duplicate landmarks dropped. The index side uses fingerprint (p only)."""
     step = p.hop // n_shifts
-    parts = [fingerprint(pcm[k * step :], p) for k in range(n_shifts)]
+    banks = [p, half_band(p)] if dual else [p]
+    parts = [fingerprint(pcm[k * step :], q) for q in banks for k in range(n_shifts)]
     h = np.concatenate([x.hash for x in parts]).astype(np.uint64)
     t = np.concatenate([x.t for x in parts]).astype(np.uint64)
     span = np.concatenate([x.span for x in parts]).astype(np.uint64)

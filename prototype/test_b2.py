@@ -110,3 +110,21 @@ def test_fit_line_is_exact_on_integer_lines() -> None:
     assert b2_match.fit_line(x, 7 + 2 * x) == (2.0, 7.0)
     assert b2_match.fit_line(np.array([4, 4]), np.array([1, 9])) is None
     assert b2_match.fit_line(np.array([4]), np.array([1])) is None
+
+
+def test_dual_query_adds_the_half_band_landmarks() -> None:
+    x = np.random.default_rng(3).standard_normal(4 * SAMPLE_RATE)
+    single = b2.fingerprint_query(x, dual=False)
+    half = b2.fingerprint_query(x, p=b2.half_band(), dual=False)
+    dual = b2.fingerprint_query(x)
+
+    def keys(lm: b2.Landmarks) -> set[tuple[int, int, int, int]]:
+        cols = (lm.hash.tolist(), lm.t.tolist(), lm.span.tolist(), lm.band.tolist())
+        return set(zip(*cols, strict=True))
+
+    assert keys(dual) == keys(single) | keys(half)
+    assert len(dual.hash) == len(keys(dual))  # no duplicates
+    order = np.lexsort((dual.band, dual.span, dual.t, dual.hash))
+    assert np.array_equal(order, np.arange(len(order)))  # sorted by (hash, t, span, band)
+    assert b2.half_band().fmin == pytest.approx(55 * 2 ** (1 / 72))
+
