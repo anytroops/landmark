@@ -30,6 +30,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import soundfile as sf
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -66,7 +67,8 @@ def to_wav(src: Path, dst: Path) -> None:
                     "-ar", "11025", "-c:a", "pcm_s16le", str(dst)], check=True)  # fmt: skip
 
 
-def prepare(root: Path, dense_offset: int, min_audible: float, name: str) -> None:
+def prepare(root: Path, dense_offset: int, min_audible: float, name: str,
+            sample: int, seed: int) -> None:  # fmt: skip
     refs: dict[str, tuple[int, Path]] = {}  # excerpt file name -> (index, path)
     for ref in sorted(root.glob("mixotic-set*-excerpts/refsongs/*.excerpt40.mp3")):
         if ref.name not in refs:
@@ -77,11 +79,23 @@ def prepare(root: Path, dense_offset: int, min_audible: float, name: str) -> Non
     ]
     (ROOT / "data" / "unmixdb" / f"{name}_refs.tsv").write_text("\n".join(lines) + "\n")
 
+    all_mixes = sorted(root.glob("mixotic-set*-excerpts/mixes/*.mp3"))
+    names = [MIX.fullmatch(p.name.removesuffix(".mp3")) for p in all_mixes]
+    if any(m is None for m in names):
+        bad = next(p for p, m in zip(all_mixes, names, strict=True) if m is None)
+        raise SystemExit(f"unexpected mix name {bad.name}")
+    if sample:  # a seeded sample of playlists per set, each with all 12 versions
+        rng = np.random.default_rng(seed)
+        chosen = set()
+        for st in sorted({m.group(1) for m in names}):
+            pls = sorted({int(m.group(5)) for m in names if m.group(1) == st})
+            chosen |= {(st, int(x)) for x in rng.permutation(pls)[:sample]}
+        keep = [(p, m) for p, m in zip(all_mixes, names, strict=True)
+                if (m.group(1), int(m.group(5))) in chosen]  # fmt: skip
+    else:
+        keep = list(zip(all_mixes, names, strict=True))
     mixes = []
-    for mp3 in sorted(root.glob("mixotic-set*-excerpts/mixes/*.mp3")):
-        m = MIX.fullmatch(mp3.name.removesuffix(".mp3"))
-        if m is None:
-            raise SystemExit(f"unexpected mix name {mp3.name}")
+    for mp3, m in keep:
         labels = parse_labels(
             mp3.with_name(mp3.name.removesuffix(".mp3") + ".labels.txt").read_text()
         )
@@ -111,13 +125,14 @@ def prepare(root: Path, dense_offset: int, min_audible: float, name: str) -> Non
                 "ignore": mix_end - mix_start < min_audible,
             })  # fmt: skip
         mixes.append({"file": str(wav.relative_to(ROOT)), "name": mp3.stem, "set": m.group(1),
+                      "tracks_per_mix": int(m.group(2)),
                       "audio_s": round(audio_s, 3),
                       "labeled_s": round(max(labels[n]["stop"] for n in labels), 3),
-                      "playlist": int(m.group(2)), "timescale": m.group(3), "effect": m.group(4),
+                      "playlist": int(m.group(5)), "timescale": m.group(3), "effect": m.group(4),
                       "segments": segments})  # fmt: skip
     gt = {"name": name, "source": "UnmixDB v1, zenodo.org/records/1422385",
           "dense_offset": dense_offset, "references": len(refs), "sample_rate": 11025,
-          "min_audible_s": min_audible,
+          "min_audible_s": min_audible, "sample_playlists_per_set": sample, "sample_seed": seed,
           "mixes": mixes}  # fmt: skip
     out = ROOT / "eval" / "mixes" / f"{name}.json"
     out.write_text(json.dumps(gt, indent=1) + "\n")
@@ -137,8 +152,10 @@ def main() -> None:
     p.add_argument("--dense-offset", type=int, default=0)
     p.add_argument("--min-audible", type=float, default=10.0)
     p.add_argument("--name", default="unmixdb", help="output set name (eval/mixes/<name>.json)")
+    p.add_argument("--sample", type=int, default=0, help="playlists per set to keep (0 = all)")
+    p.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-    prepare(args.root, args.dense_offset, args.min_audible, args.name)
+    prepare(args.root, args.dense_offset, args.min_audible, args.name, args.sample, args.seed)
 
 
 if __name__ == "__main__":
