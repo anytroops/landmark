@@ -32,10 +32,12 @@ matches at about r * 43.07, in the undone (reference) time base.
 With --fingerprint b2 a window needs no speed grid: hypothesis ("b2", 1)
 searches it as is, and the row's factor is the shard's fitted scale. Extra
 factors (--extra-factors 2 0.5, for double- and half-time matching, which
-lie outside the matcher's +/-16%) add ("b2_speed", f) and ("b2_keylock", f):
-the window is first undone by f on the audio, and the row's factor is f
-times the fitted scale. The offset is the reference frame at the window's
-first frame either way, as the decoders expect.
+lie outside the matcher's +/-16%) add ("b2_speed", f) and ("b2_keylock", f),
+undone exactly on the window's landmarks (rescale_b2): the hash's ratio and
+band-difference fields do not move with tempo, so only times and spans
+scale, and for turntable the anchor band slides by the octaves moved. The
+row's factor is f times the fitted scale. The offset is the reference frame
+at the window's first frame either way, as the decoders expect.
 """
 
 import argparse
@@ -94,11 +96,36 @@ def undo(x: np.ndarray, mode: str, factor: float) -> np.ndarray:
     return (speed if mode == "speed" else keylock)(x, 1 / factor)
 
 
+def rescale_b2(
+    lm: b2.Landmarks, mode: str, factor: float, p: b2.Params = b2.DEFAULT
+) -> b2.Landmarks:
+    """Undo a tempo change of `factor` (reference time per mix time) on B2
+    landmarks: times and spans scale by factor; for turntable ("speed") the
+    pitch moved by bands_per_octave * log2(factor) bands too, so the anchor
+    band and the hash's coarse band field slide back. Landmarks whose span or
+    band leaves its range are dropped. Sorted and deduplicated as
+    fingerprint_query returns them."""
+    t = np.round(lm.t.astype(np.float64) * factor).astype(np.int64)
+    span = np.round(lm.span.astype(np.float64) * factor).astype(np.int64)
+    band = lm.band.astype(np.int64)
+    if mode == "speed":
+        band = band - int(round(p.bands_per_octave * np.log2(factor)))
+    ok = (span >= 1) & (span <= 255) & (band >= 0) & (band < p.n_bands) & (t <= 0xFFFF)
+    h = ((band // p.band_width) << 20) | (lm.hash.astype(np.int64) & 0xFFFFF)
+    u64 = np.uint64
+    packed = np.unique((h[ok].astype(u64) << u64(32)) | (t[ok].astype(u64) << u64(16))
+                       | (span[ok].astype(u64) << u64(8)) | band[ok].astype(u64))  # fmt: skip
+    return b2.Landmarks((packed >> u64(32)).astype(np.uint32),
+                        ((packed >> u64(16)) & u64(0xFFFF)).astype(np.uint32),
+                        ((packed >> u64(8)) & u64(0xFF)).astype(np.uint8),
+                        (packed & u64(0xFF)).astype(np.uint8))  # fmt: skip
+
+
 def _search_b2(mix: int, t0: float, x: np.ndarray, hyps: list, shifts: int) -> list[dict]:
     rows = []
+    base = b2.fingerprint_query(x, shifts)
     for mode, factor in hyps:
-        y = x if mode == "b2" else undo(x, mode.removeprefix("b2_"), factor)
-        lm = b2.fingerprint_query(y, shifts)
+        lm = base if mode == "b2" else rescale_b2(base, mode.removeprefix("b2_"), factor)
         h, t, sp, bd = lm.hash, lm.t, lm.span, lm.band
         if _STATE["stop"] is not None:
             keep = _STATE["stop"].keep(h, _STATE["limit"])

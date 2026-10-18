@@ -83,3 +83,22 @@ def test_search_b2_reports_the_fitted_tempo(monkeypatch: pytest.MonkeyPatch) -> 
     assert rows[0]["factor"] == pytest.approx(1.03) and rows[1]["factor"] == pytest.approx(2.06)
     assert all(r["offset"] == 40 and r["top1_dense"] == 5 for r in rows)
     assert all(c[0] > 0 and len(set(c)) == 1 for c in fake.calls)  # parallel arrays, one length
+
+
+def test_rescale_b2_undoes_double_time_exactly() -> None:
+    from prototype import b2
+
+    p = b2.DEFAULT
+    lm = b2.Landmarks(np.array([(3 << 20) | 777, (5 << 20) | 99], np.uint32),
+                      np.array([10, 20], np.uint32), np.array([30, 40], np.uint8),
+                      np.array([60, 100], np.uint8))  # fmt: skip
+    key = tracklist.rescale_b2(lm, "keylock", 2.0)
+    assert key.t.tolist() == [20, 40] and key.span.tolist() == [60, 80]
+    assert key.hash.tolist() == lm.hash.tolist() and key.band.tolist() == [60, 100]
+    turn = tracklist.rescale_b2(lm, "speed", 2.0)  # an octave up in the mix: slide 36 bands down
+    assert turn.band.tolist() == [24, 64]
+    assert [h >> 20 for h in turn.hash.tolist()] == [24 // p.band_width, 64 // p.band_width]
+    assert [h & 0xFFFFF for h in turn.hash.tolist()] == [777, 99]
+    half = tracklist.rescale_b2(lm, "speed", 0.5)  # spans 15, 20; bands up an octave
+    assert half.span.tolist() == [15, 20] and half.band.tolist() == [96, 136]
+    assert tracklist.rescale_b2(lm, "keylock", 8.0).span.tolist() == [240]  # 320 > 255: dropped
