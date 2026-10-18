@@ -163,6 +163,29 @@ Test sets, segments found and entry precision:
 - **Calibrated on UnmixDB, the line-fit decoder transfers**: 93.3% recall at 99.7% precision, against smoothing's 95.2% at 98.8%. The split-song problem of the set222 run was its synthetic calibration. Calibrated settings: smoothing t_abs 10, t_ratio 3, k 0; line fits min_evidence 50, switch 1.
 - **Turntable is the weakest variant.** Of its 367 test segments, 10 are beyond the grid's +/-8% and 16 are double-time, so range alone does not explain the 42 smoothing misses; they are not broken down yet. B2 (one search, any tempo in +/-16%) is the next comparison here.
 
+## B2 triplet fingerprint vs pairs (D31 option B2, D33)
+
+One catalog of 3,000 fma_medium tracks (every val and test positive plus 1,000 other indexed tracks, seeded) indexed both ways: pairs (12.8M postings) and B2 triplets (22.5M postings, 1.76x). Queries: the 1,000 positive and 500 negative test tracks, one 10 s excerpt per condition with the same seeded excerpts and degradations as `eval.run_eval`, each searched once with no speed grid by the in-memory Python matchers. The Go shard returns the same bits: the `internal/match` parity test, and an end-to-end check of 80 speed-changed queries through Go ingest, shard, and gRPC that matched the Python reference in track, score, offset, scale, and postings scanned. Thresholds calibrated per system on val (D13: pooled FAR <= 0.1% over all conditions, accuracy objective over the non-tempo ones); both landed on t_abs 2, t_ratio 2.5. Matcher at commit 003f94c. Raw: `eval/results/b2_eval_seed0.*`.
+
+| Condition (1,000 positives each) | Pairs, accuracy (95% CI) | B2, accuracy (95% CI) | B2 median score |
+|---|---|---|---|
+| clean | 99.9 (99.4-100.0) | 99.9 (99.4-100.0) | 2,492 |
+| white noise, SNR 5 dB | 99.6 (99.0-99.8) | 98.3 (97.3-98.9) | 634 |
+| white noise, SNR 0 dB | 98.5 (97.5-99.1) | 95.7 (94.3-96.8) | 265 |
+| MP3 64 kbps | 99.9 (99.4-100.0) | 99.9 (99.4-100.0) | 2,385 |
+| turntable +1% / -1% | 96.9 / 96.2 | 99.1 / 99.1 | 203 / 204 |
+| turntable +2% / -2% | 14.1 / 14.5 | 99.9 / 99.9 | 1,312 / 1,168 |
+| turntable +4% / -4% | 0.0 / 0.0 | 99.9 / 99.9 | 1,038 / 707 |
+| turntable +8% / -8% | 0.0 / 0.0 | 99.9 / 97.7 (96.6-98.5) | 602 / 145 |
+| keylock +4% / -4% | 99.8 / 99.9 | 99.9 / 99.9 | 1,047 / 1,129 |
+| keylock +8% / -8% | 99.7 / 99.6 | 99.8 / 99.9 | 502 / 558 |
+
+Test FAR: pairs 0.16%, B2 0.06% (500 negatives x 16 conditions).
+
+- **One B2 search does what took the speed grid's 33.** Every tempo condition is at 97.7-99.9% with a single lookup, where pairs fall to 14% at +/-2% and 0% beyond. The line fit's speed estimate has a median error of 0.02-0.06 percentage points.
+- **What it costs.** Heavy noise: 95.7% against 98.5% at SNR 0 dB. Work per search: 2.2x the postings scanned (median over conditions 153,528 against 69,631), but against 33 searches per window for the grid.
+- **Turntable scores depend on how far the pitch moves in bands, not only on the tempo change.** Each 1% of turntable speed shifts every peak by about half a log band (36 per octave). Near a whole number of bands (+2%: 1.03 bands, +4%: 2.04, +8%: 4.0) the relative band offsets in the hash survive and scores stay high; near a half band (+/-1%: 0.52, -8%: 4.33) peaks round to neighboring bands inconsistently and the median score is 4-6x lower than at a nearby whole-band shift (+1%: 203 against 1,312 at +2%; -8%: 145 against 602 at +8%). Keylock, which moves no pitch, degrades smoothly with tempo alone. Accuracy holds because even 145 is far above wrong-track scores, but this predicts dips at every half-band shift (about +/-1, 3, 5, 7%) and is the first thing to fix, for example by also fingerprinting the query on a filterbank offset by half a band.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
