@@ -1,6 +1,17 @@
 # Design: DJ-set tracklisting
 
-Status: 2026-10-17. Sean decided piece 1 = A then B, piece 2 = ii + iii, and approved the Mixotic download (~10.4 GB) on condition that it is deleted (audio and its index) once the DJ-tracklisting work is finished and its results are committed.
+Status: plan of 2026-10-17, outcome below. Sean decided piece 1 = A then B, piece 2 = ii + iii, and approved the Mixotic download (~10.4 GB) on condition that it is deleted (audio and its index) once the DJ-tracklisting work is finished and its results are committed.
+
+## Outcome (2026-10-18)
+
+What was built, and where it departs from the plan below (numbers: EVAL.md, DJ sections; decisions D31 to D36):
+
+- **Data:** Mixotic turned out to be access-restricted, so nothing was downloaded from it; UnmixDB (all six sets, 528 of its 2,460 mixes sampled) is the real-music benchmark, with fma_medium as 23,985 distractor tracks, calibrated on two sets and tested on four. Synthetic FMA mixes (clean and hard) cover controlled conditions. The per-second Mixotic protocol and the published table therefore have no comparison yet.
+- **Piece 1:** A (speed grid) was built and measured first, then B as a new triplet fingerprint: a log-frequency front end (D33), hashes of time-gap ratios and band differences, postings carrying span and band (segment v2, D34), a matcher that votes in (scale, offset) bins and fits a line per track, and a query on two filterbanks half a band apart (D35). Python reference and Go are bit-exact. One B2 search covers turntable and keylock +/-8% at 99.8-99.9%.
+- **What B alone could not do:** heavy distortion (a triplet needs three surviving peaks) and double-time keylock. Final matcher: a **hybrid** (D36), per window B2 (plus double/half-time turntable on resampled audio) and the plain pair search (plus double/half-time keylock on rescaled landmarks), pair scores weighted by a calibrated factor.
+- **Piece 2:** smoothing (i) and line fits + Viterbi (ii + iii) both built and calibrated; on UnmixDB the hybrid does best with smoothing, so (i) is the default and (ii + iii) an option. Consecutive entries of one track are merged.
+- **Result on UnmixDB's held-out sets:** hybrid 95.9% of songs found at 97.9% precision with 6 searches per window, against 95.2% / 98.8% for the 37-search speed grid and 89.7% for B2 alone. `cmd/tracklist` runs it through two clusters.
+- **Still open:** cost measured under the SLO (per-window latency and throughput, hybrid vs grid), and the Mixotic comparison if the data ever becomes available.
 
 ## Goal
 
