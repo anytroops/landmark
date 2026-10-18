@@ -8,8 +8,12 @@ message Candidate {
   uint32 track_id = 1;
   // Max offset-histogram count.
   uint32 score = 2;
-  // Best (t_db - t_query), in frames.
+  // Best (t_db - t_query), in frames. For a triplet index, the reference
+  // frame at query frame 0 along the fitted line.
   int32 offset = 3;
+  // Triplet index (D33): fitted tempo factor, reference time per query time
+  // (> 1: the query plays faster). 0 for a pair index.
+  float scale = 4;
 }
 
 // Query landmarks travel as parallel packed arrays: (hashes[i], times[i]) is
@@ -21,6 +25,10 @@ message SearchRequest {
   uint32 top_k = 2;
   repeated fixed32 hashes = 3;
   repeated uint32 times = 4;
+  // Triplet landmarks (D31 B2, D33) also carry, one byte per landmark, the
+  // span t_k - t_i and the anchor band. Empty for pair landmarks.
+  bytes spans = 5;
+  bytes bands = 6;
 }
 
 message SearchResponse {
@@ -55,6 +63,8 @@ message IdentifyRequest {
   uint32 top_k = 2;
   repeated fixed32 hashes = 3; // see SearchRequest
   repeated uint32 times = 4;
+  bytes spans = 5;
+  bytes bands = 6;
 }
 
 message IdentifyResponse {

@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1alandmark/v1/landmark.proto\x12\x0blandmark.v1\"T\n\tCandidate\x12\x19\n\x08track_id\x18\x01 \x01(\rR\x07trackId\x12\x14\n\x05score\x18\x02 \x01(\rR\x05score\x12\x16\n\x06offset\x18\x03 \x01(\x05R\x06offset\"c\n\rSearchRequest\x12\x13\n\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n\x06hashes\x18\x03 \x03(\x07R\x06hashes\x12\x14\n\x05times\x18\x04 \x03(\rR\x05timesJ\x04\x08\x01\x10\x02R\tlandmarks\"\x96\x01\n\x0eSearchResponse\x12\x36\n\ncandidates\x18\x01 \x03(\x0b\x32\x16.landmark.v1.CandidateR\ncandidates\x12!\n\x0cpartition_id\x18\x02 \x01(\rR\x0bpartitionId\x12)\n\x10postings_scanned\x18\x03 \x01(\x04R\x0fpostingsScanned\"\r\n\x0bInfoRequest\"\xf3\x01\n\x0cInfoResponse\x12!\n\x0cpartition_id\x18\x01 \x01(\rR\x0bpartitionId\x12!\n\x0cn_partitions\x18\x02 \x01(\rR\x0bnPartitions\x12\x19\n\x08n_tracks\x18\x03 \x01(\rR\x07nTracks\x12\x15\n\x06n_keys\x18\x04 \x01(\x04R\x05nKeys\x12\x1d\n\nn_postings\x18\x05 \x01(\x04R\tnPostings\x12%\n\x0esegment_crc32c\x18\x06 \x01(\x07R\rsegmentCrc32c\x12%\n\x0e\x66ormat_version\x18\x07 \x01(\rR\rformatVersion\"e\n\x0fIdentifyRequest\x12\x13\n\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n\x06hashes\x18\x03 \x03(\x07R\x06hashes\x12\x14\n\x05times\x18\x04 \x03(\rR\x05timesJ\x04\x08\x01\x10\x02R\tlandmarks\"\xdc\x01\n\x10IdentifyResponse\x12\x36\n\ncandidates\x18\x01 \x03(\x0b\x32\x16.landmark.v1.CandidateR\ncandidates\x12\x18\n\x07matched\x18\x02 \x01(\x08R\x07matched\x12\x18\n\x07partial\x18\x03 \x01(\x08R\x07partial\x12\x31\n\x14partitions_responded\x18\x04 \x01(\rR\x13partitionsResponded\x12)\n\x10partitions_total\x18\x05 \x01(\rR\x0fpartitionsTotal2\x8e\x01\n\x0cShardService\x12\x41\n\x06Search\x12\x1a.landmark.v1.SearchRequest\x1a\x1b.landmark.v1.SearchResponse\x12;\n\x04Info\x12\x18.landmark.v1.InfoRequest\x1a\x19.landmark.v1.InfoResponse2]\n\x12\x43oordinatorService\x12G\n\x08Identify\x12\x1c.landmark.v1.IdentifyRequest\x1a\x1d.landmark.v1.IdentifyResponseB:Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1alandmark/v1/landmark.proto\x12\x0blandmark.v1\"j\n\tCandidate\x12\x19\n\x08track_id\x18\x01 \x01(\rR\x07trackId\x12\x14\n\x05score\x18\x02 \x01(\rR\x05score\x12\x16\n\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x14\n\x05scale\x18\x04 \x01(\x02R\x05scale\"\x8f\x01\n\rSearchRequest\x12\x13\n\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n\x06hashes\x18\x03 \x03(\x07R\x06hashes\x12\x14\n\x05times\x18\x04 \x03(\rR\x05times\x12\x14\n\x05spans\x18\x05 \x01(\x0cR\x05spans\x12\x14\n\x05\x62\x61nds\x18\x06 \x01(\x0cR\x05\x62\x61ndsJ\x04\x08\x01\x10\x02R\tlandmarks\"\x96\x01\n\x0eSearchResponse\x12\x36\n\ncandidates\x18\x01 \x03(\x0b\x32\x16.landmark.v1.CandidateR\ncandidates\x12!\n\x0cpartition_id\x18\x02 \x01(\rR\x0bpartitionId\x12)\n\x10postings_scanned\x18\x03 \x01(\x04R\x0fpostingsScanned\"\r\n\x0bInfoRequest\"\xf3\x01\n\x0cInfoResponse\x12!\n\x0cpartition_id\x18\x01 \x01(\rR\x0bpartitionId\x12!\n\x0cn_partitions\x18\x02 \x01(\rR\x0bnPartitions\x12\x19\n\x08n_tracks\x18\x03 \x01(\rR\x07nTracks\x12\x15\n\x06n_keys\x18\x04 \x01(\x04R\x05nKeys\x12\x1d\n\nn_postings\x18\x05 \x01(\x04R\tnPostings\x12%\n\x0esegment_crc32c\x18\x06 \x01(\x07R\rsegmentCrc32c\x12%\n\x0e\x66ormat_version\x18\x07 \x01(\rR\rformatVersion\"\x91\x01\n\x0fIdentifyRequest\x12\x13\n\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n\x06hashes\x18\x03 \x03(\x07R\x06hashes\x12\x14\n\x05times\x18\x04 \x03(\rR\x05times\x12\x14\n\x05spans\x18\x05 \x01(\x0cR\x05spans\x12\x14\n\x05\x62\x61nds\x18\x06 \x01(\x0cR\x05\x62\x61ndsJ\x04\x08\x01\x10\x02R\tlandmarks\"\xdc\x01\n\x10IdentifyResponse\x12\x36\n\ncandidates\x18\x01 \x03(\x0b\x32\x16.landmark.v1.CandidateR\ncandidates\x12\x18\n\x07matched\x18\x02 \x01(\x08R\x07matched\x12\x18\n\x07partial\x18\x03 \x01(\x08R\x07partial\x12\x31\n\x14partitions_responded\x18\x04 \x01(\rR\x13partitionsResponded\x12)\n\x10partitions_total\x18\x05 \x01(\rR\x0fpartitionsTotal2\x8e\x01\n\x0cShardService\x12\x41\n\x06Search\x12\x1a.landmark.v1.SearchRequest\x1a\x1b.landmark.v1.SearchResponse\x12;\n\x04Info\x12\x18.landmark.v1.InfoRequest\x1a\x19.landmark.v1.InfoResponse2]\n\x12\x43oordinatorService\x12G\n\x08Identify\x12\x1c.landmark.v1.IdentifyRequest\x1a\x1d.landmark.v1.IdentifyResponseB:Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,21 +33,21 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1'
   _globals['_CANDIDATE']._serialized_start=43
-  _globals['_CANDIDATE']._serialized_end=127
-  _globals['_SEARCHREQUEST']._serialized_start=129
-  _globals['_SEARCHREQUEST']._serialized_end=228
-  _globals['_SEARCHRESPONSE']._serialized_start=231
-  _globals['_SEARCHRESPONSE']._serialized_end=381
-  _globals['_INFOREQUEST']._serialized_start=383
-  _globals['_INFOREQUEST']._serialized_end=396
-  _globals['_INFORESPONSE']._serialized_start=399
-  _globals['_INFORESPONSE']._serialized_end=642
-  _globals['_IDENTIFYREQUEST']._serialized_start=644
-  _globals['_IDENTIFYREQUEST']._serialized_end=745
-  _globals['_IDENTIFYRESPONSE']._serialized_start=748
-  _globals['_IDENTIFYRESPONSE']._serialized_end=968
-  _globals['_SHARDSERVICE']._serialized_start=971
-  _globals['_SHARDSERVICE']._serialized_end=1113
-  _globals['_COORDINATORSERVICE']._serialized_start=1115
-  _globals['_COORDINATORSERVICE']._serialized_end=1208
+  _globals['_CANDIDATE']._serialized_end=149
+  _globals['_SEARCHREQUEST']._serialized_start=152
+  _globals['_SEARCHREQUEST']._serialized_end=295
+  _globals['_SEARCHRESPONSE']._serialized_start=298
+  _globals['_SEARCHRESPONSE']._serialized_end=448
+  _globals['_INFOREQUEST']._serialized_start=450
+  _globals['_INFOREQUEST']._serialized_end=463
+  _globals['_INFORESPONSE']._serialized_start=466
+  _globals['_INFORESPONSE']._serialized_end=709
+  _globals['_IDENTIFYREQUEST']._serialized_start=712
+  _globals['_IDENTIFYREQUEST']._serialized_end=857
+  _globals['_IDENTIFYRESPONSE']._serialized_start=860
+  _globals['_IDENTIFYRESPONSE']._serialized_end=1080
+  _globals['_SHARDSERVICE']._serialized_start=1083
+  _globals['_SHARDSERVICE']._serialized_end=1225
+  _globals['_COORDINATORSERVICE']._serialized_start=1227
+  _globals['_COORDINATORSERVICE']._serialized_end=1320
 # @@protoc_insertion_point(module_scope)

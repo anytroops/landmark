@@ -26,8 +26,12 @@ type Candidate struct {
 	TrackId uint32                 `protobuf:"varint,1,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
 	// Max offset-histogram count.
 	Score uint32 `protobuf:"varint,2,opt,name=score,proto3" json:"score,omitempty"`
-	// Best (t_db - t_query), in frames.
-	Offset        int32 `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Best (t_db - t_query), in frames. For a triplet index, the reference
+	// frame at query frame 0 along the fitted line.
+	Offset int32 `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Triplet index (D33): fitted tempo factor, reference time per query time
+	// (> 1: the query plays faster). 0 for a pair index.
+	Scale         float32 `protobuf:"fixed32,4,opt,name=scale,proto3" json:"scale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -83,14 +87,25 @@ func (x *Candidate) GetOffset() int32 {
 	return 0
 }
 
+func (x *Candidate) GetScale() float32 {
+	if x != nil {
+		return x.Scale
+	}
+	return 0
+}
+
 // Query landmarks travel as parallel packed arrays: (hashes[i], times[i]) is
 // one landmark, times[i] its anchor frame in the query. Packed arrays decode
 // into two slices instead of one message object per landmark (D28).
 type SearchRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TopK          uint32                 `protobuf:"varint,2,opt,name=top_k,json=topK,proto3" json:"top_k,omitempty"`
-	Hashes        []uint32               `protobuf:"fixed32,3,rep,packed,name=hashes,proto3" json:"hashes,omitempty"`
-	Times         []uint32               `protobuf:"varint,4,rep,packed,name=times,proto3" json:"times,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TopK   uint32                 `protobuf:"varint,2,opt,name=top_k,json=topK,proto3" json:"top_k,omitempty"`
+	Hashes []uint32               `protobuf:"fixed32,3,rep,packed,name=hashes,proto3" json:"hashes,omitempty"`
+	Times  []uint32               `protobuf:"varint,4,rep,packed,name=times,proto3" json:"times,omitempty"`
+	// Triplet landmarks (D31 B2, D33) also carry, one byte per landmark, the
+	// span t_k - t_i and the anchor band. Empty for pair landmarks.
+	Spans         []byte `protobuf:"bytes,5,opt,name=spans,proto3" json:"spans,omitempty"`
+	Bands         []byte `protobuf:"bytes,6,opt,name=bands,proto3" json:"bands,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -142,6 +157,20 @@ func (x *SearchRequest) GetHashes() []uint32 {
 func (x *SearchRequest) GetTimes() []uint32 {
 	if x != nil {
 		return x.Times
+	}
+	return nil
+}
+
+func (x *SearchRequest) GetSpans() []byte {
+	if x != nil {
+		return x.Spans
+	}
+	return nil
+}
+
+func (x *SearchRequest) GetBands() []byte {
+	if x != nil {
+		return x.Bands
 	}
 	return nil
 }
@@ -342,6 +371,8 @@ type IdentifyRequest struct {
 	TopK          uint32                 `protobuf:"varint,2,opt,name=top_k,json=topK,proto3" json:"top_k,omitempty"`
 	Hashes        []uint32               `protobuf:"fixed32,3,rep,packed,name=hashes,proto3" json:"hashes,omitempty"` // see SearchRequest
 	Times         []uint32               `protobuf:"varint,4,rep,packed,name=times,proto3" json:"times,omitempty"`
+	Spans         []byte                 `protobuf:"bytes,5,opt,name=spans,proto3" json:"spans,omitempty"`
+	Bands         []byte                 `protobuf:"bytes,6,opt,name=bands,proto3" json:"bands,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -393,6 +424,20 @@ func (x *IdentifyRequest) GetHashes() []uint32 {
 func (x *IdentifyRequest) GetTimes() []uint32 {
 	if x != nil {
 		return x.Times
+	}
+	return nil
+}
+
+func (x *IdentifyRequest) GetSpans() []byte {
+	if x != nil {
+		return x.Spans
+	}
+	return nil
+}
+
+func (x *IdentifyRequest) GetBands() []byte {
+	if x != nil {
+		return x.Bands
 	}
 	return nil
 }
@@ -478,15 +523,18 @@ var File_landmark_v1_landmark_proto protoreflect.FileDescriptor
 
 const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"\n" +
-	"\x1alandmark/v1/landmark.proto\x12\vlandmark.v1\"T\n" +
+	"\x1alandmark/v1/landmark.proto\x12\vlandmark.v1\"j\n" +
 	"\tCandidate\x12\x19\n" +
 	"\btrack_id\x18\x01 \x01(\rR\atrackId\x12\x14\n" +
 	"\x05score\x18\x02 \x01(\rR\x05score\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\x05R\x06offset\"c\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x14\n" +
+	"\x05scale\x18\x04 \x01(\x02R\x05scale\"\x8f\x01\n" +
 	"\rSearchRequest\x12\x13\n" +
 	"\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n" +
 	"\x06hashes\x18\x03 \x03(\aR\x06hashes\x12\x14\n" +
-	"\x05times\x18\x04 \x03(\rR\x05timesJ\x04\b\x01\x10\x02R\tlandmarks\"\x96\x01\n" +
+	"\x05times\x18\x04 \x03(\rR\x05times\x12\x14\n" +
+	"\x05spans\x18\x05 \x01(\fR\x05spans\x12\x14\n" +
+	"\x05bands\x18\x06 \x01(\fR\x05bandsJ\x04\b\x01\x10\x02R\tlandmarks\"\x96\x01\n" +
 	"\x0eSearchResponse\x126\n" +
 	"\n" +
 	"candidates\x18\x01 \x03(\v2\x16.landmark.v1.CandidateR\n" +
@@ -502,11 +550,13 @@ const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"\n" +
 	"n_postings\x18\x05 \x01(\x04R\tnPostings\x12%\n" +
 	"\x0esegment_crc32c\x18\x06 \x01(\aR\rsegmentCrc32c\x12%\n" +
-	"\x0eformat_version\x18\a \x01(\rR\rformatVersion\"e\n" +
+	"\x0eformat_version\x18\a \x01(\rR\rformatVersion\"\x91\x01\n" +
 	"\x0fIdentifyRequest\x12\x13\n" +
 	"\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n" +
 	"\x06hashes\x18\x03 \x03(\aR\x06hashes\x12\x14\n" +
-	"\x05times\x18\x04 \x03(\rR\x05timesJ\x04\b\x01\x10\x02R\tlandmarks\"\xdc\x01\n" +
+	"\x05times\x18\x04 \x03(\rR\x05times\x12\x14\n" +
+	"\x05spans\x18\x05 \x01(\fR\x05spans\x12\x14\n" +
+	"\x05bands\x18\x06 \x01(\fR\x05bandsJ\x04\b\x01\x10\x02R\tlandmarks\"\xdc\x01\n" +
 	"\x10IdentifyResponse\x126\n" +
 	"\n" +
 	"candidates\x18\x01 \x03(\v2\x16.landmark.v1.CandidateR\n" +

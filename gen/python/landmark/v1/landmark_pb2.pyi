@@ -7,24 +7,30 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class Candidate(_message.Message):
-    __slots__ = ("track_id", "score", "offset")
+    __slots__ = ("track_id", "score", "offset", "scale")
     TRACK_ID_FIELD_NUMBER: _ClassVar[int]
     SCORE_FIELD_NUMBER: _ClassVar[int]
     OFFSET_FIELD_NUMBER: _ClassVar[int]
+    SCALE_FIELD_NUMBER: _ClassVar[int]
     track_id: int
     score: int
     offset: int
-    def __init__(self, track_id: _Optional[int] = ..., score: _Optional[int] = ..., offset: _Optional[int] = ...) -> None: ...
+    scale: float
+    def __init__(self, track_id: _Optional[int] = ..., score: _Optional[int] = ..., offset: _Optional[int] = ..., scale: _Optional[float] = ...) -> None: ...
 
 class SearchRequest(_message.Message):
-    __slots__ = ("top_k", "hashes", "times")
+    __slots__ = ("top_k", "hashes", "times", "spans", "bands")
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     HASHES_FIELD_NUMBER: _ClassVar[int]
     TIMES_FIELD_NUMBER: _ClassVar[int]
+    SPANS_FIELD_NUMBER: _ClassVar[int]
+    BANDS_FIELD_NUMBER: _ClassVar[int]
     top_k: int
     hashes: _containers.RepeatedScalarFieldContainer[int]
     times: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, top_k: _Optional[int] = ..., hashes: _Optional[_Iterable[int]] = ..., times: _Optional[_Iterable[int]] = ...) -> None: ...
+    spans: bytes
+    bands: bytes
+    def __init__(self, top_k: _Optional[int] = ..., hashes: _Optional[_Iterable[int]] = ..., times: _Optional[_Iterable[int]] = ..., spans: _Optional[bytes] = ..., bands: _Optional[bytes] = ...) -> None: ...
 
 class SearchResponse(_message.Message):
     __slots__ = ("candidates", "partition_id", "postings_scanned")
@@ -59,14 +65,18 @@ class InfoResponse(_message.Message):
     def __init__(self, partition_id: _Optional[int] = ..., n_partitions: _Optional[int] = ..., n_tracks: _Optional[int] = ..., n_keys: _Optional[int] = ..., n_postings: _Optional[int] = ..., segment_crc32c: _Optional[int] = ..., format_version: _Optional[int] = ...) -> None: ...
 
 class IdentifyRequest(_message.Message):
-    __slots__ = ("top_k", "hashes", "times")
+    __slots__ = ("top_k", "hashes", "times", "spans", "bands")
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     HASHES_FIELD_NUMBER: _ClassVar[int]
     TIMES_FIELD_NUMBER: _ClassVar[int]
+    SPANS_FIELD_NUMBER: _ClassVar[int]
+    BANDS_FIELD_NUMBER: _ClassVar[int]
     top_k: int
     hashes: _containers.RepeatedScalarFieldContainer[int]
     times: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, top_k: _Optional[int] = ..., hashes: _Optional[_Iterable[int]] = ..., times: _Optional[_Iterable[int]] = ...) -> None: ...
+    spans: bytes
+    bands: bytes
+    def __init__(self, top_k: _Optional[int] = ..., hashes: _Optional[_Iterable[int]] = ..., times: _Optional[_Iterable[int]] = ..., spans: _Optional[bytes] = ..., bands: _Optional[bytes] = ...) -> None: ...
 
 class IdentifyResponse(_message.Message):
     __slots__ = ("candidates", "matched", "partial", "partitions_responded", "partitions_total")
