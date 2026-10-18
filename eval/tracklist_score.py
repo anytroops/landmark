@@ -246,6 +246,7 @@ def main() -> None:
     ap.add_argument("--calibrate", action="store_true", help="grid-search decoder parameters (val)")
     ap.add_argument("--params", type=Path, help="calibration result JSON to apply (test)")
     ap.add_argument("--group-by", help="also score subsets by a mix field, e.g. timescale")
+    ap.add_argument("--sets", nargs="+", help="only mixes whose 'set' field is one of these")
     ap.add_argument(
         "--identity-only",
         action="store_true",
@@ -256,9 +257,14 @@ def main() -> None:
     gt = json.loads((ROOT / "eval" / "mixes" / f"{args.mixes}.json").read_text())
     stem = f"windows_{args.mixes}{args.tag}"
     w = pd.read_csv(RES / f"{stem}.csv.gz")
-    suffix = ""
+    if args.sets:  # keep only the chosen sets, renumbering mixes as the window rows do
+        idx = [i for i, m in enumerate(gt["mixes"]) if m.get("set") in args.sets]
+        gt = {**gt, "mixes": [gt["mixes"][i] for i in idx]}
+        w = w[w["mix"].isin(idx)].copy()
+        w["mix"] = w["mix"].map({old: new for new, old in enumerate(idx)})
+    suffix = "_" + "-".join(args.sets) if args.sets else ""
     if args.identity_only:
-        w, suffix = w[w["mode"] == "none"], "_identity"
+        w, suffix = w[w["mode"] == "none"], suffix + "_identity"
     window = json.loads((RES / f"{stem}.meta.json").read_text())["window_s"]
     cluster = cluster_table(args.manifest, args.catalog)
 

@@ -66,7 +66,7 @@ def to_wav(src: Path, dst: Path) -> None:
                     "-ar", "11025", "-c:a", "pcm_s16le", str(dst)], check=True)  # fmt: skip
 
 
-def prepare(root: Path, dense_offset: int, min_audible: float) -> None:
+def prepare(root: Path, dense_offset: int, min_audible: float, name: str) -> None:
     refs: dict[str, tuple[int, Path]] = {}  # excerpt file name -> (index, path)
     for ref in sorted(root.glob("mixotic-set*-excerpts/refsongs/*.excerpt40.mp3")):
         if ref.name not in refs:
@@ -75,7 +75,7 @@ def prepare(root: Path, dense_offset: int, min_audible: float) -> None:
         f"{p.parent.parent.name.split('-')[1]}/{name}\t{p.resolve()}"
         for name, (_, p) in refs.items()
     ]
-    (ROOT / "data" / "unmixdb" / "refs.tsv").write_text("\n".join(lines) + "\n")
+    (ROOT / "data" / "unmixdb" / f"{name}_refs.tsv").write_text("\n".join(lines) + "\n")
 
     mixes = []
     for mp3 in sorted(root.glob("mixotic-set*-excerpts/mixes/*.mp3")):
@@ -115,11 +115,11 @@ def prepare(root: Path, dense_offset: int, min_audible: float) -> None:
                       "labeled_s": round(max(labels[n]["stop"] for n in labels), 3),
                       "playlist": int(m.group(2)), "timescale": m.group(3), "effect": m.group(4),
                       "segments": segments})  # fmt: skip
-    gt = {"name": "unmixdb", "source": "UnmixDB v1, zenodo.org/records/1422385",
+    gt = {"name": name, "source": "UnmixDB v1, zenodo.org/records/1422385",
           "dense_offset": dense_offset, "references": len(refs), "sample_rate": 11025,
           "min_audible_s": min_audible,
           "mixes": mixes}  # fmt: skip
-    out = ROOT / "eval" / "mixes" / "unmixdb.json"
+    out = ROOT / "eval" / "mixes" / f"{name}.json"
     out.write_text(json.dumps(gt, indent=1) + "\n")
     short = sum(1 for m in mixes if m["labeled_s"] - m["audio_s"] > 5)
     ignored = sum(s["ignore"] for m in mixes for s in m["segments"])
@@ -136,8 +136,9 @@ def main() -> None:
     p.add_argument("--root", type=Path, default=ROOT / "data/unmixdb/extracted")
     p.add_argument("--dense-offset", type=int, default=0)
     p.add_argument("--min-audible", type=float, default=10.0)
+    p.add_argument("--name", default="unmixdb", help="output set name (eval/mixes/<name>.json)")
     args = ap.parse_args()
-    prepare(args.root, args.dense_offset, args.min_audible)
+    prepare(args.root, args.dense_offset, args.min_audible, args.name)
 
 
 if __name__ == "__main__":
