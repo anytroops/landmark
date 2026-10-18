@@ -17,14 +17,17 @@ import (
 
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/fingerprint"
+	"github.com/anytroops/landmark/internal/triplet"
 )
 
-// Query is one pre-fingerprinted request. Expected is the dense track id a
-// correct answer names, or -1 for a never-indexed song.
+// Query is one pre-fingerprinted request: pair Landmarks, or for a triplet
+// index (D31 B2) Triplets. Expected is the dense track id a correct answer
+// names, or -1 for a never-indexed song.
 type Query struct {
 	FMAID     int
 	Expected  int32
 	Landmarks []fingerprint.Landmark
+	Triplets  []triplet.Landmark
 }
 
 func queriesCmd(args []string) error {
@@ -34,11 +37,15 @@ func queriesCmd(args []string) error {
 	split := fs.String("split", "test", "split whose pos/neg tracks become queries")
 	seconds := fs.Float64("seconds", 10, "excerpt length")
 	shifts := fs.Int("shifts", 4, "sub-hop query grids (D15)")
+	kind := fs.String("fingerprint", "pairs", "landmarks: pairs, or triplets for a triplet index (D33, D35)")
 	seed := fs.Uint64("seed", 0, "excerpt offset seed")
 	out := fs.String("out", "", "output .gob path (required)")
 	_ = fs.Parse(args)
 	if *out == "" {
 		return errors.New("-out is required")
+	}
+	if *kind != "pairs" && *kind != "triplets" {
+		return fmt.Errorf("unknown -fingerprint %q", *kind)
 	}
 
 	b, err := os.ReadFile(*manifestPath)
@@ -89,6 +96,7 @@ func queriesCmd(args []string) error {
 	for range runtime.NumCPU() {
 		wg.Go(func() {
 			fp := fingerprint.New(fingerprint.DefaultParams())
+			tfp := triplet.New(triplet.DefaultParams())
 			for i := range work {
 				j := jobs[i]
 				s := fmt.Sprintf("%06d", j.fma)
@@ -101,8 +109,13 @@ func queriesCmd(args []string) error {
 				}
 				rng := rand.New(rand.NewPCG(*seed, uint64(j.fma)))
 				start := rng.IntN(len(pcm) - n + 1)
-				queries[i] = &Query{FMAID: j.fma, Expected: j.expected,
-					Landmarks: fp.FingerprintQuery(pcm[start:start+n], *shifts)}
+				q := &Query{FMAID: j.fma, Expected: j.expected}
+				if *kind == "triplets" {
+					q.Triplets = tfp.FingerprintQuery(pcm[start:start+n], *shifts)
+				} else {
+					q.Landmarks = fp.FingerprintQuery(pcm[start:start+n], *shifts)
+				}
+				queries[i] = q
 			}
 		})
 	}

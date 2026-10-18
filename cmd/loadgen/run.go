@@ -83,11 +83,7 @@ func runCmd(args []string) error {
 	}
 	reqs := make([]*landmarkv1.IdentifyRequest, len(queries))
 	for i, q := range queries {
-		r := &landmarkv1.IdentifyRequest{TopK: 1, Hashes: make([]uint32, len(q.Landmarks)), Times: make([]uint32, len(q.Landmarks))}
-		for j, l := range q.Landmarks {
-			r.Hashes[j], r.Times[j] = l.Hash, l.T
-		}
-		reqs[i] = r
+		reqs[i] = identifyRequest(q)
 	}
 
 	clients := make([]landmarkv1.CoordinatorServiceClient, cfg.Conns)
@@ -133,6 +129,25 @@ type eventResult struct {
 }
 
 // schedule sends every request at its due time and waits for all of them.
+// identifyRequest is q as a top-1 request: pair landmarks, or triplet
+// landmarks with their spans and bands.
+func identifyRequest(q Query) *landmarkv1.IdentifyRequest {
+	if len(q.Triplets) > 0 {
+		n := len(q.Triplets)
+		r := &landmarkv1.IdentifyRequest{TopK: 1, Hashes: make([]uint32, n), Times: make([]uint32, n),
+			Spans: make([]byte, n), Bands: make([]byte, n)}
+		for j, l := range q.Triplets {
+			r.Hashes[j], r.Times[j], r.Spans[j], r.Bands[j] = l.Hash, l.T, l.Span, l.Band
+		}
+		return r
+	}
+	r := &landmarkv1.IdentifyRequest{TopK: 1, Hashes: make([]uint32, len(q.Landmarks)), Times: make([]uint32, len(q.Landmarks))}
+	for j, l := range q.Landmarks {
+		r.Hashes[j], r.Times[j] = l.Hash, l.T
+	}
+	return r
+}
+
 func schedule(cfg runConfig, queries []Query, reqs []*landmarkv1.IdentifyRequest, clients []landmarkv1.CoordinatorServiceClient) ([]record, *eventResult) {
 	rng := rand.New(rand.NewPCG(cfg.Seed, 7))
 	total := cfg.Warmup + cfg.Duration

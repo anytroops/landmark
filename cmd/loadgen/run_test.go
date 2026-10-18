@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
 	"github.com/anytroops/landmark/internal/fingerprint"
+	"github.com/anytroops/landmark/internal/triplet"
 )
 
 func TestComputeStats(t *testing.T) {
@@ -88,5 +90,18 @@ func TestOpenLoop(t *testing.T) {
 		if want := time.Duration(i) * 10 * time.Millisecond; r.Due != want {
 			t.Fatalf("request %d due at %v, want %v", i, r.Due, want)
 		}
+	}
+}
+
+func TestIdentifyRequest(t *testing.T) {
+	pairs := identifyRequest(Query{Landmarks: []fingerprint.Landmark{{Hash: 7, T: 3}}})
+	if !slices.Equal(pairs.GetHashes(), []uint32{7}) || !slices.Equal(pairs.GetTimes(), []uint32{3}) ||
+		len(pairs.GetSpans()) != 0 || len(pairs.GetBands()) != 0 {
+		t.Errorf("pair request = %v", pairs)
+	}
+	trips := identifyRequest(Query{Triplets: []triplet.Landmark{{Hash: 9, T: 4, Span: 20, Band: 60}, {Hash: 11, T: 5, Span: 30, Band: 70}}})
+	if !slices.Equal(trips.GetHashes(), []uint32{9, 11}) || !slices.Equal(trips.GetTimes(), []uint32{4, 5}) ||
+		!slices.Equal(trips.GetSpans(), []byte{20, 30}) || !slices.Equal(trips.GetBands(), []byte{60, 70}) {
+		t.Errorf("triplet request = %v", trips)
 	}
 }
