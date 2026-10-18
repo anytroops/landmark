@@ -1,8 +1,14 @@
-"""Search DJ-mix windows under speed hypotheses (D31 option A).
+"""Search DJ-mix windows under speed hypotheses (D31 option A), or with the
+tempo-invariant triplet fingerprint (D31 option B2).
 
   # every window, every hypothesis on the grid; writes per-hypothesis rows
   python -m eval.tracklist search --mixes test_mixed8 --shard 127.0.0.1:7201 \\
       --stoplist data/segments/medium/p1/stoplist.lmst --stop-fraction 0.04
+
+  # B2: one search per window against a triplet index (cmd/ingest
+  # -fingerprint triplets); the shard's line fit estimates the tempo
+  python -m eval.tracklist search --fingerprint b2 --mixes test_mixed8 --shard 127.0.0.1:7221 \\
+      --stoplist data/segments/medium_b2/stoplist.lmst --stop-fraction 0.04
 
   # ground-truth check: one window per known segment, undone at its true speed
   python -m eval.tracklist oracle --mixes smoke --shard 127.0.0.1:7201
@@ -22,6 +28,14 @@ the zone where today's hashes still match, EVAL speed tolerance).
 Offsets are reference frame minus query frame at 43.07 frames per second
 (hop 256 at 11,025 Hz), so a window starting at reference time r seconds
 matches at about r * 43.07, in the undone (reference) time base.
+
+With --fingerprint b2 a window needs no speed grid: hypothesis ("b2", 1)
+searches it as is, and the row's factor is the shard's fitted scale. Extra
+factors (--extra-factors 2 0.5, for double- and half-time matching, which
+lie outside the matcher's +/-16%) add ("b2_speed", f) and ("b2_keylock", f):
+the window is first undone by f on the audio, and the row's factor is f
+times the fitted scale. The offset is the reference frame at the window's
+first frame either way, as the decoders expect.
 """
 
 import argparse
@@ -36,6 +50,7 @@ import soundfile as sf
 
 from eval.backends import ShardBackend, dense_tables
 from eval.degrade import keylock, speed
+from prototype import b2
 from prototype import fingerprint as fp
 from prototype.stoplist import StopList
 
@@ -68,10 +83,33 @@ def hypotheses(max_pct: float, step_pct: float, modes: list[str],
     return out
 
 
+def b2_hypotheses(modes: list[str], extra: tuple[float, ...] = ()) -> list[tuple[str, float]]:
+    """B2: the window as is, then each extra factor undone on the audio per mode."""
+    return [("b2", 1.0)] + [(f"b2_{mode}", float(f)) for mode in modes for f in extra]
+
+
 def undo(x: np.ndarray, mode: str, factor: float) -> np.ndarray:
     if mode == "none":
         return x
     return (speed if mode == "speed" else keylock)(x, 1 / factor)
+
+
+def _search_b2(mix: int, t0: float, x: np.ndarray, hyps: list, shifts: int) -> list[dict]:
+    rows = []
+    for mode, factor in hyps:
+        y = x if mode == "b2" else undo(x, mode.removeprefix("b2_"), factor)
+        lm = b2.fingerprint_query(y, shifts)
+        h, t, sp, bd = lm.hash, lm.t, lm.span, lm.band
+        if _STATE["stop"] is not None:
+            keep = _STATE["stop"].keep(h, _STATE["limit"])
+            h, t, sp, bd = h[keep], t[keep], sp[keep], bd[keep]
+        hit = _STATE["backend"].search(h, t, sp, bd)
+        rows.append({"mix": mix, "t0": t0, "mode": mode,
+                     "factor": factor * hit.scale if hit.top1_dense >= 0 else factor,
+                     "top1_dense": hit.top1_dense, "score": hit.top1_score,
+                     "runner_up": hit.runner_up, "offset": hit.top1_offset,
+                     "n_landmarks": len(h)})  # fmt: skip
+    return rows
 
 
 def rescale(
@@ -106,6 +144,8 @@ def _init(shard: str, cluster: np.ndarray, stoplist: str | None, fraction: float
 
 def _search(job: tuple) -> list[dict]:
     mix, t0, x, hyps, shifts, how = job
+    if how == "b2":
+        return _search_b2(mix, t0, x, hyps, shifts)
     rows = []
     base = fp.fingerprint_query(x, shifts) if how != "audio" else None
     for mode, factor in hyps:
@@ -132,14 +172,18 @@ def load_set(name: str) -> dict:
 def search_cmd(args: argparse.Namespace, cluster: np.ndarray) -> None:
     gt = load_set(args.mixes)
     sr = gt["sample_rate"]
-    hyps = hypotheses(args.max_pct, args.step_pct, args.modes, tuple(args.extra_factors))
+    if args.fingerprint == "b2":
+        hyps, how = b2_hypotheses(args.modes, tuple(args.extra_factors)), "b2"
+    else:
+        hyps = hypotheses(args.max_pct, args.step_pct, args.modes, tuple(args.extra_factors))
+        how = args.undo
     jobs = []
     for k, m in enumerate(gt["mixes"]):
         audio, file_sr = sf.read(ROOT / m["file"], dtype="float32")
         assert file_sr == sr, f"{m['file']} is {file_sr} Hz, ground truth says {sr}"
         w, hop = int(args.window * sr), int(args.hop * sr)
         for a in range(0, len(audio) - w + 1, hop):
-            jobs.append((k, round(a / sr, 3), audio[a : a + w], hyps, args.shifts, args.undo))
+            jobs.append((k, round(a / sr, 3), audio[a : a + w], hyps, args.shifts, how))
     print(f"{len(jobs)} windows x {len(hyps)} hypotheses")
     rows = []
     init = (args.shard, cluster, args.stoplist, args.stop_fraction)
@@ -151,7 +195,8 @@ def search_cmd(args: argparse.Namespace, cluster: np.ndarray) -> None:
     RES.mkdir(parents=True, exist_ok=True)
     out = RES / f"windows_{args.mixes}{args.tag}.csv.gz"
     pd.DataFrame(rows).sort_values(["mix", "t0", "mode", "factor"]).to_csv(out, index=False)
-    meta = {"mixes": args.mixes, "window_s": args.window, "hop_s": args.hop,
+    meta = {"mixes": args.mixes, "fingerprint": args.fingerprint,
+            "window_s": args.window, "hop_s": args.hop,
             "max_pct": args.max_pct, "step_pct": args.step_pct, "modes": args.modes,
             "extra_factors": args.extra_factors,
             "hypotheses": len(hyps), "shifts": args.shifts, "undo": args.undo, "shard": args.shard,
@@ -219,6 +264,8 @@ def main() -> None:
                    help="extra tempo factors per mode, e.g. 2 0.5")  # fmt: skip
     s.add_argument("--shifts", type=int, default=4)
     s.add_argument("--undo", choices=["audio", "landmarks", "auto"], default="auto")
+    s.add_argument("--fingerprint", choices=["pairs", "b2"], default="pairs",
+                   help="b2: triplet index, one search per window, no speed grid")  # fmt: skip
     s.add_argument("--stoplist")
     s.add_argument("--stop-fraction", type=float, default=0.0)
     s.add_argument("--workers", type=int, default=os.cpu_count())
