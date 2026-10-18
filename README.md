@@ -16,7 +16,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | Fingerprinting, index, shard, coordinator, failover, replication | Done; Go matches the Python reference on every test query |
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
-| DJ tracklisting | Working end to end (`cmd/tracklist`); building the hybrid matcher (D36) |
+| DJ tracklisting | Working end to end (`cmd/tracklist`), hybrid matcher (D36); cost benchmark next |
 
 ## Architecture
 
@@ -55,7 +55,7 @@ DJ tracklisting:
 |---|---|
 | Triplet fingerprint, 10 s excerpt, one search, turntable or keylock -8% to +8% | 99.8-99.9% (pair fingerprint: 14% at +/-2%, 0% beyond) |
 | Synthetic DJ mixes, songs found (clean / with EQ, noise, MP3) | 99.4% / 98.2-98.8%, one search per window |
-| UnmixDB (real club tracks with effects, built by other researchers), songs found | speed grid (37 searches per window) 95.2%; triplets 89.6%; hybrid in progress |
+| UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.9%**, precision 97.9%; speed grid (37 searches) 95.2% |
 
 ## Usage
 

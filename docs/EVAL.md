@@ -224,6 +224,24 @@ Per-window diagnosis on the UnmixDB test sets (windows where one known track pla
 - **Keylock (sox stretch) within +/-8.5%:** 92-96% of windows for B2, 98-100% for the grid. **Turntable beyond 8.5%:** B2 80% (dual), grid 26%.
 - **B2 and the grid's unchanged-window pair search are complementary**: a window is right under base B2 or under one pair search 92.1% of the time (B2 alone 86.0%, the pair search alone 82.0%, the full grid 93.4%); turntable 86.3% against the grid's 84.8%, keylock 90.8% against 96.5%. This is an upper bound for a hybrid that would need a rule to pick between the two answers.
 
+## DJ-mix tracklisting with the hybrid matcher (D36)
+
+Per window: dual B2 on the B2 index, as is and with x2 and x0.5 turntable undone on the audio (tag `_b2dh`), plus the pair searches of the grid run on the pair index: the unchanged window and x2 and x0.5 keylock undone on its landmarks (from `_gridA2`); 6 searches per window. Pair scores and runner-ups are multiplied by a weight calibrated with the decoder settings on set222 + set275 (chosen: 3.0 for both decoders); test on the other four sets, as before. Raw: `eval/results/tracklist/*b2dh*`.
+
+UnmixDB test sets (1,135 known segments), songs found and precision:
+
+| | Speed grid (37 searches) | B2 only (3) | Hybrid, plain windows only (2) | Hybrid (6) |
+|---|---|---|---|---|
+| Smoothing | 1,081 (95.2%), 98.8% | 1,018 (89.7%), 99.8% | 1,068 (94.1%), 98.3% | **1,088 (95.9%), 97.9%** |
+| Line fits + Viterbi | 1,059 (93.3%), 99.7% | 1,051 (92.6%), 95.5% | 1,055 (93.0%), 97.2% | 1,047 (92.2%), 98.4% |
+
+Hybrid with smoothing, by tempo variant: unchanged 382/384, turntable 336/367 (grid 325), keylock 370/384 (grid 374). Synthetic test mixes (B2 rows from `_b2d`, pair rows from `_gridA`): clean 165/166 at 100% precision, hard 166/168 at 97.1% (smoothing) and 100% (line fits).
+
+- **The hybrid matches the grid at a sixth of the searches**: 95.9% of songs against 95.2%, precision 97.9% against 98.8% (smoothing); turntable is better than the grid, keylock slightly worse. Two searches per window (plain windows only) already reach 94.1%.
+- **Merged as `cmd/tracklist` prints it** (`--merge-gap 2.5`): the same songs found, entries 1,258 to 1,122 and repeat entries 143 to 10, precision 97.9%.
+- **Start times**: 94.3% within 10 s (smoothing).
+- The line-fit decoder gains less from the hybrid here (92.2%); smoothing is the better decoder for it on this data.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
