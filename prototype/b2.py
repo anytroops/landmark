@@ -98,8 +98,12 @@ def _empty() -> Landmarks:
     return Landmarks(z, z, z.astype(np.uint8), z.astype(np.uint8))
 
 
-def triplets(t: np.ndarray, f: np.ndarray, p: Params = DEFAULT) -> Landmarks:
-    """Triplet landmarks from peaks sorted by (t, f)."""
+def triplets(
+    t: np.ndarray, f: np.ndarray, p: Params = DEFAULT, fpos: np.ndarray | None = None
+) -> Landmarks:
+    """Triplet landmarks from peaks sorted by (t, f). With fpos (fractional
+    band positions of the same peaks; experiments only), the hash's band
+    differences are rint(fpos[j] - fpos[i]) instead of f[j] - f[i]."""
     n = len(t)
     if n < 3:
         return _empty()
@@ -132,7 +136,12 @@ def triplets(t: np.ndarray, f: np.ndarray, p: Params = DEFAULT) -> Landmarks:
             span = t[k] - t[i]
             rt = ((t[j] - t[i]) * p.rt_levels) // span
             band = f[i] // p.band_width
-            h = (band << 20) | (rt << 14) | ((f[j] - f[i] + p.zone) << 7) | (f[k] - f[i] + p.zone)
+            if fpos is None:
+                dj, dk = f[j] - f[i], f[k] - f[i]
+            else:
+                dj = np.clip(np.rint(fpos[j] - fpos[i]), -p.zone, p.zone).astype(np.int64)
+                dk = np.clip(np.rint(fpos[k] - fpos[i]), -p.zone, p.zone).astype(np.int64)
+            h = (band << 20) | (rt << 14) | ((dj + p.zone) << 7) | (dk + p.zone)
             hs.append(h)
             ts.append(t[i])
             spans.append(span)
