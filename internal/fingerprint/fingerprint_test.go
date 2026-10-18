@@ -87,7 +87,7 @@ func naiveMaxFilter(s Spectrogram, sizeT, sizeF int) []float64 {
 func TestMaxFilterMatchesNaive(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 	for _, frames := range []int{1, 5, 40} {
-		s := Spectrogram{Frames: frames, Data: make([]float64, frames*NBins)}
+		s := Spectrogram{Frames: frames, Bins: NBins, Data: make([]float64, frames*NBins)}
 		for i := range s.Data {
 			s.Data[i] = rng.Float64()
 		}

@@ -67,14 +67,16 @@ type Peak struct {
 	Mag  float64
 }
 
-// Spectrogram is a row-major frames x NBins matrix of dB values.
+// Spectrogram is a row-major Frames x Bins matrix of dB values. The pair
+// fingerprint's has NBins linear bins; other front ends (D33) set their own.
 type Spectrogram struct {
 	Frames int
+	Bins   int
 	Data   []float64
 }
 
 // At returns the value at frame t, bin f.
-func (s Spectrogram) At(t, f int) float64 { return s.Data[t*NBins+f] }
+func (s Spectrogram) At(t, f int) float64 { return s.Data[t*s.Bins+f] }
 
 // Fingerprinter holds FFT plans and scratch buffers. It is not safe for
 // concurrent use: give each goroutine its own.
@@ -122,7 +124,7 @@ func (fp *Fingerprinter) Spectrogram(pcm []float32) Spectrogram {
 			row[f] = 20 * math.Log10(cmplx.Abs(fp.coeffs[f])+1e-10)
 		}
 	}
-	return Spectrogram{Frames: frames, Data: data}
+	return Spectrogram{Frames: frames, Bins: NBins, Data: data}
 }
 
 // FindPeaks returns local maxima above FloorDB, keeping the strongest
@@ -134,9 +136,9 @@ func FindPeaks(s Spectrogram, p Params) []Peak {
 	local := maxFilter(s, p.NbhdT, p.NbhdF)
 	var peaks []Peak // row-major (t, f) order, like numpy.nonzero
 	for t := 0; t < s.Frames; t++ {
-		for f := 0; f < NBins; f++ {
+		for f := 0; f < s.Bins; f++ {
 			v := s.At(t, f)
-			if v == local[t*NBins+f] && v > p.FloorDB {
+			if v == local[t*s.Bins+f] && v > p.FloorDB {
 				peaks = append(peaks, Peak{T: t, F: f, Mag: v})
 			}
 		}
@@ -177,12 +179,12 @@ func FindPeaks(s Spectrogram, p Params) []Peak {
 func maxFilter(s Spectrogram, sizeT, sizeF int) []float64 {
 	tmp := make([]float64, len(s.Data))
 	out := make([]float64, len(s.Data))
-	sc := newMaxScratch(max(s.Frames, NBins), max(sizeT, sizeF))
+	sc := newMaxScratch(max(s.Frames, s.Bins), max(sizeT, sizeF))
 	for t := 0; t < s.Frames; t++ { // along f: contiguous rows
-		maxFilter1D(s.Data, tmp, t*NBins, 1, NBins, sizeF/2, sc)
+		maxFilter1D(s.Data, tmp, t*s.Bins, 1, s.Bins, sizeF/2, sc)
 	}
-	for f := 0; f < NBins; f++ { // along t: stride NBins
-		maxFilter1D(tmp, out, f, NBins, s.Frames, sizeT/2, sc)
+	for f := 0; f < s.Bins; f++ { // along t: stride Bins
+		maxFilter1D(tmp, out, f, s.Bins, s.Frames, sizeT/2, sc)
 	}
 	return out
 }
