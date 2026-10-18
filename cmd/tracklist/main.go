@@ -45,6 +45,7 @@ type config struct {
 	minEvidence, sw    float64
 	tAbs, tRatio       float64
 	k                  int
+	mergeGap           float64
 	timeout            time.Duration
 	jsonOut            bool
 }
@@ -63,6 +64,7 @@ func main() {
 	flag.Float64Var(&cfg.tAbs, "t-abs", 10, "smooth: minimum window score")
 	flag.Float64Var(&cfg.tRatio, "t-ratio", 3, "smooth: minimum top / runner-up ratio")
 	flag.IntVar(&cfg.k, "k", 0, "smooth: neighbors on each side in the majority vote")
+	flag.Float64Var(&cfg.mergeGap, "merge-gap", 2.5, "join consecutive entries of one track this close, seconds (-1: off)")
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
 	flag.BoolVar(&cfg.jsonOut, "json", false, "print entries as JSON")
 	flag.Parse()
@@ -106,6 +108,9 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 		entries = tracklist.Align(rows, cfg.window, cfg.minEvidence, cfg.sw)
 	} else {
 		entries = tracklist.Smooth(rows, cfg.window, cfg.tAbs, cfg.tRatio, cfg.k)
+	}
+	if cfg.mergeGap >= 0 {
+		entries = tracklist.MergeRepeats(entries, cfg.mergeGap)
 	}
 	if cfg.jsonOut {
 		return json.NewEncoder(w).Encode(jsonEntries(entries, names))

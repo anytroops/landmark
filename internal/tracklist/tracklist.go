@@ -418,3 +418,24 @@ func argmax(v []float64) int {
 	}
 	return best
 }
+
+// MergeRepeats joins consecutive entries of the same track that overlap or
+// sit within gap seconds of each other (a decoder that drops to "unknown"
+// for a window and comes back splits one play into several). A merged entry
+// keeps the larger evidence and that entry's tempo factor. entries must be
+// in start order, as the decoders return them.
+func MergeRepeats(entries []Entry, gap float64) []Entry {
+	var out []Entry
+	for _, e := range entries {
+		if n := len(out); n > 0 && out[n-1].Track == e.Track && e.Start <= out[n-1].End+gap {
+			last := &out[n-1]
+			last.End = math.Max(last.End, e.End)
+			if e.Evidence > last.Evidence {
+				last.Evidence, last.Factor = e.Evidence, e.Factor
+			}
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}

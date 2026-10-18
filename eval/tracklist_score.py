@@ -174,6 +174,23 @@ def decode_align(w: pd.DataFrame, window: float, min_evidence: float, switch: fl
     return entries
 
 
+def merge_repeats(entries: list[Entry], gap: float) -> list[Entry]:
+    """Join consecutive entries of the same track that overlap or sit within
+    gap seconds (a decoder that drops to unknown for a window and comes back
+    splits one play); the merged entry keeps the larger evidence and its
+    factor. As internal/tracklist.MergeRepeats, which cmd/tracklist applies."""
+    out: list[Entry] = []
+    for e in entries:
+        if out and out[-1].track == e.track and e.start <= out[-1].end + gap:
+            last = out[-1]
+            last.end = max(last.end, e.end)
+            if e.evidence > last.evidence:
+                last.evidence, last.factor = e.evidence, e.factor
+            continue
+        out.append(Entry(e.track, e.start, e.end, e.factor, e.evidence))
+    return out
+
+
 def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -> dict:
     """Match entries to known segments; returns counts and errors."""
 
@@ -185,7 +202,7 @@ def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -
     known = [s for s in segments if s["known"]]
     scored = [i for i, s in enumerate(known) if not s.get("ignore")]
     found = set()
-    correct = 0
+    correct = repeats = 0
     start_err, speed_err = [], []
     for e in entries:
         hits = [
@@ -198,6 +215,7 @@ def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -
         correct += 1
         i = hits[0]
         if i in found or known[i].get("ignore"):
+            repeats += i in found  # a second entry for a segment already found
             continue  # correct, but adds no recall (repeat entry, or an ignored segment)
         found.add(i)
         s = known[i]
@@ -205,12 +223,13 @@ def score_mix(entries: list[Entry], segments: list[dict], cluster: np.ndarray) -
         start_err.append(abs(e.start - transition))
         speed_err.append(abs((e.factor - 1) * 100 - s["pct"]))
     return {"entries": len(entries), "correct": correct, "known": len(scored),
-            "found": len(found), "start_err": start_err, "speed_err": speed_err}  # fmt: skip
+            "found": len(found), "repeats": repeats, "start_err": start_err,
+            "speed_err": speed_err}  # fmt: skip
 
 
 def evaluate(w: pd.DataFrame, gt: dict, cluster: np.ndarray, decoder: str, params: dict,
-             window: float) -> dict:  # fmt: skip
-    totals = {"entries": 0, "correct": 0, "known": 0, "found": 0}
+             window: float, merge_gap: float = -1) -> dict:  # fmt: skip
+    totals = {"entries": 0, "correct": 0, "known": 0, "found": 0, "repeats": 0}
     start_err, speed_err = [], []
     for k, mix in enumerate(gt["mixes"]):
         wk = w[w["mix"] == k]
@@ -220,6 +239,8 @@ def evaluate(w: pd.DataFrame, gt: dict, cluster: np.ndarray, decoder: str, param
             )
         else:
             entries = decode_align(wk, window, params["min_evidence"], params["switch"])
+        if merge_gap >= 0:
+            entries = merge_repeats(entries, merge_gap)
         r = score_mix(entries, mix["segments"], cluster)
         for key in totals:
             totals[key] += r[key]
@@ -248,6 +269,13 @@ def main() -> None:
     ap.add_argument("--group-by", help="also score subsets by a mix field, e.g. timescale")
     ap.add_argument("--sets", nargs="+", help="only mixes whose 'set' field is one of these")
     ap.add_argument(
+        "--merge-gap",
+        type=float,
+        default=-1,
+        help="join consecutive entries of one track within this many seconds, as cmd/tracklist "
+        "does (default off); results get a _merged suffix",
+    )
+    ap.add_argument(
         "--identity-only",
         action="store_true",
         help="use only the window as is: today's system without the speed grid, or B2 "
@@ -266,6 +294,8 @@ def main() -> None:
     suffix = "_" + "-".join(args.sets) if args.sets else ""
     if args.identity_only:
         w, suffix = w[w["mode"].isin(["none", "b2"])], suffix + "_identity"
+    if args.merge_gap >= 0:
+        suffix += "_merged"
     window = json.loads((RES / f"{stem}.meta.json").read_text())["window_s"]
     cluster = cluster_table(args.manifest, args.catalog)
 
@@ -278,14 +308,15 @@ def main() -> None:
         }  # fmt: skip
         out = {}
         for decoder, grid in grids.items():
-            results = [evaluate(w, gt, cluster, decoder, p, window) for p in grid]
+            results = [evaluate(w, gt, cluster, decoder, p, window, args.merge_gap) for p in grid]
             out[decoder] = max(results, key=lambda r: r["f1"])
             print(decoder, json.dumps({k: v for k, v in out[decoder].items()}, default=float))
         path = RES / f"calibration_{args.mixes}{args.tag}{suffix}.json"
     else:
         params = json.loads(args.params.read_text())
         out = {
-            d: evaluate(w, gt, cluster, d, params[d]["params"], window) for d in ("smooth", "align")
+            d: evaluate(w, gt, cluster, d, params[d]["params"], window, args.merge_gap)
+            for d in ("smooth", "align")
         }
         for d, r in out.items():
             print(d, json.dumps(r, default=float))
@@ -297,7 +328,9 @@ def main() -> None:
                 sub_w = w[w["mix"].isin(idx)].copy()
                 sub_w["mix"] = sub_w["mix"].map({old: new for new, old in enumerate(idx)})
                 groups[value] = {
-                    d: evaluate(sub_w, sub_gt, cluster, d, params[d]["params"], window)
+                    d: evaluate(
+                        sub_w, sub_gt, cluster, d, params[d]["params"], window, args.merge_gap
+                    )
                     for d in ("smooth", "align")
                 }
                 for d, r in groups[value].items():

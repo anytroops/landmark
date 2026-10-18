@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -126,5 +127,26 @@ func TestAlignRecoversASpeedChangedPlay(t *testing.T) {
 	if len(got) != 1 || got[0].Track != 5 || got[0].Start != 0 || got[0].End != 40 ||
 		math.Abs(got[0].Factor-1.05) > 1e-9 {
 		t.Fatalf("Align = %+v, want one entry for track 5 over 0-40 s at 1.05", got)
+	}
+}
+
+func TestMergeRepeats(t *testing.T) {
+	in := []Entry{
+		{Track: 1, Start: 0, End: 42, Factor: 1, Evidence: 900},
+		{Track: 2, Start: 40, End: 65, Factor: 0.977, Evidence: 400},
+		{Track: 2, Start: 60, End: 70, Factor: 0.977, Evidence: 400},
+		{Track: 2, Start: 72, End: 80, Factor: 0.98, Evidence: 500}, // 2 s gap: joined at gap 2.5
+		{Track: 3, Start: 70, End: 107, Factor: 1.016, Evidence: 800},
+		{Track: 2, Start: 100, End: 110, Factor: 0.977, Evidence: 50}, // after another track: kept
+	}
+	got := MergeRepeats(in, 2.5)
+	want := []Entry{
+		{Track: 1, Start: 0, End: 42, Factor: 1, Evidence: 900},
+		{Track: 2, Start: 40, End: 80, Factor: 0.98, Evidence: 500},
+		{Track: 3, Start: 70, End: 107, Factor: 1.016, Evidence: 800},
+		{Track: 2, Start: 100, End: 110, Factor: 0.977, Evidence: 50},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("MergeRepeats =\n%+v\nwant\n%+v", got, want)
 	}
 }

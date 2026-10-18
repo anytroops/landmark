@@ -94,3 +94,16 @@ def test_score_mix_counts_duplicates_and_unknowns() -> None:
     r = score_mix(entries, segments, cluster)
     assert (r["entries"], r["correct"], r["known"], r["found"]) == (2, 1, 2, 1)
     assert r["start_err"] == [0.0] and abs(r["speed_err"][0]) < 1e-9
+
+
+def test_merge_repeats_joins_one_play_split_by_unknown() -> None:
+    from eval.tracklist_score import Entry, merge_repeats
+
+    entries = [Entry(1, 0, 42, 1.0, 900), Entry(2, 40, 65, 0.977, 400),
+               Entry(2, 60, 70, 0.977, 400), Entry(2, 72, 80, 0.98, 500),
+               Entry(3, 70, 107, 1.016, 800), Entry(2, 100, 110, 0.977, 50)]  # fmt: skip
+    got = merge_repeats(entries, 2.5)
+    assert [(e.track, e.start, e.end, e.factor, e.evidence) for e in got] == [
+        (1, 0, 42, 1.0, 900), (2, 40, 80, 0.98, 500), (3, 70, 107, 1.016, 800),
+        (2, 100, 110, 0.977, 50)]  # fmt: skip
+    assert entries[1].end == 65  # inputs untouched
