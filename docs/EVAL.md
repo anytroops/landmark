@@ -186,6 +186,25 @@ Test FAR: pairs 0.16%, B2 0.06% (500 negatives x 16 conditions).
 - **What it costs.** Heavy noise: 95.7% against 98.5% at SNR 0 dB. Work per search: 2.2x the postings scanned (median over conditions 153,528 against 69,631), but against 33 searches per window for the grid.
 - **Turntable scores depend on how far the pitch moves in bands, not only on the tempo change.** Each 1% of turntable speed shifts every peak by about half a log band (36 per octave). Near a whole number of bands (+2%: 1.03 bands, +4%: 2.04, +8%: 4.0) the relative band offsets in the hash survive and scores stay high; near a half band (+/-1%: 0.52, -8%: 4.33) peaks round to neighboring bands inconsistently and the median score is 4-6x lower than at a nearby whole-band shift (+1%: 203 against 1,312 at +2%; -8%: 145 against 602 at +8%). Keylock, which moves no pitch, degrades smoothly with tempo alone. Accuracy holds because even 145 is far above wrong-track scores, but this predicts dips at every half-band shift (about +/-1, 3, 5, 7%) and is the first thing to fix, for example by also fingerprinting the query on a filterbank offset by half a band.
 
+## B2 half-band dips: three variants (D33 follow-up)
+
+Turntable speed from -8% to +8% in 0.5% steps, plus clean, white noise, and keylock, on a 1,300-track catalog (300 test positives plus 1,000 other indexed fma_medium tracks, seeded); 300 positive and 200 negative test tracks, one 10 s excerpt per condition, the same seeded excerpts and degradations as `eval.run_eval`. Every variant uses the thresholds B2 was calibrated to on val in the previous section (t_abs 2, t_ratio 2.5); nothing is tuned here, and it is one seed. Variants: **base** (today's B2); **dual** (the query is also fingerprinted on a filterbank offset by half a band and the two landmark sets are unioned; index unchanged); **interp** (peak band positions refined by a parabola through the neighboring bands, and the hash takes the rounded difference of refined positions; index and query both). Commit e385b9a. Raw: `eval/results/b2_bandshift_seed0.*` (full per-condition table in the `.md`).
+
+| | base | dual | interp |
+|---|---|---|---|
+| worst turntable step, accuracy | 93.0% (-6.5%) | 99.3% (-7%) | 98.7% (-8%, -6.5%, +7%) |
+| lowest per-step median true score | 96 | 438 | 179 |
+| clean, accuracy / median score | 99.7% / 2,496 | 99.7% / 2,655 | 99.7% / 2,281 |
+| white noise SNR 0 dB | 94.3% | 94.0% | 96.3% |
+| FAR over 7,800 negative queries | 0.12% | 0.06% | 0.62% |
+| median landmarks / postings scanned per query | 7,125 / 66,160 | 13,914 / 130,335 | 6,691 / 70,480 |
+
+(99.7% is the ceiling here: one positive track returns no candidates in any variant.)
+
+- **The dips are real and periodic**: base scores fall to about 100-250 at every odd percent of turntable speed and recover near whole-band shifts, and the worst steps (-6.5%, +7%) drop to 93-95% accuracy.
+- **Dual removes them**: every turntable step is at 99.3-99.7%, the lowest median score rises from 96 to 438, and false accepts halve. The price is about 2x query landmarks and postings scanned, with the index unchanged.
+- **Interp helps less and costs specificity**: dips are shallower (worst 98.7%) and heavy noise is better (96.3%), but at the same thresholds it accepts 5x as many negatives (0.62%), so it would need stricter thresholds that give some of that back.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
