@@ -186,6 +186,8 @@ def _work(job: tuple) -> list[dict]:
         fe = FRONTENDS[name]
         t0, f0 = peaks(spectrogram(x, name), fe)
         ht0, hh0 = triplets(t0, f0, fe)
+        rows.append({"fma_id": fma_id, "frontend": name, "mode": "hashes", "factor": 0.0,
+                     "hashes": hh0.tolist()})  # fmt: skip
         for mode, factor in conds:
             if mode == "speed":
                 y = speed(x, factor)
@@ -248,7 +250,8 @@ def main() -> None:
             rows += r
     import pandas as pd
 
-    d = pd.DataFrame(rows)
+    hashes = [r for r in rows if r["mode"] == "hashes"]
+    d = pd.DataFrame([r for r in rows if r["mode"] != "hashes"])
     out = ROOT / "eval" / "results" / "frontend_seed0"
     d.to_csv(out.with_suffix(".csv.gz"), index=False)
     g = d.groupby(["frontend", "mode", "factor"]).sum(numeric_only=True)
@@ -291,6 +294,30 @@ def main() -> None:
     for name, r in per.iterrows():
         pps, tps, dh = r["peaks_per_s"], r["triplets_per_s"], r["distinct_hashes"]
         lines.append(f"| {name} | {pps:.1f} | {tps:.1f} | {dh:.0f} |")
+    # Specificity: how long a query hash's posting list would be at fma_medium
+    # scale (23,985 tracks x 30 s), from the hash distribution of the originals:
+    # expected list length = total postings x sum of squared hash frequencies.
+    lines += [
+        "",
+        "| Front end | Distinct hashes | Entropy | Postings per query hash at fma_medium "
+        "| Postings scanned per 10 s query |",
+        "|---|---|---|---|---|",
+    ]
+    specificity = {}
+    for name in sorted({r["frontend"] for r in hashes}):
+        h = np.concatenate([np.array(r["hashes"], dtype=np.int64) for r in hashes
+                            if r["frontend"] == name])  # fmt: skip
+        _, c = np.unique(h, return_counts=True)
+        pr = c / c.sum()
+        per_s = len(h) / (10.0 * n_tracks)
+        per_hash = 23985 * 30 * per_s * float((pr**2).sum())
+        specificity[name] = {"distinct": len(c), "entropy_bits": float(-(pr * np.log2(pr)).sum()),
+                             "postings_per_query_hash": per_hash,
+                             "postings_per_query": per_hash * per_s * 10}  # fmt: skip
+        sp = specificity[name]
+        lines.append(f"| {name} | {sp['distinct']} | {sp['entropy_bits']:.1f} bits "
+                     f"| {per_hash:,.0f} | {sp['postings_per_query'] / 1e6:.1f}M |")  # fmt: skip
+    summary["specificity"] = specificity
     out.with_suffix(".md").write_text("\n".join(lines) + "\n")
     out.with_suffix(".json").write_text(
         json.dumps(
