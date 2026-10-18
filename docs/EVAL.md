@@ -144,7 +144,24 @@ UnmixDB (Schwarz and Fourer, ISMIR 2018 late-breaking; zenodo.org/records/142238
 | All (141) | 114 (80.9%), 96.6% | 138 (97.9%), 97.9% | 126 (89.4%), 100% |
 
 - **The synthetic result carries over to mixes built by others from real club tracks with effects**: today's system finds half the turntable-shifted songs, the speed grid 96%. Keylock costs little even without it (90%), as the WSOLA tolerance curve predicted.
-- **The line-fit decoder's calibration does not transfer.** Tuned on 20 s clean synthetic segments, its low switch penalty lets it drop to "unknown" inside UnmixDB's 40 s effected segments and come back, splitting songs (181 entries for 126 found). Smoothing transfers. The fair fix is to calibrate on UnmixDB sets and test on others once all six are here.
+- **The line-fit decoder's calibration does not transfer.** Tuned on 20 s clean synthetic segments, its low switch penalty lets it drop to "unknown" inside UnmixDB's 40 s effected segments and come back, splitting songs (181 entries for 126 found). Smoothing transfers. The fair fix is to calibrate on UnmixDB sets and test on others; the next section does.
+
+## DJ-mix tracklisting on UnmixDB, all six sets (sampled)
+
+All six UnmixDB sets, 8 of each set's playlists sampled (seed 0) with all 12 tempo/effect versions of each: 528 mixes, 1,584 segments, 302 reference excerpts. The references are indexed after fma_medium, so 23,985 real tracks act as distractors (one partition, stop list 4%). Search is the speed grid with the x2 and x0.5 hypotheses (37 per window, 20,213 windows). Decoder settings are calibrated on set222 + set275 (144 mixes, 425 scored segments) and tested on set044, set123, set230, set281 (384 mixes, 1,135 scored segments; 17 segments under 10 s after truncation are ignored). "No speed grid" is the same windows searched only at the identity hypothesis, calibrated the same way. Raw: `eval/results/tracklist/*unmixdb_s8_gridA2*`; mixes: `eval/mixes/unmixdb_s8.json`.
+
+Test sets, segments found and entry precision:
+
+| Tempo variant (segments) | No speed grid, smoothing | Speed grid, smoothing | Speed grid, line fits + Viterbi |
+|---|---|---|---|
+| none (384) | 382 (99.5%), 100% | 382 (99.5%), 99.8% | 382 (99.5%), 99.8% |
+| resample, turntable (367) | 210 (57.2%), 93.4% | 325 (88.6%), 96.4% | 322 (87.7%), 99.5% |
+| stretch, keylock (384) | 348 (90.6%), 97.8% | 374 (97.4%), 100% | 355 (92.4%), 99.7% |
+| All (1,135) | 940 (82.8%), 97.6% | 1,081 (95.2%), 98.8% | 1,059 (93.3%), 99.7% |
+
+- **The speed grid holds on held-out sets with distractors**: turntable recall goes from 57% to 89%, overall from 83% to 95%, at higher precision. Start times: 87.5% within 5 s and 97.3% within 10 s (smoothing).
+- **Calibrated on UnmixDB, the line-fit decoder transfers**: 93.3% recall at 99.7% precision, against smoothing's 95.2% at 98.8%. The split-song problem of the set222 run was its synthetic calibration. Calibrated settings: smoothing t_abs 10, t_ratio 3, k 0; line fits min_evidence 50, switch 1.
+- **Turntable is the weakest variant.** Of its 367 test segments, 10 are beyond the grid's +/-8% and 16 are double-time, so range alone does not explain the 42 smoothing misses; they are not broken down yet. B2 (one search, any tempo in +/-16%) is the next comparison here.
 
 ## Go system parity (Phase 2 done criterion)
 
