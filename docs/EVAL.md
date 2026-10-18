@@ -207,6 +207,23 @@ Turntable speed from -8% to +8% in 0.5% steps, plus clean, white noise, and keyl
 - **Dual removes them**: every turntable step is at 99.3-99.7%, the lowest median score rises from 96 to 438, and false accepts halve. The price is about 2x query landmarks and postings scanned, with the index unchanged.
 - **Interp helps less and costs specificity**: dips are shallower (worst 98.7%) and heavy noise is better (96.3%), but at the same thresholds it accepts 5x as many negatives (0.62%), so it would need stricter thresholds that give some of that back.
 
+## DJ-mix tracklisting with B2 (one search per window)
+
+The same mixes, windows (10 s every 2.5 s), stop list (4%), decoders, and calibration protocol as the speed-grid sections, searched through a Go shard serving fma_medium plus the UnmixDB references as one B2 triplet index (`cmd/ingest -fingerprint triplets`: 182.5M postings, 1.03 GB, 5.7 bytes per posting). Base B2 is the single-filterbank query (commit 7b67bf3 results, tags `_b2`, `_b2x`); dual B2 is the D35 query (tags `_b2d`, `_b2dx`). On UnmixDB each window also gets x2 and x0.5 hypotheses for double- and half-time; "found" counts known segments, precision counts entries (repeats of a found segment count as correct; the `repeats` field in newer score files counts them).
+
+| Mixes (known segments) | Speed grid, 33-37 searches per window | Base B2, 1 (5 on UnmixDB) | Dual B2, 1 (5 on UnmixDB) |
+|---|---|---|---|
+| synthetic clean, test (166) | 99.4% found | 165 (99.4%), precision 100% | 165 (99.4%), precision 100% |
+| synthetic hard, test (168) | 98.8-100% | 161 (95.8%), 99.4-100% | 165-166 (98.2-98.8%), 97.1-100% |
+| UnmixDB, 4 test sets (1,135), smoothing | 1,081 (95.2%), 98.8% | 1,030 (90.7%), 99.9% | 1,017 (89.6%), 99.2% |
+
+Per-window diagnosis on the UnmixDB test sets (windows where one known track plays alone; top candidate right):
+
+- **Distortion is B2's weak spot.** With no tempo change, distorted windows are 88.5% right with dual B2 against 98.9% for the grid; undistorted, 97.1% against 98.8%. Measured on aligned calibration-set segments, distortion leaves 38% of B2 peaks (27% of pair peaks) within a frame and a band, but only 1.9% of B2 hashes survive at the best offset against 5.4% of pair hashes: a triplet needs three surviving peaks, a pair two. Bass and compressor effects cost B2 no more than pairs (28% and 51% of hashes survive, pairs 28% and 50%).
+- **Double- and half-time.** Undoing x2 on the audio (resample for turntable) finds 79% of turntable double-time windows (the grid 0%); WSOLA keylock at x2 finds 12% (the grid, which rescales pair landmarks, 97%). Rescaling B2 landmarks instead (commit e2fda35, tag `_b2dx`, reverted) fails: B2 picks 30 peaks per second of mix, so at double tempo it keeps half the song's peaks and forms different triplets; peak picking has to see the song at its own tempo.
+- **Keylock (sox stretch) within +/-8.5%:** 92-96% of windows for B2, 98-100% for the grid. **Turntable beyond 8.5%:** B2 80% (dual), grid 26%.
+- **B2 and the grid's unchanged-window pair search are complementary**: a window is right under base B2 or under one pair search 92.1% of the time (B2 alone 86.0%, the pair search alone 82.0%, the full grid 93.4%); turntable 86.3% against the grid's 84.8%, keylock 90.8% against 96.5%. This is an upper bound for a hybrid that would need a rule to pick between the two answers.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
