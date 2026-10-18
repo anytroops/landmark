@@ -14,8 +14,10 @@
 package fingerprint
 
 import (
+	"cmp"
 	"math"
 	"math/cmplx"
+	"slices"
 	"sort"
 
 	"gonum.org/v1/gonum/dsp/fourier"
@@ -307,4 +309,30 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// RescaleTempo undoes a keylock tempo change of factor (reference time per
+// query time) on query landmarks without a second pass over the audio:
+// anchor times and hash time gaps scale by factor, rounded half to even (as
+// eval.tracklist.rescale does with numpy); gaps that leave 1..MaxDT drop
+// out. Pitch is unchanged, so frequencies stay. The result is sorted by
+// (Hash, T) without duplicates.
+func RescaleTempo(lms []Landmark, factor float64) []Landmark {
+	out := make([]Landmark, 0, len(lms))
+	for _, l := range lms {
+		f1, f2, dt := Unpack(l.Hash)
+		d := int(math.RoundToEven(float64(dt) * factor))
+		if d < 1 || d > MaxDT {
+			continue
+		}
+		t := math.RoundToEven(float64(l.T) * factor)
+		out = append(out, Landmark{
+			Hash: uint32(f1)<<(fBits+dtBits) | uint32(f2)<<dtBits | uint32(d),
+			T:    uint32(t),
+		})
+	}
+	slices.SortFunc(out, func(a, b Landmark) int {
+		return cmp.Or(cmp.Compare(a.Hash, b.Hash), cmp.Compare(a.T, b.T))
+	})
+	return slices.Compact(out)
 }

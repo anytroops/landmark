@@ -3,6 +3,7 @@ package fingerprint
 import (
 	"math"
 	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -185,4 +186,23 @@ func jaccard(a, b []Landmark) float64 {
 		return 1
 	}
 	return float64(inter) / float64(union)
+}
+
+// TestRescaleTempo uses eval.tracklist.rescale's output (keylock) on the
+// same landmarks as the reference, including its half-to-even rounding.
+func TestRescaleTempo(t *testing.T) {
+	pack := func(f1, f2, dt int) uint32 { return uint32(f1)<<(fBits+dtBits) | uint32(f2)<<dtBits | uint32(dt) }
+	in := []Landmark{{pack(10, 20, 1), 0}, {pack(10, 20, 3), 5}, {pack(300, 5, 40), 7}, {pack(7, 7, 63), 100}, {pack(1, 2, 5), 9}}
+	tests := []struct {
+		factor float64
+		want   []Landmark
+	}{
+		{2, []Landmark{{32906, 18}, {328962, 0}, {328966, 10}}},
+		{0.5, []Landmark{{32898, 4}, {229856, 50}, {328962, 2}, {9830740, 4}}},
+	}
+	for _, tt := range tests {
+		if got := RescaleTempo(in, tt.factor); !slices.Equal(got, tt.want) {
+			t.Errorf("factor %v: %v, want %v", tt.factor, got, tt.want)
+		}
+	}
 }
