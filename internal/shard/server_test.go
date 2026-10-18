@@ -2,6 +2,7 @@ package shard
 
 import (
 	"context"
+	"math"
 	"net"
 	"path/filepath"
 	"sync"
@@ -194,5 +195,97 @@ func TestInfoReportsSegmentIdentity(t *testing.T) {
 	if info.GetPartitionId() != 1 || info.GetNPartitions() != 2 || info.GetNTracks() != 4 ||
 		info.GetNPostings() != 25 || info.GetSegmentCrc32C() != srv.seg.Checksum() || info.GetFormatVersion() != 1 {
 		t.Fatalf("Info = %v", info)
+	}
+}
+
+// tripletServer serves a version 2 segment, partition 0 of 1: local track 2
+// holds hashes 10..40 at t = 10*hash, each with span 20 and band 50.
+func tripletServer(t *testing.T) *Server {
+	t.Helper()
+	var entries []segment.Entry
+	for h := uint32(10); h <= 40; h++ {
+		entries = append(entries, segment.Entry{Hash: h, Track: 2, T: 10 * h, Span: 20, Band: 50})
+	}
+	path := filepath.Join(t.TempDir(), "p0.lmrk")
+	meta := segment.Meta{NPartitions: 1, NTracks: 3, Encoding: segment.EncodingVarint, Aux: true}
+	if err := segment.Write(path, meta, entries); err != nil {
+		t.Fatal(err)
+	}
+	seg, err := segment.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = seg.Close() })
+	srv, err := New(seg, Config{Workers: 2, MaxQueueWait: time.Second}, prometheus.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+// tripletQuery plays the track from frame 50 at the same tempo.
+func tripletQuery() *landmarkv1.SearchRequest {
+	req := &landmarkv1.SearchRequest{TopK: 5}
+	for h := uint32(10); h <= 40; h++ {
+		req.Hashes = append(req.Hashes, h)
+		req.Times = append(req.Times, 10*h-50)
+		req.Spans = append(req.Spans, 20)
+		req.Bands = append(req.Bands, 50)
+	}
+	return req
+}
+
+func TestTripletSearch(t *testing.T) {
+	client := startServer(t, tripletServer(t))
+	resp, err := client.Search(context.Background(), tripletQuery())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &landmarkv1.Candidate{TrackId: 2, Score: 31, Offset: 50, Scale: 1}
+	if len(resp.GetCandidates()) != 1 || !proto.Equal(resp.GetCandidates()[0], want) || resp.GetPostingsScanned() != 31 {
+		t.Fatalf("got %v, want one candidate %v and 31 postings", resp, want)
+	}
+	info, err := client.Info(context.Background(), &landmarkv1.InfoRequest{})
+	if err != nil || info.GetFormatVersion() != 2 {
+		t.Fatalf("Info = %v, %v; want format version 2", info, err)
+	}
+}
+
+func TestLandmarkKindMustMatchIndex(t *testing.T) {
+	triplets := startServer(t, tripletServer(t))
+	pairs := startServer(t, newServer(t, Config{Workers: 1, MaxQueueWait: time.Second}))
+	short := tripletQuery()
+	short.Bands = short.Bands[1:]
+	withSpans := query()
+	withSpans.Spans = make([]byte, len(withSpans.Hashes))
+	withSpans.Bands = make([]byte, len(withSpans.Hashes))
+	tests := []struct {
+		name   string
+		client landmarkv1.ShardServiceClient
+		req    *landmarkv1.SearchRequest
+	}{
+		{"pair landmarks to a triplet index", triplets, query()},
+		{"too few bands", triplets, short},
+		{"triplet landmarks to a pair index", pairs, withSpans},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.client.Search(context.Background(), tc.req)
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("code = %v, want InvalidArgument", status.Code(err))
+			}
+		})
+	}
+}
+
+func TestRoundFrames(t *testing.T) {
+	tests := []struct {
+		in   float64
+		want int32
+	}{{215.81, 216}, {-3.5, -4}, {1e12, math.MaxInt32}, {-1e12, math.MinInt32}}
+	for _, tt := range tests {
+		if got := roundFrames(tt.in); got != tt.want {
+			t.Errorf("roundFrames(%v) = %d, want %d", tt.in, got, tt.want)
+		}
 	}
 }

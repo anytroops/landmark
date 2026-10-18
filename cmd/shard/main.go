@@ -57,7 +57,7 @@ func run(segPath, listen, admin string, cfg shard.Config) error {
 	part, nParts := seg.Partition()
 	log := slog.With("partition", part, "n_partitions", nParts)
 	log.Info("segment loaded", "path", segPath, "keys", seg.NKeys(), "postings", seg.NPostings(),
-		"bytes", seg.SizeBytes(), "load_ms", time.Since(start).Milliseconds())
+		"bytes", seg.SizeBytes(), "format_version", seg.Version(), "load_ms", time.Since(start).Milliseconds())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
