@@ -17,7 +17,9 @@
 // Without -pairs-coordinator it searches the triplet index only. Each -index
 // is the index's directory, for catalog.json (and extras.json, the names of
 // non-FMA tracks); both must number tracks the same way. Decoder settings
-// and -alpha default to the ones calibrated on UnmixDB (EVAL).
+// and -alpha default to the hybrid's calibration on UnmixDB set222 and
+// set275 (eval/results/tracklist/calibration_unmixdb_s8_b2dh_hybrid_*;
+// EVAL, hybrid section), which were tuned with the pair index searched.
 package main
 
 import (
@@ -74,12 +76,12 @@ func main() {
 	flag.IntVar(&cfg.shifts, "shifts", 4, "sub-hop query grids (D15)")
 	flag.IntVar(&cfg.workers, "workers", 4, "windows fingerprinted and searched at once")
 	flag.StringVar(&extra, "extra", "2,0.5", "extra tempo factors searched per window (empty: none)")
-	flag.Float64Var(&cfg.alpha, "alpha", 1, "weight of pair scores against triplet scores")
-	flag.StringVar(&cfg.decoder, "decoder", "align", "align (line fits + Viterbi) or smooth (majority vote)")
-	flag.Float64Var(&cfg.minEvidence, "min-evidence", 50, "align: score a track needs on its line")
+	flag.Float64Var(&cfg.alpha, "alpha", 3, "weight of pair scores against triplet scores")
+	flag.StringVar(&cfg.decoder, "decoder", "smooth", "smooth (majority vote) or align (line fits + Viterbi)")
+	flag.Float64Var(&cfg.minEvidence, "min-evidence", 100, "align: score a track needs on its line")
 	flag.Float64Var(&cfg.sw, "switch", 1, "align: penalty per track change")
-	flag.Float64Var(&cfg.tAbs, "t-abs", 10, "smooth: minimum window score")
-	flag.Float64Var(&cfg.tRatio, "t-ratio", 3, "smooth: minimum top / runner-up ratio")
+	flag.Float64Var(&cfg.tAbs, "t-abs", 40, "smooth: minimum window score")
+	flag.Float64Var(&cfg.tRatio, "t-ratio", 2, "smooth: minimum top / runner-up ratio")
 	flag.IntVar(&cfg.k, "k", 0, "smooth: neighbors on each side in the majority vote")
 	flag.Float64Var(&cfg.mergeGap, "merge-gap", 2.5, "join consecutive entries of one track this close, seconds (-1: off)")
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
