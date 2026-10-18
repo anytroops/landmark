@@ -1,7 +1,7 @@
 # Progress
 
-## Current phase: 4 (measure)
-Phases 0-3 are done. Phase 4 has B2, B3, B4, B5, and quick B1 sweeps recorded; full-method B1 on fma_medium is next.
+## Current phase: DJ-set tracklisting (D31, D32, D33)
+Phases 0-4 are done (Phase 4: B1-B5 on fma_medium, stop list D30, D27+D28 before/after). The current work is the differentiating feature: tracklisting DJ mixes with tempo-robust matching. Option A (speed grid) is built and evaluated; option B2 (tempo-invariant triplet hashes on a log-frequency front end) has a Python reference and is being compared with today's fingerprint, before the Go port.
 
 ## Done
 - 2026-10-14, Phase 0: repo, toolchain, CI, compose stack, FMA data verified and extracted.
@@ -10,9 +10,12 @@ Phases 0-3 are done. Phase 4 has B2, B3, B4, B5, and quick B1 sweeps recorded; f
 - 2026-10-14, Phase 3: shard Info RPC and index manifest; cluster config; coordinator with per-attempt timeouts (D24), outlier ejection (D25), replica identity checks (D26), mutation-tested; 2x2 Docker cluster; open-loop loadgen with failure injection; Grafana dashboard. Done criterion (B3, 3 reps): kill -9 of a replica at 100 qps kept 100% complete answers, 2-3 of 6,000 requests per run over 50 ms.
 - 2026-10-14 to 16, Phase 4: bench harness with AC-power and clean-tree guards; profiling at saturation found vote sorting (D27, radix sort) and per-message protobuf overhead (D28, packed arrays); single-partition knee on fma_small 600 to 1,600 qps, p50 12.7 to 5.4 ms; B5 (3 reps); fma_medium downloaded, deduped, split, indexed at P=1/2/4/8 (102M postings), evaluated (clean 10 s 99.9%, SNR 0 dB 97.1%, FAR <= 0.1%); B4 at medium shows the reachable hash space ~80% used; quick B1 sweep on medium; B2 on medium (median-of-3 rule, D29): P=1/2/4/8 sustain 550/472/464/374 qps under p99 <= 100 ms on one host (P=1 about 520-550 by session); full-method B1 done (P=8 cuts p50 4.3x and p99 4.9x vs P=1 at similar load). Stop list (D30): P=1 925 qps at 2% (1.7x), clean accuracy unchanged, heavy-noise accuracy down 2.7 points; P=1 and P=8 answer identically (bench/equiv). Found that charging the battery during runs likely cuts capacity enough to fail a knee-rate (harness now waits for full charge). Measured postings scanned per query: linear in catalog size at any key-space fill, concentrated in a few long lists of held-note and low-frequency hashes.
 
+- 2026-10-17, DJ tracklisting so far: speed tolerance of the pair fingerprint (turntable +/-0.75%; keylock barely hurts once simulated with WSOLA instead of librosa's phase vocoder, which smears peaks); synthetic DJ mixes with exact ground truth (eval.mixgen, clean and with EQ, bass swap, noise, MP3); option A speed grid (eval.tracklist) and decoders (eval.tracklist_score): recall 67-74% to 99.4% on clean test mixes, 54-63% to 98.8-100% on hard ones; UnmixDB set222 (real club tracks with effects, built by others): 81% to 98%, turntable 51% to 96%. Front-end experiment chose a log filterbank over STFT 4096 for B2 (D33). B2 Python reference (prototype/b2.py, b2_match.py) recovers scale within 0.1% in one lookup.
+
 ## Next
-- DJ tracklisting (D31, D32, docs/design/dj-tracklisting.md): Mixotic's Google Drive links now require sign-in; Sean to fetch it or choose UnmixDB / synthetic FMA mixes. Delete Mixotic when the feature is done (Sean's condition).
-- Before/after B2 at P=1 on fma_medium for the D27+D28 optimizations (pre-3b7d8d2 binaries), so the 2.7x claim has full-methodology numbers.
+- B2 (D33): finish the Python comparison against pairs (eval/b2_eval.py), tune hash and voting parameters, then the Go port with exact parity (generalize fingerprint.Spectrogram to any band count), segment format v2 (span and band per posting), proto fields for spans and bands, shard matcher, ingest; then tolerance, synthetic mixes, UnmixDB, and cost against the speed grid.
+- UnmixDB full evaluation (528-mix sample, calibrate on set222 + set275, test on the other four, fma_medium as distractors); fix the line-fit decoder's calibration transfer.
+- Mixotic (the published DJ-mix benchmark) is access-restricted on Google Drive; using UnmixDB (built from the same tracks) instead. If Mixotic is ever obtained, delete it when the feature is done (Sean's condition).
 - Sean: multi-machine run for real throughput scaling (said "not now" to AWS on 2026-10-14).
 - Phase 5 (HTTP gateway + demo page).
 - Optional: shift-invariant peak selection (D9 follow-up, core change), u32 offsets / compressed keys (B4).
