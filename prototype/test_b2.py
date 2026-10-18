@@ -70,3 +70,43 @@ def test_search_recovers_track_scale_and_offset(scale: float) -> None:
     assert top.track == 2
     assert abs(top.scale - scale) < 0.01
     assert abs(top.offset - 300) < 3
+
+
+def test_scale_table_is_powers_of_the_bin_ratio() -> None:
+    table = b2_match.scale_table()
+    mid = b2_match.TABLE_BINS
+    assert table[mid] == 1.0 and table[mid + 1] == b2_match.SCALE_RATIO
+    assert np.all(np.diff(table) > 0)
+    np.testing.assert_allclose(table[mid + 8], 1.02**8, rtol=1e-14)
+    assert b2_match.floor_bin(np.array([1.0, 1.0199, 1.02]))[[0, 1, 2]].tolist() == [0, 0, 1]
+    assert b2_match.ceil_bin(np.array([1.0, 1.0001, 1.02]))[[0, 1, 2]].tolist() == [0, 1, 1]
+
+
+@pytest.mark.parametrize(
+    ("span_ref", "span_query", "bins"),
+    [
+        (63, 63, (-1, 1)),  # ratio known to +/-1.6%: the bins it reaches
+        (10, 10, (-1, 2)),  # +/-10%: capped to 4 bins around the ratio
+        (52, 50, (0, 3)),  # ratio 1.04, known to +/-2%: bins 0 .. 3
+        (2, 3, None),  # ratio 0.67, far below the searched range: no votes
+        (0, 5, None),
+        (5, 0, None),
+    ],
+)
+def test_vote_windows(span_ref: int, span_query: int, bins: tuple[int, int] | None) -> None:
+    first, last = b2_match.windows()
+    f, la = int(first[span_ref, span_query]), int(last[span_ref, span_query])
+    if bins is None:
+        assert f > la
+    else:
+        assert (f, la) == bins
+    ok = first <= last
+    assert first[ok].min() >= b2_match.BIN_MIN and last[ok].max() <= b2_match.BIN_MAX
+
+
+def test_fit_line_is_exact_on_integer_lines() -> None:
+    x = np.array([0, 5, 9, 20], dtype=np.int64)
+    assert b2_match.fit_line(x, 300 + x) == (1.0, 300.0)
+    assert b2_match.fit_line(x, 7 + 2 * x) == (2.0, 7.0)
+    assert b2_match.fit_line(np.array([4, 4]), np.array([1, 9])) is None
+    assert b2_match.fit_line(np.array([4]), np.array([1])) is None
