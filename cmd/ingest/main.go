@@ -34,6 +34,7 @@ import (
 	"github.com/anytroops/landmark/internal/runinfo"
 	"github.com/anytroops/landmark/internal/segment"
 	"github.com/anytroops/landmark/internal/stoplist"
+	"github.com/anytroops/landmark/internal/triplet"
 )
 
 type manifest struct {
@@ -57,18 +58,20 @@ type config struct {
 	extra               string
 	partitions          []int
 	encoding            segment.Encoding
+	triplets            bool // B2 triplet fingerprint into version 2 segments (D33, D34)
 	workers             int
 }
 
 func main() {
 	var cfg config
-	var enc string
+	var enc, kind string
 	flag.StringVar(&cfg.manifest, "manifest", "eval/manifests/splits_small_seed0.json", "split manifest (\"\" for none)")
 	flag.StringVar(&cfg.extra, "extra", "", "extra audio files to index, one name<TAB>path per line")
 	flag.StringVar(&cfg.data, "data", "data", "dataset root")
 	flag.StringVar(&cfg.out, "out", "", "output directory (required); with several -partitions, one subdirectory pN each")
 	parts := flag.String("partitions", "1", "partition count P, or a comma list (1,2,4,8) to build several indexes from one fingerprint pass")
 	flag.StringVar(&enc, "encoding", "varint", "postings encoding: varint or fixed")
+	flag.StringVar(&kind, "fingerprint", "pairs", "landmarks: pairs, or triplets (tempo-invariant, D33)")
 	flag.IntVar(&cfg.workers, "workers", runtime.NumCPU(), "decode+fingerprint goroutines")
 	flag.Parse()
 	for _, f := range strings.Split(*parts, ",") {
@@ -85,6 +88,13 @@ func main() {
 		cfg.encoding = segment.EncodingFixed
 	default:
 		fatal("unknown -encoding", "value", enc)
+	}
+	switch kind {
+	case "pairs":
+	case "triplets":
+		cfg.triplets = true
+	default:
+		fatal("unknown -fingerprint", "value", kind)
 	}
 	if cfg.out == "" {
 		fatal("need -out")
@@ -103,9 +113,11 @@ func fatal(msg string, args ...any) {
 	os.Exit(1)
 }
 
+// fpResult is one track's landmarks as segment entries (Track unset; Span
+// and Band zero for pairs).
 type fpResult struct {
 	dense uint32
-	lms   []fingerprint.Landmark
+	lms   []segment.Entry
 	secs  float64
 	err   error
 }
@@ -173,7 +185,7 @@ func run(ctx context.Context, cfg config) error {
 
 	// Fingerprint every track once; each requested P reuses the landmarks.
 	start := time.Now()
-	lms := make([][]fingerprint.Landmark, len(ids))
+	lms := make([][]segment.Entry, len(ids))
 	var audioSecs float64
 	var failures []int
 	for r := range fingerprintAll(ctx, cfg, path, ids) {
@@ -197,11 +209,11 @@ func run(ctx context.Context, cfg config) error {
 			dir = filepath.Join(cfg.out, fmt.Sprintf("p%d", nParts))
 		}
 		stats := ingestStats{
-			Manifest: cfg.manifest, Partitions: nParts, Encoding: encName(cfg.encoding),
+			Manifest: cfg.manifest, Partitions: nParts, Encoding: encName(cfg.encoding), Fingerprint: kindName(cfg.triplets),
 			Workers: cfg.workers, Tracks: len(ids), DecodeFailures: failures, AudioSeconds: audioSecs,
 			FingerprintWallSeconds: fpSecs, Machine: runinfo.Machine("."),
 		}
-		if err := writeIndex(dir, uint32(nParts), cfg.encoding, ids, m.Clusters, lms, &stats); err != nil {
+		if err := writeIndex(dir, uint32(nParts), cfg, ids, m.Clusters, lms, &stats); err != nil {
 			return err
 		}
 		if len(extras) > 0 {
@@ -215,8 +227,8 @@ func run(ctx context.Context, cfg config) error {
 
 // writeIndex writes one segment per partition plus catalog.json, index.json,
 // and ingest_stats.json into dir.
-func writeIndex(dir string, nParts uint32, enc segment.Encoding, ids []int, clusters map[string][]int,
-	lms [][]fingerprint.Landmark, stats *ingestStats) error {
+func writeIndex(dir string, nParts uint32, cfg config, ids []int, clusters map[string][]int,
+	lms [][]segment.Entry, stats *ingestStats) error {
 	start := time.Now()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
@@ -224,14 +236,15 @@ func writeIndex(dir string, nParts uint32, enc segment.Encoding, ids []int, clus
 	parts := make([][]segment.Entry, nParts)
 	for d, ls := range lms {
 		p, track := uint32(d)%nParts, uint32(d)/nParts
-		for _, lm := range ls {
-			parts[p] = append(parts[p], segment.Entry{Hash: lm.Hash, Track: track, T: lm.T})
+		for _, e := range ls {
+			e.Track = track
+			parts[p] = append(parts[p], e)
 		}
 	}
-	manifest := IndexManifest{NPartitions: nParts, NTracks: len(ids)}
+	manifest := IndexManifest{NPartitions: nParts, NTracks: len(ids), Fingerprint: kindName(cfg.triplets)}
 	for p := range nParts {
 		nTracks := (uint32(len(ids)) + nParts - 1 - p) / nParts // dense ids d < N with d mod P == p
-		meta := segment.Meta{Partition: p, NPartitions: nParts, NTracks: nTracks, Encoding: enc}
+		meta := segment.Meta{Partition: p, NPartitions: nParts, NTracks: nTracks, Encoding: cfg.encoding, Aux: cfg.triplets}
 		path := filepath.Join(dir, fmt.Sprintf("part-%03d.lmrk", p))
 		n := len(parts[p])
 		if err := segment.Write(path, meta, parts[p]); err != nil {
@@ -311,12 +324,19 @@ func fingerprintAll(ctx context.Context, cfg config, path func(int) string, ids 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			fp := fingerprint.New(fingerprint.DefaultParams()) // one per goroutine: not shareable
+			// One fingerprinter per goroutine: they are not shareable.
+			var pairs *fingerprint.Fingerprinter
+			var triplets *triplet.Fingerprinter
+			if cfg.triplets {
+				triplets = triplet.New(triplet.DefaultParams())
+			} else {
+				pairs = fingerprint.New(fingerprint.DefaultParams())
+			}
 			for dense := range jobs {
 				pcm, err := audio.Decode(ctx, path(ids[dense]), audio.SampleRate)
 				r := fpResult{dense: dense, err: err}
 				if err == nil {
-					r.lms = fp.Fingerprint(pcm)
+					r.lms = entries(pairs, triplets, pcm)
 					r.secs = float64(len(pcm)) / audio.SampleRate
 				}
 				results <- r
@@ -338,6 +358,31 @@ func fingerprintAll(ctx context.Context, cfg config, path func(int) string, ids 
 		close(results)
 	}()
 	return results
+}
+
+// entries fingerprints pcm with whichever fingerprinter is set.
+func entries(pairs *fingerprint.Fingerprinter, triplets *triplet.Fingerprinter, pcm []float32) []segment.Entry {
+	if triplets != nil {
+		lms := triplets.Fingerprint(pcm)
+		out := make([]segment.Entry, len(lms))
+		for i, l := range lms {
+			out[i] = segment.Entry{Hash: l.Hash, T: l.T, Span: l.Span, Band: l.Band}
+		}
+		return out
+	}
+	lms := pairs.Fingerprint(pcm)
+	out := make([]segment.Entry, len(lms))
+	for i, l := range lms {
+		out[i] = segment.Entry{Hash: l.Hash, T: l.T}
+	}
+	return out
+}
+
+func kindName(triplets bool) string {
+	if triplets {
+		return "triplets"
+	}
+	return "pairs"
 }
 
 func buildCatalog(ids []int, clusters map[string][]int, nParts uint32) []CatalogTrack {
@@ -392,6 +437,7 @@ type segStats struct {
 type IndexManifest struct {
 	NPartitions uint32                  `json:"n_partitions"`
 	NTracks     int                     `json:"n_tracks"`
+	Fingerprint string                  `json:"fingerprint"` // pairs or triplets: what queries must send
 	Segments    []ManifestEntry         `json:"segments"`
 	Stoplist    *stoplist.ManifestEntry `json:"stoplist,omitempty"`
 }
@@ -407,6 +453,7 @@ type ingestStats struct {
 	Manifest               string            `json:"manifest"`
 	Partitions             int               `json:"partitions"`
 	Encoding               string            `json:"encoding"`
+	Fingerprint            string            `json:"fingerprint"`
 	Workers                int               `json:"workers"`
 	Tracks                 int               `json:"tracks"`
 	DecodeFailures         []int             `json:"decode_failures"`
