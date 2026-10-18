@@ -246,7 +246,8 @@ func (m *TripletMatcher) pickTracks(refine int) {
 }
 
 // refine fits a line for each picked track over its matches near the
-// winning coarse bin and scores the inliers.
+// winning coarse bin and scores the inliers. A fit whose scale leaves the
+// searched range by more than a bin is no match and is dropped.
 func (m *TripletMatcher) refine() []TripletCandidate {
 	if len(m.best) == 0 {
 		return nil
@@ -289,6 +290,7 @@ func (m *TripletMatcher) refine() []TripletCandidate {
 		}
 	}
 
+	lo, hi := m.table[binMin-1+tableBins], m.table[binMax+1+tableBins]
 	out := make([]TripletCandidate, 0, len(m.best))
 	for s, b := range m.best {
 		pts := m.points[s]
@@ -303,6 +305,9 @@ func (m *TripletMatcher) refine() []TripletCandidate {
 				break
 			}
 			sc, off = sc2, off2
+		}
+		if sc < lo || sc > hi || math.IsNaN(sc) {
+			continue
 		}
 		inlier := isInlier(sc, off)
 		score, prev := uint32(0), int32(-1)

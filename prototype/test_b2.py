@@ -128,3 +128,14 @@ def test_dual_query_adds_the_half_band_landmarks() -> None:
     assert np.array_equal(order, np.arange(len(order)))  # sorted by (hash, t, span, band)
     assert b2.half_band().fmin == pytest.approx(55 * 2 ** (1 / 72))
 
+
+def test_flat_fit_is_not_a_match() -> None:
+    # One reference posting per hash; the query repeats each hash at many
+    # times, so every match has the same reference time: a flat line.
+    hashes = np.arange(1, 21, dtype=np.uint32)
+    ref = b2.Landmarks(hashes, np.full(20, 500, np.uint32), np.full(20, 30, np.uint8),
+                       np.full(20, 50, np.uint8))  # fmt: skip
+    idx = b2_match.build([ref])
+    q = b2.Landmarks(np.repeat(hashes, 5), np.tile(np.arange(0, 25, 5, dtype=np.uint32), 20),
+                     np.full(100, 30, np.uint8), np.full(100, 50, np.uint8))  # fmt: skip
+    assert b2_match.search(idx, q).candidates == []

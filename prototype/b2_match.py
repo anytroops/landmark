@@ -14,7 +14,9 @@ Search, in two stages:
 2. Refine. For the top tracks, take the matches near the winning bin and fit
    t_ref = offset + scale * t_query by least squares, keep matches within
    INLIER_FRAMES of the line, refit (twice). The score is the number of
-   inlier query landmarks (each counted once).
+   inlier query landmarks (each counted once). A fit whose scale leaves the
+   searched range by more than a bin is no match (e.g. a flat line from many
+   query landmarks hitting one posting) and is dropped.
 
 Returns candidates (track, score, offset in frames at query time 0, scale).
 
@@ -208,6 +210,8 @@ def search(
             if refit is None:
                 break
             s, a = refit
+        if not table[BIN_MIN - 1 + TABLE_BINS] <= s <= table[BIN_MAX + 1 + TABLE_BINS]:
+            continue
         inl = np.abs(y_f - (a + s * x_f)) <= INLIER_FRAMES
         cands.append(Candidate(tk, int(len(np.unique(q_i[inl]))), a, s))
     cands.sort(key=lambda c: (-c.score, c.track))

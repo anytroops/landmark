@@ -228,3 +228,30 @@ func TestTripletSearchRejectsPairSegment(t *testing.T) {
 		t.Error("triplet search over a version 1 segment: want an error")
 	}
 }
+
+func TestFlatFitIsNotAMatch(t *testing.T) {
+	// One posting per hash; the query repeats each hash at many times, so
+	// every match has the same reference time: a flat line, scale 0.
+	var entries []segment.Entry
+	var query []triplet.Landmark
+	for h := uint32(1); h <= 20; h++ {
+		entries = append(entries, segment.Entry{Hash: h, Track: 0, T: 500, Span: 30, Band: 50})
+		for q := uint32(0); q < 25; q += 5 {
+			query = append(query, triplet.Landmark{Hash: h, T: q, Span: 30, Band: 50})
+		}
+	}
+	path := filepath.Join(t.TempDir(), "flat.lmrk")
+	meta := segment.Meta{NPartitions: 1, NTracks: 1, Encoding: segment.EncodingVarint, Aux: true}
+	if err := segment.Write(path, meta, entries); err != nil {
+		t.Fatal(err)
+	}
+	seg, err := segment.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = seg.Close() }()
+	res, err := NewTripletMatcher().Search(seg, query, 10)
+	if err != nil || len(res.Candidates) != 0 {
+		t.Fatalf("flat fit: %+v, %v; want no candidates", res, err)
+	}
+}
