@@ -250,7 +250,8 @@ def main() -> None:
     ap.add_argument(
         "--identity-only",
         action="store_true",
-        help="use only the unchanged-window hypothesis: today's system, no speed grid",
+        help="use only the window as is: today's system without the speed grid, or B2 "
+        "without the double- and half-time hypotheses",
     )
     args = ap.parse_args()
 
@@ -264,7 +265,7 @@ def main() -> None:
         w["mix"] = w["mix"].map({old: new for new, old in enumerate(idx)})
     suffix = "_" + "-".join(args.sets) if args.sets else ""
     if args.identity_only:
-        w, suffix = w[w["mode"] == "none"], suffix + "_identity"
+        w, suffix = w[w["mode"].isin(["none", "b2"])], suffix + "_identity"
     window = json.loads((RES / f"{stem}.meta.json").read_text())["window_s"]
     cluster = cluster_table(args.manifest, args.catalog)
 
