@@ -226,3 +226,18 @@ The quick sweeps on fma_small (above) put the D27 (radix vote sort) + D28 (packe
 - **The old code cannot meet the 100 ms p99 SLO at any load**: a single probe at 25 qps already had p99 100.1 ms (`bench/results/b2_medium_pre_d27/P1/probe_r25`), because its slowest 1% of queries take about 100 ms of service time on their own. That is why capacity is compared against the deadline instead.
 - **The capacity ratio is noisy, and 2.3x is a low estimate.** In this run, the "after" code failed 412 qps on completeness (99.63%: 91 requests shed or timed out) with p99 136 ms, yet it sustained 550 qps under the stricter 100 ms SLO about 90 minutes earlier (`b2_medium_sameday`). The capacity search ran after nearly an hour of continuous load, including overload probes at 1,200 and 750 qps just before; heat is a plausible cause but unconfirmed (no backup was running, macOS recorded no thermal warnings). Against that earlier result the gain would be 3.2x. Claim "more than doubled".
 
+
+## B6: client fingerprinting cost per DJ-mix window, pairs vs B2 (D35, D36)
+
+`bench/querycost`: 100 fma_medium test positives, one 10 s window each (the cmd/loadgen excerpt offsets), 4 sub-hop shifts, one core, each figure the median over windows of the fastest of 3 passes. Commit 5faea30, clean, AC power with the battery not charging. Raw: `bench/results/b5_querycost.json`.
+
+| Per 10 s window | Median | p90 | Landmarks (median) |
+|---|---|---|---|
+| Pair query fingerprint (one search's worth) | 31.9 ms | 32.2 ms | 3,906 |
+| Speed grid: 17 pair fingerprints (unchanged + 16 turntable steps; resampling not timed) | >= 541.6 ms | >= 548.0 ms | |
+| B2 dual-filterbank query fingerprint | 126.0 ms | 127.2 ms | 13,978 |
+
+Index side, per 30 s track: pairs 25.2 ms, B2 48.3 ms (1.9x).
+
+- **B2 costs 4x one pair fingerprint but is 4.3x cheaper than the grid's fingerprinting** per window; the hybrid's plain-window pair (D36) adds 31.9 ms, about 158 ms in all. The hybrid's double- and half-time turntable searches fingerprint the window resampled to 20 s and 5 s; not timed here.
+- Shard-side throughput under the SLO for B2 searches is not measured yet: the run stopped when the machine went on battery.
