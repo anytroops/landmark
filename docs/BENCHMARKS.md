@@ -241,3 +241,19 @@ Index side, per 30 s track: pairs 25.2 ms, B2 48.3 ms (1.9x).
 
 - **B2 costs 4x one pair fingerprint but is 4.3x cheaper than the grid's fingerprinting** per window; the hybrid's plain-window pair (D36) adds 31.9 ms, about 158 ms in all. The hybrid's double- and half-time turntable searches fingerprint the window resampled to 20 s and 5 s; not timed here.
 - Shard-side throughput under the SLO for B2 searches is not measured yet: the run stopped when the machine went on battery.
+
+## B7: shard throughput, B2 vs pair searches (D35, D36)
+
+`bench/scripts/b2_slo.py`, single host, bare metal, P=1, RF=1, stop list 4%, the fma_medium indexes extended with the 302 UnmixDB references (pairs: `medium_unmixdb`, 102M postings; B2: `medium_unmixdb_b2`, 182.5M). Queries: the 1,500 medium test-split 10 s excerpts, fingerprinted as pairs (`medium_test_10s_seed0.gob`) or as dual-filterbank B2 triplets (`medium_test_10s_seed0_b2.gob`, 3.6x the landmarks). Commit 211a7a3, clean, every run at "100%; charged". Raw: `bench/results/b5_b2_slo`, `b5_b2_batch`, `b5_pairs_batch`.
+
+- **The interactive SLO (p99 <= 100 ms) is out of reach for B2 at P=1**: the lowest probe, 20 qps, had p50 70 ms and p99 128 ms (`b5_b2_slo`).
+- **With a batch target** (p99 <= 1 s, >= 99.9% complete, 2 s deadline; DJ-mix tracklisting is offline work), same session, median rule (D29):
+
+| Search | Max sustainable | p50 at that rate (each run) | p99 (each run) | Complete answers (each run) |
+|---|---|---|---|---|
+| B2 (dual query) | **118 qps** | 114, 116, 120 ms | 222, 247, 239 ms | 100.00%, 99.89%, 99.94% |
+| Pairs | **697 qps** | 17.4, 16.6, 16.0 ms | 68, 99, 42 ms | 100.00%, 99.99%, 100.00% |
+
+- **One B2 search costs about 5.9 pair searches** of shard capacity: B2 queries carry 3.6x the landmarks (two filterbanks) and each match votes in up to 4 scale bins before the line fits. Both fail by shedding (incomplete answers) just above these rates, not by latency.
+- **Cost per DJ-mix window** at P=1, from these rates (each search counted at its 10 s-query cost): the speed grid's 37 pair searches allow about 19 windows per second; the hybrid's 3 B2 + 3 pair searches about 34 (1.8x); the plain-window hybrid's 1 + 1 about 100 (5.3x), at 94.1% of UnmixDB songs instead of 95.9% (EVAL). The hybrid's x2 search fingerprints a 20 s resampled window, so its true cost is somewhat higher than counted.
+- B2's search cost is the next optimization target; levers include fewer scale bins per match, a stop list tuned to triplet hashes, and more partitions per query.

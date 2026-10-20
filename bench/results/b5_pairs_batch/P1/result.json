@@ -1,0 +1,134 @@
+{
+ "partitions": 1,
+ "stop_fraction": 0.04,
+ "max_qps_under_slo": 697,
+ "slo_p99_ms": 1000.0,
+ "slo_min_success": 0.999,
+ "rule": "median of reps (D29)",
+ "confirm_median": {
+  "p99_ms": 68.139,
+  "success_rate": 1
+ },
+ "probes": [
+  {
+   "tag": "probe",
+   "rate": 100.0,
+   "pass": true,
+   "p99_ms": 21.096,
+   "p50_ms": 12.494,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 3000.0,
+   "pass": false,
+   "p99_ms": 258.81,
+   "p50_ms": 139.285,
+   "success": 0.21757222222222222
+  },
+  {
+   "tag": "probe",
+   "rate": 1550,
+   "pass": false,
+   "p99_ms": 180.991,
+   "p50_ms": 131.345,
+   "success": 0.4469462365591398
+  },
+  {
+   "tag": "probe",
+   "rate": 825,
+   "pass": false,
+   "p99_ms": 177.744,
+   "p50_ms": 130.445,
+   "success": 0.8813939393939394
+  },
+  {
+   "tag": "probe",
+   "rate": 462,
+   "pass": true,
+   "p99_ms": 21.601,
+   "p50_ms": 12.651,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 644,
+   "pass": true,
+   "p99_ms": 25.067,
+   "p50_ms": 14.392,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 734,
+   "pass": true,
+   "p99_ms": 80.572,
+   "p50_ms": 26.062,
+   "success": 1
+  },
+  {
+   "tag": "probe",
+   "rate": 780,
+   "pass": false,
+   "p99_ms": 181.242,
+   "p50_ms": 129.453,
+   "success": 0.9393803418803419
+  },
+  {
+   "tag": "probe",
+   "rate": 757,
+   "pass": false,
+   "p99_ms": 173.844,
+   "p50_ms": 128.997,
+   "success": 0.9572655217965654
+  },
+  {
+   "tag": "confirm_rep0",
+   "rate": 734,
+   "pass": false,
+   "p99_ms": 171.885,
+   "p50_ms": 124.75,
+   "success": 0.9850476839237057
+  },
+  {
+   "tag": "confirm_rep1",
+   "rate": 734,
+   "pass": false,
+   "p99_ms": 169.776,
+   "p50_ms": 123.356,
+   "success": 0.9888737511353315
+  },
+  {
+   "tag": "confirm_rep2",
+   "rate": 734,
+   "pass": false,
+   "p99_ms": 168.286,
+   "p50_ms": 122.697,
+   "success": 0.9905881017257039
+  },
+  {
+   "tag": "confirm_rep0",
+   "rate": 697,
+   "pass": true,
+   "p99_ms": 68.139,
+   "p50_ms": 17.376,
+   "success": 1
+  },
+  {
+   "tag": "confirm_rep1",
+   "rate": 697,
+   "pass": true,
+   "p99_ms": 99.203,
+   "p50_ms": 16.56,
+   "success": 0.9998923959827833
+  },
+  {
+   "tag": "confirm_rep2",
+   "rate": 697,
+   "pass": true,
+   "p99_ms": 41.552,
+   "p50_ms": 16.002,
+   "success": 1
+  }
+ ]
+}
