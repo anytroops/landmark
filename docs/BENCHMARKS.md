@@ -257,3 +257,17 @@ Index side, per 30 s track: pairs 25.2 ms, B2 48.3 ms (1.9x).
 - **One B2 search costs about 5.9 pair searches** of shard capacity: B2 queries carry 3.6x the landmarks (two filterbanks) and each match votes in up to 4 scale bins before the line fits. Both fail by shedding (incomplete answers) just above these rates, not by latency.
 - **Cost per DJ-mix window** at P=1, from these rates (each search counted at its 10 s-query cost): the speed grid's 37 pair searches allow about 19 windows per second; the hybrid's 3 B2 + 3 pair searches about 34 (1.8x); the plain-window hybrid's 1 + 1 about 100 (5.3x), at 94.1% of UnmixDB songs instead of 95.9% (EVAL). The hybrid's x2 search fingerprints a 20 s resampled window, so its true cost is somewhat higher than counted.
 - B2's search cost is the next optimization target; levers include fewer scale bins per match, a stop list tuned to triplet hashes, and more partitions per query.
+
+## B8: pruned B2 searches (D37)
+
+Same harness and configuration as B7 (P=1, RF=1, stop list 4%, same indexes and query sets), B2 searches pruned to the 200 tracks with the most matches. One session, every run at "100%; charged", commit 063d508. Raw: `bench/results/b8_b2p_slo`, `b8_b2p_batch`, `b8_pairs_batch`.
+
+| Search, target | Max sustainable | p50 at that rate (each run) | p99 (each run) | Complete answers (each run) |
+|---|---|---|---|---|
+| B2 pruned, interactive (p99 <= 100 ms) | **378 qps** | 32.1, 31.7, 32.6 ms | 75, 73, 93 ms | 100.00% (all) |
+| B2 pruned, batch (p99 <= 1 s, 2 s deadline) | 286 qps | 23.3, 23.6, 23.9 ms | 39, 39, 40 ms | 100.00% (all) |
+| Pairs, batch | 734 qps | 17.6, 17.5, 17.7 ms | 48, 48, 50 ms | 100.00% (all) |
+
+- **Pruning makes a B2 search 2.4-3.2x cheaper**: 286-378 qps against 118 (B7), and it now meets the interactive SLO, which unpruned B2 missed even at 20 qps.
+- **The two B2 numbers are one knee seen twice**: the batch search's probe at 298 qps shed 0.3% of requests (completeness, not latency, failed), so it confirmed 286; the interactive search, run first, confirmed 378 with every run passing. As in B2, a few percent of offered load decides pass or fail near capacity.
+- **One B2 search now costs about 1.9-2.6 pair searches** (734 / 378 to 734 / 286; 5.9 before). Per DJ-mix window at P=1: the speed grid's 37 pair searches allow about 20 windows per second; the hybrid's 3 B2 + 3 pair searches 69-83 (3.5-4.2x the grid); the two-search hybrid 206-250 (10-13x), at 93.7% of UnmixDB songs against the hybrid's 95.2% (EVAL, D37).

@@ -16,7 +16,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | Fingerprinting, index, shard, coordinator, failover, replication | Done; Go matches the Python reference on every test query |
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
-| DJ tracklisting | Working end to end (`cmd/tracklist`), hybrid matcher (D36), cost measured; triplet search speed is the next target |
+| DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
 
 ## Architecture
 
@@ -55,8 +55,8 @@ DJ tracklisting:
 |---|---|
 | Triplet fingerprint, 10 s excerpt, one search, turntable or keylock -8% to +8% | 99.8-99.9% (pair fingerprint: 14% at +/-2%, 0% beyond) |
 | Synthetic DJ mixes, songs found (clean / with EQ, noise, MP3) | 99.4% / 98.2-98.8%, one search per window |
-| UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.9%**, precision 97.9%; speed grid (37 searches) 95.2% |
-| Search cost, one partition (batch target, p99 <= 1 s) | triplet search 118 qps, pair search 697 qps: the hybrid tracklists about 1.8x as many windows per second as the speed grid (5.3x with its 2-search variant) |
+| UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.2%**, precision 98.9%; speed grid (37 searches) 95.2%, precision 98.8% |
+| Search cost, one partition | triplet search 378 qps under p99 <= 100 ms after pruning (D37; 118 qps before), pair search 734 qps: the hybrid tracklists 3.5-4.2x as many windows per second as the speed grid (10-13x with its 2-search variant) |
 
 ## Usage
 
