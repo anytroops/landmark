@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/anytroops/landmark/internal/segment"
@@ -43,11 +44,13 @@ type goldenTriplet struct {
 		NearFrames      int     `json:"near_frames"`
 		InlierFrames    float64 `json:"inlier_frames"`
 		MaxBinsPerMatch int     `json:"max_bins_per_match"`
+		PruneTracks     int     `json:"prune_tracks"`
 	} `json:"params"`
 	Queries []struct {
 		goldenLandmarks
 		Name            string             `json:"name"`
 		RefineTracks    int                `json:"refine_tracks"`
+		PruneTracks     int                `json:"prune_tracks"`
 		TopK            int                `json:"top_k"`
 		PostingsScanned uint64             `json:"postings_scanned"`
 		Votes           uint64             `json:"votes"`
@@ -68,7 +71,7 @@ func loadGoldenTriplet(t *testing.T) goldenTriplet {
 	p := g.Params
 	if p.ScaleRatio != scaleRatio || p.BinMin != binMin || p.BinMax != binMax || p.TableBins != tableBins ||
 		p.OffsetFrames != offsetFrames || p.NearFrames != nearFrames || p.InlierFrames != inlierFrames ||
-		p.MaxBinsPerMatch != maxBinsPerMatch {
+		p.MaxBinsPerMatch != maxBinsPerMatch || p.PruneTracks != PruneTracks {
 		t.Fatalf("golden params %+v differ from the Go constants; regenerate with python -m prototype.golden_b2_match", p)
 	}
 	return g
@@ -116,7 +119,7 @@ func TestTripletParity(t *testing.T) {
 		m := NewTripletMatcher()
 		for round := range 2 { // the second round reuses every buffer
 			for _, q := range g.Queries {
-				res, err := m.search(seg, q.landmarks(t), q.TopK, q.RefineTracks)
+				res, err := m.search(seg, q.landmarks(t), q.TopK, q.RefineTracks, q.PruneTracks)
 				if err != nil {
 					t.Fatalf("%s: %v", q.Name, err)
 				}
@@ -253,5 +256,25 @@ func TestFlatFitIsNotAMatch(t *testing.T) {
 	res, err := NewTripletMatcher().Search(seg, query, 10)
 	if err != nil || len(res.Candidates) != 0 {
 		t.Fatalf("flat fit: %+v, %v; want no candidates", res, err)
+	}
+}
+
+func TestPruneKeepsTheTracksWithMostMatches(t *testing.T) {
+	m := NewTripletMatcher()
+	for _, tr := range []uint32{5, 5, 5, 2, 2, 9, 9, 7, 2, 9} { // 5, 2, 9: 3 each; 7: 1
+		m.matches = append(m.matches, tripletMatch{track: tr})
+	}
+	m.prune(2)
+	var got []uint32
+	for _, x := range m.matches {
+		got = append(got, x.track)
+	}
+	if want := []uint32{5, 5, 5, 2, 2, 2}; !slices.Equal(got, want) { // three-way tie: smallest ids win
+		t.Fatalf("kept tracks %v, want %v", got, want)
+	}
+	for _, c := range m.counts {
+		if c != 0 {
+			t.Fatal("counts not reset for the next search")
+		}
 	}
 }

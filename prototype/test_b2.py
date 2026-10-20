@@ -139,3 +139,11 @@ def test_flat_fit_is_not_a_match() -> None:
     q = b2.Landmarks(np.repeat(hashes, 5), np.tile(np.arange(0, 25, 5, dtype=np.uint32), 20),
                      np.full(100, 30, np.uint8), np.full(100, 50, np.uint8))  # fmt: skip
     assert b2_match.search(idx, q).candidates == []
+
+
+def test_prune_keeps_the_tracks_with_most_matches() -> None:
+    track = np.array([5, 5, 5, 2, 2, 9, 9, 7, 2, 9], dtype=np.int64)  # 5: 3, 2: 3, 9: 3, 7: 1
+    kept = b2_match.prune(track, 2)
+    assert kept.tolist() == [True] * 5 + [False] * 3 + [True, False]
+    assert sorted(set(track[kept].tolist())) == [2, 5]  # three-way tie at 3: smallest ids win
+    assert b2_match.prune(track, 10).all()

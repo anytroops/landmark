@@ -55,23 +55,27 @@ def main() -> None:
         return pcm[a : a + int(EXCERPT_S * SAMPLE_RATE)]
 
     synth = synthetic_signal(30 * SAMPLE_RATE)
+    synth_clip = synth[10 * SAMPLE_RATE : 15 * SAMPLE_RATE]
     rng = np.random.default_rng(0)
-    queries = [  # name, pcm, refine_tracks, top_k
-        ("clean", clip(fma[0], 5), 20, 20),
-        ("speed_+4pct", speed(clip(fma[0], 5), 1.04), 20, 20),
-        ("speed_-8pct", speed(clip(fma[1], 12), 0.92), 20, 20),
-        ("keylock_+6pct", keylock(clip(fma[2], 8), 1.06), 20, 20),
-        ("speed_+12pct", speed(clip(fma[3], 3), 1.12), 20, 20),
-        ("speed_-3pct_snr5", add_noise(speed(clip(fma[4], 15), 0.97), 5, rng), 20, 20),
-        ("negative", clip(negative, 10), 20, 20),
-        ("synthetic_speed_+5pct", speed(synth[10 * SAMPLE_RATE : 15 * SAMPLE_RATE], 1.05), 20, 20),
-        ("speed_+4pct_refine2_top3", speed(clip(fma[0], 5), 1.04), 2, 3),
+    p = b2_match.PRUNE_TRACKS
+    queries = [  # name, pcm, refine_tracks, top_k, prune_tracks
+        ("clean", clip(fma[0], 5), 20, 20, p),
+        ("speed_+4pct", speed(clip(fma[0], 5), 1.04), 20, 20, p),
+        ("speed_-8pct", speed(clip(fma[1], 12), 0.92), 20, 20, p),
+        ("keylock_+6pct", keylock(clip(fma[2], 8), 1.06), 20, 20, p),
+        ("speed_+12pct", speed(clip(fma[3], 3), 1.12), 20, 20, p),
+        ("speed_-3pct_snr5", add_noise(speed(clip(fma[4], 15), 0.97), 5, rng), 20, 20, p),
+        ("negative", clip(negative, 10), 20, 20, p),
+        ("synthetic_speed_+5pct", speed(synth_clip, 1.05), 20, 20, p),
+        ("speed_+4pct_refine2_top3", speed(clip(fma[0], 5), 1.04), 2, 3, p),
+        ("negative_prune3", clip(negative, 10), 20, 20, 3),  # ties and cuts in the prune
     ]
     out = []
-    for name, pcm, refine, top_k in queries:
+    for name, pcm, refine, top_k, prune in queries:
         q = b2.fingerprint_query(pcm)
-        r = b2_match.search(index, q, top_k=top_k, refine_tracks=refine)
-        out.append({"name": name, "refine_tracks": refine, "top_k": top_k, **landmarks(q),
+        r = b2_match.search(index, q, top_k=top_k, refine_tracks=refine, prune_tracks=prune)
+        out.append({"name": name, "refine_tracks": refine, "top_k": top_k, "prune_tracks": prune,
+                    **landmarks(q),
                     "postings_scanned": r.postings_scanned, "votes": r.votes,
                     "candidates": [{"track": c.track, "score": c.score, "offset": c.offset,
                                     "scale": c.scale} for c in r.candidates]})  # fmt: skip
@@ -84,7 +88,8 @@ def main() -> None:
                       "offset_frames": b2_match.OFFSET_FRAMES,
                       "near_frames": b2_match.NEAR_FRAMES,
                       "inlier_frames": b2_match.INLIER_FRAMES,
-                      "max_bins_per_match": b2_match.MAX_BINS_PER_MATCH},
+                      "max_bins_per_match": b2_match.MAX_BINS_PER_MATCH,
+                      "prune_tracks": b2_match.PRUNE_TRACKS},
            "queries": out}  # fmt: skip
     (DIR / "match.json").write_text(json.dumps(doc, separators=(",", ":")) + "\n")
 

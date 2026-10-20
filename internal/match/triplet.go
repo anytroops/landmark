@@ -31,6 +31,8 @@ const (
 
 	// RefineTracks is how many tracks get a line fit.
 	RefineTracks = 20
+	// PruneTracks is how many tracks, by match count, go on to vote (D37).
+	PruneTracks = 200
 
 	// maxTripletTrack is the largest local track id a vote key can hold.
 	maxTripletTrack = 1<<24 - 1
@@ -90,6 +92,11 @@ type TripletMatcher struct {
 	best     []coarseBest
 	slot     []int8 // per local track: refine slot, or -1
 	points   [][]fitPoint
+	counts   []uint32 // per local track: matches in this search (reset after)
+	touched  []uint32 // tracks with a nonzero count
+	keep     []bool   // per local track: survives the prune (reset after)
+	hist     []int    // tracks per match count
+	ties     []uint32
 }
 
 // NewTripletMatcher returns a matcher with its tables built (~128 KB).
@@ -154,15 +161,16 @@ func voteWindows(table []float64) (first, last []int8) {
 // Search scores every track that shares a hash with the query and returns
 // the topK best.
 func (m *TripletMatcher) Search(src AuxSource, query []triplet.Landmark, topK int) (TripletResult, error) {
-	return m.search(src, query, topK, RefineTracks)
+	return m.search(src, query, topK, RefineTracks, PruneTracks)
 }
 
-func (m *TripletMatcher) search(src AuxSource, query []triplet.Landmark, topK, refine int) (TripletResult, error) {
+func (m *TripletMatcher) search(src AuxSource, query []triplet.Landmark, topK, refine, prune int) (TripletResult, error) {
 	refine = min(refine, math.MaxInt8) // refine slots are int8
 	if err := m.collect(src, query); err != nil {
 		return TripletResult{}, err
 	}
 	res := TripletResult{PostingsScanned: uint64(len(m.matches))}
+	m.prune(prune)
 	m.vote()
 	res.Votes = uint64(len(m.votes))
 	m.pickTracks(refine)
@@ -198,6 +206,71 @@ func (m *TripletMatcher) collect(src AuxSource, query []triplet.Landmark) error 
 		}
 	}
 	return nil
+}
+
+// prune keeps only the matches of the keep tracks with the most matches
+// (ties: smaller track id), in their original order, as
+// prototype.b2_match.prune. It finds the cutoff count from a histogram of
+// per-track counts, so it costs one pass over the matches plus one over the
+// tracks, with no sort except among tracks tied at the cutoff.
+func (m *TripletMatcher) prune(keep int) {
+	for _, x := range m.matches {
+		if int(x.track) >= len(m.counts) {
+			grow := int(x.track) + 1
+			m.counts = append(m.counts, make([]uint32, grow-len(m.counts))...)
+			m.keep = append(m.keep, make([]bool, grow-len(m.keep))...)
+		}
+		if m.counts[x.track] == 0 {
+			m.touched = append(m.touched, x.track)
+		}
+		m.counts[x.track]++
+	}
+	defer func() {
+		for _, t := range m.touched {
+			m.counts[t], m.keep[t] = 0, false
+		}
+		m.touched = m.touched[:0]
+	}()
+	if len(m.touched) <= keep {
+		return // every track survives
+	}
+	maxCount := uint32(0)
+	for _, t := range m.touched {
+		maxCount = max(maxCount, m.counts[t])
+	}
+	if cap(m.hist) <= int(maxCount) {
+		m.hist = make([]int, maxCount+1)
+	}
+	m.hist = m.hist[:maxCount+1]
+	clear(m.hist)
+	for _, t := range m.touched {
+		m.hist[m.counts[t]]++
+	}
+	// cut: the count of the keep-th track; every track above it survives.
+	cut, above := maxCount, 0
+	for ; above+m.hist[cut] < keep; cut-- {
+		above += m.hist[cut]
+	}
+	m.ties = m.ties[:0]
+	for _, t := range m.touched {
+		switch c := m.counts[t]; {
+		case c > cut:
+			m.keep[t] = true
+		case c == cut:
+			m.ties = append(m.ties, t)
+		}
+	}
+	slices.Sort(m.ties)
+	for _, t := range m.ties[:keep-above] {
+		m.keep[t] = true
+	}
+	kept := m.matches[:0]
+	for _, x := range m.matches {
+		if m.keep[x.track] {
+			kept = append(kept, x)
+		}
+	}
+	m.matches = kept
 }
 
 // vote fills m.votes, sorted, with one key per (match, scale bin):

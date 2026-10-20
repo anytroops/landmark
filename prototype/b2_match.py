@@ -2,7 +2,10 @@
 
 Index: postings sorted by hash, each (track, t, span, band) from b2.Landmarks.
 
-Search, in two stages:
+Search, in three stages:
+0. Prune (D37). Count each track's matches and keep only the PRUNE_TRACKS
+   tracks with the most (ties: smaller track id); the rest never vote. A
+   real play has many matches, and voting is most of a search's cost.
 1. Coarse votes. Every (query landmark, posting) pair with equal hashes is a
    match. Its time scale is reference span / query span; with spans counted
    in whole frames that ratio is only known to within (span_r +/- 0.5) /
@@ -40,6 +43,7 @@ OFFSET_FRAMES = 6  # coarse offset bin width
 NEAR_FRAMES = 2 * OFFSET_FRAMES  # matches this close to the coarse line seed the fit
 INLIER_FRAMES = 2.0
 REFINE_TRACKS = 20
+PRUNE_TRACKS = 200  # tracks that vote, by match count (D37)
 MAX_BINS_PER_MATCH = 4  # even: the window is floor_bin(ratio) - 1 .. + 2
 
 
@@ -157,14 +161,30 @@ def matches(index: Index, q: Landmarks) -> tuple[np.ndarray, ...]:
             index.span[post].astype(i64))  # fmt: skip
 
 
+def prune(track: np.ndarray, keep: int) -> np.ndarray:
+    """Mask of the matches whose track is among the `keep` tracks with the
+    most matches (ties: smaller track id)."""
+    ids, counts = np.unique(track, return_counts=True)
+    top = ids[np.lexsort((ids, -counts))[:keep]]
+    return np.isin(track, top)
+
+
 def search(
-    index: Index, q: Landmarks, top_k: int = 20, refine_tracks: int = REFINE_TRACKS
+    index: Index,
+    q: Landmarks,
+    top_k: int = 20,
+    refine_tracks: int = REFINE_TRACKS,
+    prune_tracks: int = PRUNE_TRACKS,
 ) -> Result:
     if len(q.hash) == 0 or index.n_postings == 0:
         return Result([], 0, 0)
     qi, track, tq, tr, sq, sr = matches(index, q)
     if len(qi) == 0:
         return Result([], 0, 0)
+    scanned = len(qi)
+    # Stage 0: only the tracks with the most matches go on to vote.
+    kept = prune(track, prune_tracks)
+    qi, track, tq, tr, sq, sr = (x[kept] for x in (qi, track, tq, tr, sq, sr))
     tq_f, tr_f = tq.astype(np.float64), tr.astype(np.float64)
     # Stage 1: each match votes in the scale bins its span ratio allows.
     w_first, w_last = windows()
@@ -179,7 +199,7 @@ def search(
     off = np.floor((tr_f[rep] - scale * tq_f[rep]) / OFFSET_FRAMES).astype(np.int64)
     key = (track[rep] << 40) | ((bins - BIN_MIN) << 32) | ((off + (1 << 31)) & 0xFFFFFFFF)
     if len(key) == 0:
-        return Result([], postings_scanned=len(qi), votes=0)
+        return Result([], postings_scanned=scanned, votes=0)
     uk, counts = np.unique(key, return_counts=True)
     trk = uk >> 40
     # Each track's best bin (ties: smallest key); tracks by count, then id.
@@ -215,4 +235,4 @@ def search(
         inl = np.abs(y_f - (a + s * x_f)) <= INLIER_FRAMES
         cands.append(Candidate(tk, int(len(np.unique(q_i[inl]))), a, s))
     cands.sort(key=lambda c: (-c.score, c.track))
-    return Result(cands[:top_k], postings_scanned=len(qi), votes=len(rep))
+    return Result(cands[:top_k], postings_scanned=scanned, votes=len(rep))
