@@ -237,7 +237,7 @@ UnmixDB test sets (1,135 known segments), songs found and precision:
 
 Hybrid with smoothing, by tempo variant: unchanged 382/384, turntable 336/367 (grid 325), keylock 370/384 (grid 374). Synthetic test mixes (B2 rows from `_b2d`, pair rows from `_gridA`): clean 165/166 at 100% precision, hard 166/168 at 97.1% (smoothing) and 100% (line fits).
 
-- **The hybrid matches the grid at a sixth of the searches**: 95.9% of songs against 95.2%, precision 97.9% against 98.8% (smoothing); turntable is better than the grid, keylock slightly worse. Two searches per window (plain windows only) already reach 94.1%.
+- **The hybrid matches the grid at a sixth of the searches**: 95.9% of songs against 95.2%, precision 97.9% against 98.8% (smoothing); turntable is better than the grid, keylock slightly worse. Two searches per window (plain windows only) already reach 94.1%. A B2 search costs about 5.9 pair searches of shard capacity (BENCHMARKS, B7), so in cost the hybrid is about 1.8x cheaper than the grid per window, and the two-search version about 5.3x.
 - **Merged as `cmd/tracklist` prints it** (`--merge-gap 2.5`): the same songs found, entries 1,258 to 1,122 and repeat entries 143 to 10, precision 97.9%.
 - **Start times**: 94.3% within 10 s (smoothing).
 - The line-fit decoder gains less from the hybrid here (92.2%); smoothing is the better decoder for it on this data.
