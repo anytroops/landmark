@@ -228,10 +228,8 @@ def profile(args: argparse.Namespace) -> None:
     out.mkdir(parents=True, exist_ok=True)
     base = 7100
     n_parts = json.loads((index / "index.json").read_text())["n_partitions"]
-    with cluster(index, args.rf, args.deadline_ms, args.workers, base, args.shard_procs) as (
-        target,
-        procs,
-    ):
+    with cluster(index, args.rf, args.deadline_ms, args.workers, base, args.shard_procs,
+                 stop_fraction=args.stop_fraction) as (target, procs):  # fmt: skip
         lg = subprocess.Popen(
             [str(BIN / "loadgen"), "run", "-target", target, "-queries", args.queries,
              "-rate", str(args.rate), "-warmup", "10s", "-duration", f"{args.seconds + 10}s",
@@ -339,6 +337,7 @@ def main() -> None:
     pr.add_argument("--queries", default=str(ROOT / "data/queries/test_10s_seed0.gob"))
     pr.add_argument("--out", required=True)
     pr.add_argument("--shard-procs", type=int, default=0, help="GOMAXPROCS per shard (0 = all)")
+    pr.add_argument("--stop-fraction", type=float, default=0.0, help="coordinator stop list (D30)")
     eq = sub.add_parser("equiv", help="check two indexes answer identically (e.g. P=1 vs P=8)")
     eq.add_argument("--index-a", required=True)
     eq.add_argument("--index-b", required=True)
