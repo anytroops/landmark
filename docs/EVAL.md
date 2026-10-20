@@ -243,6 +243,13 @@ Hybrid with smoothing, by tempo variant: unchanged 382/384, turntable 336/367 (g
 - The line-fit decoder gains less from the hybrid here (92.2%); smoothing is the better decoder for it on this data.
 - **The shipped command reproduces it.** `cmd/tracklist` (Go fingerprints, both clusters through their coordinators, calibrated defaults) run over set044's 96 mixes gives the same entries as the eval's decode of those mixes, to within 10 ms in start and end and 0.01 points in tempo, on all 96: 273 of 285 songs found (95.8%), precision 97.2%, in both. Check: `eval/score_cli.py`; the command's output: `eval/results/tracklist/cli_runs_unmixdb_s8_set044.jsonl`.
 
+## Pruned B2 searches (D37)
+
+B2 searches now let only the 200 tracks with the most matches vote (D37). Everything above was rerun with it, with fresh calibration (commit 7d69058).
+
+- **Single 10 s excerpts, 3,000 tracks** (`eval/results/b2_eval_seed0_d37.*`): every turntable and keylock condition still 99.8-99.9%, clean and MP3 99.9%, SNR 5 dB 98.4%, SNR 0 dB 94.9% (94.2% unpruned), test FAR 0.10%. The calibrated t_abs rose from 2 to 44: the runner-up now comes from the pruned set, so the absolute score test carries more of the work.
+- **Tracklisting** (tags `_b2dp`, `_b2dhp`): synthetic test mixes unchanged (clean 165/166 at 100%, hard 166/168 at 99.4% with smoothing). UnmixDB test sets, smoothing: hybrid 1,080/1,135 (95.2%) at 98.9% precision (unpruned 95.9% at 97.9%; F1 0.970 against 0.969), by variant unchanged 383/384, turntable 328/367, keylock 369/384; two-search hybrid 93.7%; B2 alone 90.7% (unpruned 89.7%). Calibrated hybrid settings: t_abs 10, t_ratio 2, k 1, pair weight 3; `cmd/tracklist` defaults to them.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
