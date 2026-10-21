@@ -268,10 +268,25 @@ def audfprint_hits(files: Path, density: float, cores: int, ids: dict) -> dict[s
     return hits
 
 
+def panako_ids(time_filter: int, ids: dict) -> dict[str, str]:
+    """Panako's resource id -> track id, from its store logs. Panako answers
+    some matches with "metadata unavailable!" instead of the path (path
+    records lost when its native transform crashed mid-build, while the
+    fingerprints were kept); the id it still reports names the file: the
+    number for numeric file names (every FMA track), else a content hash."""
+    out = {}
+    for log in WORK.glob(f"index_panako_t{time_filter}*.log"):
+        for m in re.finditer(r"Stored \d+ fingerprints for '(.+?)', id: (-?\d+)", log.read_text()):
+            out[m.group(2)] = ids.get(m.group(1), "unknown:" + m.group(1))
+    return out
+
+
 def panako_hits(files: Path, time_filter: int, cores: int, ids: dict) -> dict[str, list[Hit]]:
     """Columns: index; total; query; q start; q stop; match path; match id;
     m start; m stop; score; time factor; frequency factor; seconds with match."""
     paths = files.read_text().split()
+    by_id = panako_ids(time_filter, ids)
+    fma = {v for v in ids.values() if v.startswith("fma:")}
     hits: dict[str, list[Hit]] = defaultdict(list)
     conf = panako_conf(time_filter, cores)
     for i in range(0, len(paths), 250):
@@ -282,7 +297,9 @@ def panako_hits(files: Path, time_filter: int, cores: int, ids: dict) -> dict[st
             c = [x.strip().rstrip("%").strip() for x in line.split(";")]
             if len(c) >= 13 and c[0].isdigit() and c[5] not in ("", "null"):
                 factor = float(c[10])
-                rid = ids.get(c[5], "unknown:" + c[5])
+                rid = ids.get(c[5]) or by_id.get(c[6])
+                if rid is None:
+                    rid = f"fma:{c[6]}" if f"fma:{c[6]}" in fma else "unknown:" + c[5]
                 hits[c[2]].append(
                     (int(float(c[9])), rid, factor, float(c[7]) - float(c[3]) * factor)
                 )
