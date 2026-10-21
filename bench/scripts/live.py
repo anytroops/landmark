@@ -17,6 +17,7 @@ format), the registry's event logs, and result.json.
 
 import argparse
 import concurrent.futures
+import itertools
 import json
 import os
 import random
@@ -185,7 +186,13 @@ TEST_SETS = ["set044", "set123", "set230", "set281"]
 
 
 def lag_stats(paths: list[Path], hop: float) -> dict:
-    w = [json.loads(x) for p in paths if p.exists() for x in p.read_text().splitlines()]
+    """Window lag (last sample in to searches done) and the longest gap
+    between consecutive windows of one stream arriving; a gap well over the
+    hop means audio delivery stalled (a sleeping machine freezes every
+    process, then the stream server sends the backlog at once), which makes
+    the run's timings invalid."""
+    w = [{**json.loads(x), "holder": i} for i, p in enumerate(paths) if p.exists()
+         for x in p.read_text().splitlines()]  # fmt: skip
     lag = sorted(x["done_unix"] - x["ready_unix"] for x in w)
     if not lag:
         return {"windows": 0}
@@ -193,14 +200,22 @@ def lag_stats(paths: list[Path], hop: float) -> dict:
     def q(p: float) -> float:
         return round(lag[min(len(lag) - 1, int(p * len(lag)))], 3)
 
+    ready: dict[tuple, list[float]] = {}  # per holder: a failover gap is not a stall
+    for x in w:
+        ready.setdefault((x["holder"], x["stream"]), []).append(x["ready_unix"])
+    gap = max((b - a for r in ready.values() for a, b in itertools.pairwise(sorted(r))), default=0)
     return {"windows": len(w), "unanswered": sum(x["failed"] for x in w),
             "lag_s": {"p50": q(0.5), "p90": q(0.9), "p99": q(0.99), "max": round(lag[-1], 3)},
-            "windows_lag_over_hop": sum(x > hop for x in lag)}  # fmt: skip
+            "windows_lag_over_hop": sum(x > hop for x in lag),
+            "max_arrival_gap_s": round(gap, 2), "valid": gap < 3 * hop}  # fmt: skip
 
 
 def realtime(args: argparse.Namespace) -> None:
     require_clean_tree()
     require_ac_power()
+    # Keep the machine (and display, so the lid-open requirement shows) awake
+    # for this process's lifetime; a sleep mid-run freezes every timing.
+    awake = subprocess.Popen(["caffeinate", "-dimsu", "-w", str(os.getpid())])
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     pool = mixes(args.mixes, args.sets)
@@ -315,6 +330,11 @@ def realtime(args: argparse.Namespace) -> None:
     }
     (out / "result.json").write_text(json.dumps(result, indent=1) + "\n")
     print(json.dumps(result, indent=1))
+    awake.terminate()
+    if not result.get("valid", False):
+        raise SystemExit(
+            "audio delivery stalled during the run: timings invalid (see max_arrival_gap_s)"
+        )
 
 
 def main() -> None:
