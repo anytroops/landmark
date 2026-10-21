@@ -1,6 +1,7 @@
 """Score a live monitoring run (D38-D40) against the broadcast ground truth.
 
   python -m eval.live_score --run eval/results/live/<run>
+  python -m eval.live_score --equiv eval/results/live/equiv_set044   # stream-time delay
 
 A run directory (from bench.scripts.live realtime) holds schedule.jsonl
 (cmd/streamserver: which mix each station played, and when), events/ (the
@@ -167,10 +168,47 @@ def score(run: Path) -> dict:
     return out
 
 
+def stream_delays(run: Path, mixes_name: str = "unmixdb_s8", window: float = 10, hop: float = 2.5,
+                  k: int = 1) -> dict:  # fmt: skip
+    """Detection delay in stream time from an equiv run (live_runs.jsonl):
+    a song's start event is decided once its entry's first window and k
+    more are in, at entry start + window + k * hop, measured from the true
+    transition. Search time comes on top in real time."""
+    gt = json.loads((ROOT / "eval" / "mixes" / f"{mixes_name}.json").read_text())
+    by_file = {m["file"]: m for m in gt["mixes"]}
+    meta = json.loads((ROOT / "data/segments/medium_unmixdb_b2/catalog.json").read_text())
+    cluster = np.array([t["cluster"] for t in meta], dtype=np.int64)
+    delays = []
+    for line in (run / "live_runs.jsonl").read_text().splitlines():
+        r = json.loads(line)
+        found = set()
+        segs = [s for s in by_file[r["file"]]["segments"] if s["known"] and not s.get("ignore")]
+        for e in r["entries"]:
+            for i, s in enumerate(segs):
+                same = cluster[e["track"]] == cluster[s["dense"]]
+                overlap = e["start_s"] < s["mix_end"] and e["end_s"] > s["mix_start"]
+                if i not in found and same and overlap:
+                    found.add(i)
+                    delays.append(
+                        e["start_s"] + window + k * hop - s["mix_start"] - s["fade_in"] / 2
+                    )
+                    break
+    d = np.array(delays)
+    return {"songs": len(d), "window_s": window, "hop_s": hop, "k": k,
+            "delay_s": {q: round(float(np.percentile(d, p)), 2) for q, p in
+                        (("p10", 10), ("p50", 50), ("p90", 90), ("max", 100))}}  # fmt: skip
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", type=Path, required=True)
+    ap.add_argument("--run", type=Path)
+    ap.add_argument("--equiv", type=Path)
     args = ap.parse_args()
+    if args.equiv:
+        r = stream_delays(args.equiv)
+        (args.equiv / "delay.json").write_text(json.dumps(r, indent=1) + "\n")
+        print(json.dumps(r, indent=1))
+        return
     r = score(args.run)
     (args.run / "score.json").write_text(json.dumps(r, indent=1) + "\n")
     print(json.dumps({k: v for k, v in r.items() if k != "failovers"}, indent=1))

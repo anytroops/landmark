@@ -14,9 +14,11 @@ DJ-set tracklisting is done (hybrid matcher D36, pruned B2 D37). Sean's roadmap 
 
 - 2026-10-18 to 20, DJ tracklisting finished: dual-filterbank query (D35, turntable dips gone), hybrid matcher in eval and `cmd/tracklist` (D36; UnmixDB 95.2-95.9% of songs, CLI reproduces the eval on set044), pruned B2 voting (D37; 118 to 378 qps under p99 <= 100 ms at P=1). 11 GB of unused data removed.
 
+- 2026-10-21, live monitoring built (D38-D40): online decoder (equal to offline, unit-tested), shared hybrid window search, streaming audio, registry (leases, epochs, fenced appends, event logs, subscriptions), worker, test stream server, harness and scorer. Live output equals `cmd/tracklist` and the eval decode on all 96 set044 mixes (268/285 songs, precision 97.8%); stream-time detection delay median 12.5 s.
+
 ## Next
-- Live monitoring (D38-D40), in order: online decoder with an exact-equality test against offline decoding; shared hybrid window search; streaming audio source; registry (leases, epochs, event log, subscriptions); monitor worker; test stream server; measurements (online equals offline on the UnmixDB test sets, detection delay, real-time streams per machine, failover time and lost or duplicated events).
-- Then roadmap items 2 to 4, each with a design doc and options first.
+- Live monitoring measurements that need AC power: `bench.scripts.live realtime`: real-time stations per machine (window lag p99 under the 2.5 s hop, no unanswered windows), real-time detection delay, and a worker `kill -9` (audio lost, time to the new holder's first event, repeats, stale appends refused).
+- Roadmap items 2 to 4: design drafts written (`docs/design/head-to-head.md`, `live-writes.md`, `dj-analysis.md`); waiting for Sean's picks. Item 2 also needs approval to install audfprint and Panako (Java).
 - When the DJ work is finished: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 - Sean: multi-machine run for real throughput scaling (optional, later).
 

@@ -6,6 +6,7 @@ A distributed audio fingerprinting and identification service in Go, in the styl
 
 - **Identify:** landmark (constellation) hashing, a document-partitioned index of mmap'd immutable segments, and a gRPC coordinator that scatter-gathers each query across replicated shards with deadlines, retries, and replica ejection.
 - **Tracklist DJ mixes:** a tempo-invariant triplet fingerprint (hashes built from time and pitch ratios that a tempo change cannot move), a matcher that fits each match's speed and offset, and sequence decoding into a tracklist.
+- **Monitor live streams:** workers lease streams from a registry by heartbeat and report songs as they play; leases carry epochs (fencing tokens), so a worker that lost its stream cannot log next to its replacement, and the online decoder reports exactly what offline tracklisting would.
 
 Every component has a Python reference and a Go implementation tested for parity against it (bit-exact for the triplet matcher). Every number below traces to a committed run.
 
@@ -17,6 +18,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
 | DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
+| Live stream monitoring (D38-D40) | Built: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes. Real-time capacity and failover: in progress |
 
 ## Architecture
 
@@ -30,7 +32,11 @@ Every component has a Python reference and a Go implementation tested for parity
   stop list, deadline,|                                load shedding, offset voting
   failover, merge     +--> ...                         (pairs) or line fits (triplets)
 
-  cmd/tracklist: mix -> 10 s windows -> triplet fingerprints -> coordinator -> decoder -> tracklist
+  cmd/tracklist: mix -> 10 s windows -> triplet + pair searches (two clusters) -> decoder -> tracklist
+
+  cmd/registry: streams, leases + epochs, per-stream event logs, live subscriptions
+       ^ heartbeat, append (fenced by epoch)
+  cmd/monitor (workers): live audio -> windows -> hybrid searches -> online decoder -> events
 ```
 
 Design decisions, with the options considered for each: [docs/DECISIONS.md](docs/DECISIONS.md).
@@ -56,6 +62,7 @@ DJ tracklisting:
 | Triplet fingerprint, 10 s excerpt, one search, turntable or keylock -8% to +8% | 99.8-99.9% (pair fingerprint: 14% at +/-2%, 0% beyond) |
 | Synthetic DJ mixes, songs found (clean / with EQ, noise, MP3) | 99.4% / 98.2-98.8%, one search per window |
 | UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.2%**, precision 98.9%; speed grid (37 searches) 95.2%, precision 98.8% |
+| Live monitoring, UnmixDB set044 played as streams | same entries as offline tracklisting on all 96 mixes (94.0% of songs, precision 97.8%); a song is reported a median 12.5 s (stream time) after its transition |
 | Search cost, one partition | triplet search 378 qps under p99 <= 100 ms after pruning (D37; 118 qps before), pair search 734 qps: the hybrid tracklists 3.5-4.2x as many windows per second as the speed grid (10-13x with its 2-search variant) |
 
 ## Usage
@@ -77,13 +84,23 @@ bin/shard -segment data/segments/medium/p1/part-000.lmrk -listen 127.0.0.1:7001 
 bin/identify -shard 127.0.0.1:7001 -catalog data/segments/medium/p1/catalog.json -start 10 song.mp3
 ```
 
-For DJ mixes, build a triplet index (`bin/ingest -fingerprint triplets ...`), run a coordinator over it, and:
+For DJ mixes, build a triplet index (`bin/ingest -fingerprint triplets ...`) beside the pair index, run a coordinator over each (with `stop_fraction` 0.04, which the decoder's thresholds were calibrated with), and:
 
 ```bash
-bin/tracklist -coordinator 127.0.0.1:7500 -index data/segments/medium_b2 mix.mp3
+bin/tracklist -coordinator 127.0.0.1:7500 -index data/segments/medium_b2 \
+    -pairs-coordinator 127.0.0.1:7600 -pairs-index data/segments/medium mix.mp3
 ```
 
-Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list), `shard`, `coordinator`, `identify`, `tracklist`, `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
+Live monitoring: run a registry with the streams to watch, and one or more workers against the two clusters (each stream in `streams.json` is `{"id": ..., "url": ...}`; an http(s) URL is read live):
+
+```bash
+bin/registry -dir data/monitor -streams streams.json
+bin/monitor -registry 127.0.0.1:7700 -capacity 8 \
+    -coordinator 127.0.0.1:7500 -index data/segments/medium_b2 \
+    -pairs-coordinator 127.0.0.1:7600 -pairs-index data/segments/medium
+```
+
+Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
 
 ## Data
 
