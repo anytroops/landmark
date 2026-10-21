@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package landmark.v1;
+
+option go_package = "github.com/anytroops/landmark/gen/landmark/v1;landmarkv1";
+
+// Live stream monitoring (D38-D40, docs/design/live-monitoring.md). Workers
+// lease streams from the registry, decode them, and append events to each
+// stream's log there; subscribers read the logs live.
+
+message Stream {
+  string id = 1;
+  // Audio source: an http(s) URL, or a local file path (read paced, for tests).
+  string url = 2;
+}
+
+// Lease grants a worker one stream until it stops renewing.
+message Lease {
+  string stream_id = 1;
+  string url = 2;
+  // Fencing token (D39): raised by every grant. Appends carry it, and the
+  // log accepts only the stream's current epoch.
+  uint64 epoch = 3;
+  // Sequence number of the next event to append.
+  uint64 next_seq = 4;
+  // The stream's entry in progress when granted (its start event, not yet
+  // ended), so a new holder can continue it after a failover.
+  Event open = 5;
+}
+
+message HeldLease {
+  string stream_id = 1;
+  uint64 epoch = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  // Streams the worker can run at once.
+  uint32 capacity = 2;
+  // Leases the worker holds and wants renewed.
+  repeated HeldLease held = 3;
+}
+
+message HeartbeatResponse {
+  // Every lease the worker holds after this heartbeat; it stops any other
+  // stream.
+  repeated Lease leases = 1;
+  // Lease time to live from the registry's receipt of this heartbeat.
+  uint32 ttl_ms = 2;
+}
+
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  // A new entry's first window is final (tempo and evidence so far).
+  EVENT_KIND_START = 1;
+  // An entry is finished.
+  EVENT_KIND_END = 2;
+}
+
+message Event {
+  // Set by the registry from the Append request.
+  string stream_id = 1;
+  // Per-stream sequence number, from 1, without gaps.
+  uint64 seq = 2;
+  // Set by the registry: the lease epoch that appended the event.
+  uint64 epoch = 3;
+  EventKind kind = 4;
+  uint32 track_id = 5;
+  string name = 6;
+  // Broadcast times of the entry, Unix seconds. A start event's end is the
+  // end of its first window.
+  double start_unix = 7;
+  double end_unix = 8;
+  // Tempo factor: reference time per stream time (1.02: played 2% fast).
+  double tempo = 9;
+  double evidence = 10;
+  // The entry began before a failover and this holder continued it.
+  bool resumed = 11;
+  // The entry began before a failover and did not continue: its end is the
+  // new holder's first audio.
+  bool interrupted = 12;
+  string worker_id = 13;
+  // Worker clock when the event was decided.
+  double decided_unix = 14;
+  // Set by the registry: its clock when the event was logged.
+  double logged_unix = 15;
+}
+
+message AppendRequest {
+  string stream_id = 1;
+  uint64 epoch = 2;
+  // Consecutive events. Events already logged may be re-sent unchanged (a
+  // retry); they are acknowledged and not written again.
+  repeated Event events = 3;
+}
+
+message AppendResponse {
+  uint64 next_seq = 1;
+}
+
+message SubscribeRequest {
+  // Streams to follow; empty: all.
+  repeated string stream_ids = 1;
+  // Skip the logged events and send only new ones.
+  bool live_only = 2;
+}
+
+message SubscribeResponse {
+  Event event = 1;
+}
+
+message AddStreamRequest {
+  Stream stream = 1;
+}
+
+message AddStreamResponse {}
+
+message ListStreamsRequest {}
+
+message StreamStatus {
+  Stream stream = 1;
+  // Worker holding the lease; empty if none.
+  string holder = 2;
+  uint64 epoch = 3;
+  uint64 next_seq = 4;
+}
+
+message ListStreamsResponse {
+  repeated StreamStatus streams = 1;
+}
+
+service RegistryService {
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc Append(AppendRequest) returns (AppendResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+  rpc AddStream(AddStreamRequest) returns (AddStreamResponse);
+  rpc ListStreams(ListStreamsRequest) returns (ListStreamsResponse);
+}
