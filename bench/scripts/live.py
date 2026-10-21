@@ -31,7 +31,9 @@ from pathlib import Path
 
 from bench.scripts.benchcluster import (
     BIN,
+    CHARGING,
     ROOT,
+    battery,
     cluster,
     require_ac_power,
     require_clean_tree,
@@ -295,7 +297,13 @@ def realtime(args: argparse.Namespace) -> None:
                 kill_unix = time.time()
             longest = max(len(s["files"]) for s in stations) * 110 + args.lead_s
             deadline = time.monotonic() + longest + 180
+            power_problems: set[str] = set()
             while True:
+                source, pct, state = battery()
+                if source != "ac":
+                    power_problems.add("on battery")
+                if state in CHARGING:
+                    power_problems.add(f"battery charging ({pct}%)")
                 ended = sum((tmp / f"monitor-w{i}.log").read_text(errors="replace")
                             .count("stream source ended") for i in range(args.workers))  # fmt: skip
                 if ended >= len(stations):
@@ -330,14 +338,15 @@ def realtime(args: argparse.Namespace) -> None:
     result = {
         **live_score.score(out),
         **lag_stats([out / f"windows-w{i}.jsonl" for i in range(args.workers)], 2.5),
+        "power_problems": sorted(power_problems),
     }
+    allowed = os.environ.get("LANDMARK_ALLOW_BATTERY")
+    result["valid"] = result.get("valid", False) and (not power_problems or bool(allowed))
     (out / "result.json").write_text(json.dumps(result, indent=1) + "\n")
     print(json.dumps(result, indent=1))
     awake.terminate()
-    if not result.get("valid", False):
-        raise SystemExit(
-            "audio delivery stalled during the run: timings invalid (see max_arrival_gap_s)"
-        )
+    if not result["valid"]:
+        raise SystemExit("timings invalid: see power_problems and max_arrival_gap_s")
 
 
 def main() -> None:
