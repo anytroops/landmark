@@ -48,3 +48,8 @@ After each core component: 3 interview-style questions and Sean's answers.
 1. A replica hangs instead of crashing. Walk through what a query does, with times, given a 200 ms deadline.
 2. Why does an overloaded replica not get ejected, when a failing one does?
 3. Replication here has no consensus protocol. Why is that safe, and what change to the system would make you need one?
+
+### Live monitoring: leases, fencing, online decoding (D38-D40)
+1. A worker pauses for 30 s (a long GC pause or a frozen VM), its lease expires, another worker takes the stream, then the first one wakes up and tries to append. Walk through exactly what stops it, and why "check the lease before appending" on the worker alone would not be enough.
+2. Why does the registry store the epoch before replying to the heartbeat that granted it, but not store the leases themselves? What does it do after a restart, and why wait one TTL?
+3. The online decoder never retracts an event, yet its output equals the offline decoder's. What makes that possible, and what would you have to give up to report songs sooner than 12.5 s?

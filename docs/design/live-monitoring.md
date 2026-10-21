@@ -78,7 +78,7 @@ Stream time. A source's first sample gets a broadcast time: the stream server's 
 
 ## Test streams and metrics
 
-Streams are the UnmixDB test mixes and the synthetic test mixes played in real time (or faster, for load tests) by a local stream server, so every event has ground truth.
+Streams are the UnmixDB test mixes played in real time by `cmd/streamserver`, several back to back per station, so every event has ground truth. Harness: `bench/scripts/live.py` (`equiv`: every mix as a file stream against `cmd/tracklist`; `realtime`: stations, workers, an optional `kill -9`), scored by `eval/live_score.py`.
 
 - Accuracy: the tracklisting metrics, which must equal offline decoding under L1 (a).
 - Detection delay: time from a song's true start (middle of the crossfade in) to its event.
