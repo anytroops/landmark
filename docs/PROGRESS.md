@@ -1,7 +1,7 @@
 # Progress
 
-## Current phase: DJ-set tracklisting (D31, D32, D33)
-Phases 0-4 are done (Phase 4: B1-B5 on fma_medium, stop list D30, D27+D28 before/after). The current work is the differentiating feature: tracklisting DJ mixes with tempo-robust matching. Option A (speed grid) is built and evaluated; option B2 (tempo-invariant triplet hashes on a log-frequency front end) has a Python reference and is being compared with today's fingerprint, before the Go port.
+## Current phase: live stream monitoring (D38, D39, D40)
+DJ-set tracklisting is done (hybrid matcher D36, pruned B2 D37). Sean's roadmap (2026-10-21): (1) live stream monitoring, (2) head-to-head against audfprint and Panako, (3) adding songs while serving, (4) DJ analysis features (overlaps, transition points, tempo curves). The demo UI waits for Sean's go. Design: docs/design/live-monitoring.md.
 
 ## Done
 - 2026-10-14, Phase 0: repo, toolchain, CI, compose stack, FMA data verified and extracted.
@@ -12,12 +12,13 @@ Phases 0-4 are done (Phase 4: B1-B5 on fma_medium, stop list D30, D27+D28 before
 
 - 2026-10-17, DJ tracklisting so far: speed tolerance of the pair fingerprint (turntable +/-0.75%; keylock barely hurts once simulated with WSOLA instead of librosa's phase vocoder, which smears peaks); synthetic DJ mixes with exact ground truth (eval.mixgen, clean and with EQ, bass swap, noise, MP3); option A speed grid (eval.tracklist) and decoders (eval.tracklist_score): recall 67-74% to 99.4% on clean test mixes, 54-63% to 98.8-100% on hard ones; UnmixDB set222 (real club tracks with effects, built by others): 81% to 98%, turntable 51% to 96%. Front-end experiment chose a log filterbank over STFT 4096 for B2 (D33). B2 Python reference (prototype/b2.py, b2_match.py) recovers scale within 0.1% in one lookup. UnmixDB, all six sets sampled (528 mixes, fma_medium distractors, calibrated on two sets, tested on four): 82.8% to 95.2% recall, turntable 57% to 89%; the line-fit decoder transfers once calibrated on UnmixDB (93.3%, precision 99.7%). B2 vs pairs on 3,000 tracks: one search covers turntable and keylock +/-1-8% at 97.7-99.9% (pairs: 0% past +/-2%), speed error 0.02-0.06 points; costs 95.7% vs 98.5% at SNR 0 dB and 2.2x postings; turntable scores dip at half-band pitch shifts. Hybrid B2 + pairs (D36) on UnmixDB: 95.9% of songs at 97.9% precision with 6 searches per window (grid 95.2% with 37).
 
+- 2026-10-18 to 20, DJ tracklisting finished: dual-filterbank query (D35, turntable dips gone), hybrid matcher in eval and `cmd/tracklist` (D36; UnmixDB 95.2-95.9% of songs, CLI reproduces the eval on set044), pruned B2 voting (D37; 118 to 378 qps under p99 <= 100 ms at P=1). 11 GB of unused data removed.
+
 ## Next
-- DJ tracklisting, hybrid (D36): done in eval (UnmixDB 95.9% of songs, grid 95.2%, at 6 searches per window instead of 37) and in cmd/tracklist (both clusters, calibrated weight). Next: set cmd/tracklist defaults to the calibrated hybrid settings (smoothing, alpha 3, t_abs 40, t_ratio 2, k 0), an end-to-end run through two clusters, then the cost benchmark (per-window latency and throughput, hybrid vs grid) and the approved cleanup of old benchmark indexes.
-- Mixotic (the published DJ-mix benchmark) is access-restricted on Google Drive; using UnmixDB (built from the same tracks) instead. If Mixotic is ever obtained, delete it when the feature is done (Sean's condition).
-- Sean: multi-machine run for real throughput scaling (said "not now" to AWS on 2026-10-14).
-- Phase 5 (HTTP gateway + demo page).
-- Optional: shift-invariant peak selection (D9 follow-up, core change), u32 offsets / compressed keys (B4).
+- Live monitoring (D38-D40), in order: online decoder with an exact-equality test against offline decoding; shared hybrid window search; streaming audio source; registry (leases, epochs, event log, subscriptions); monitor worker; test stream server; measurements (online equals offline on the UnmixDB test sets, detection delay, real-time streams per machine, failover time and lost or duplicated events).
+- Then roadmap items 2 to 4, each with a design doc and options first.
+- When the DJ work is finished: delete fma_medium, UnmixDB, the medium indexes, data/queries.
+- Sean: multi-machine run for real throughput scaling (optional, later).
 
 ## Blockers
 - None. Long runs need AC power and the lid open.

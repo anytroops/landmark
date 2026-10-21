@@ -1,6 +1,6 @@
 # Design: live stream monitoring
 
-Status: draft, 2026-10-21. Decisions marked **DECIDE** need Sean's pick.
+Status: decided 2026-10-21 (D38 to D40: L1 (a), L2 (b), L3 (b)); being built.
 
 Roadmap (Sean's picks, 2026-10-21): (1) live stream monitoring, (2) head-to-head against open-source systems (audfprint, Panako), (3) adding songs while serving, (4) DJ analysis features. This document covers (1).
 
@@ -19,7 +19,7 @@ Today `cmd/tracklist` needs the whole mix up front and decodes it in one pass.
 
 ## L1. Online decoder
 
-**DECIDE: pick one.**
+**Decided: (a), D38.**
 
 | | (a) Fixed-lag smoothing | (b) Fixed-lag Viterbi | (c) Enter/exit thresholds |
 |---|---|---|---|
@@ -32,7 +32,7 @@ Recommendation: (a). With k = 1 (the calibrated radius), labels are final 12.5 s
 
 ## L2. Assigning streams to workers
 
-**DECIDE: pick one.**
+**Decided: (b), D39.**
 
 | | (a) Static config | (b) Leases in a small registry | (c) Consistent hashing over live workers |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Recommendation: (b). A registry service (one process, its state in a file; repli
 
 ## L3. Event delivery
 
-**DECIDE: pick one.**
+**Decided: (b), D40.**
 
 | | (a) Append-only log per stream | (b) Log plus live subscription |
 |---|---|---|
@@ -53,6 +53,28 @@ Recommendation: (b). A registry service (one process, its state in a file; repli
 | Duplicates after failover | Detectable: (stream, sequence) is unique; a new lease holder resumes from the last logged sequence | Same |
 
 Recommendation: (b): the log is the source of truth, the subscription feeds the UI.
+
+## Design as built
+
+Processes:
+
+- `cmd/registry`: one process. Holds the stream list, leases, and epochs (state file `registry.json`, rewritten atomically), and each stream's event log (`events/<stream>.jsonl`). Serves `RegistryService` (gRPC).
+- `cmd/monitor`: a worker. Heartbeats to the registry, and for each stream it holds runs: source, windows, hybrid searches (the same code as `cmd/tracklist`), the online decoder, appends.
+- The two search clusters (triplet and pair index) as for `cmd/tracklist`.
+- `cmd/streamserver` (test only): plays mixes as live HTTP streams on a wall-clock schedule, so every song has a known broadcast time.
+
+Leases (D39). A worker calls `Heartbeat(worker, capacity, held leases)` every 2 s. The registry renews the leases the worker still holds at their current epoch, frees leases not renewed within the TTL (6 s), and grants free streams (by id) up to the worker's capacity, each grant raising the stream's epoch by one and storing it before replying. The reply lists every lease the worker now holds; the worker stops any stream not in it, and stops all streams if no heartbeat succeeds within TTL minus one heartbeat of its last success. A grant carries the next sequence number and the stream's open entry (a start without an end), so the new holder continues the log.
+
+Events (D40). Two kinds, times in Unix seconds of broadcast audio:
+
+- `start`: track, start time, tempo so far. Sent when the first window of a new entry is final (D38).
+- `end`: track, start, end, tempo, evidence: the finished entry, equal to the offline tracklist's entry. Sent when the entry can no longer grow or merge: another track's entry has started, or the final windows have passed its end plus the merge gap.
+
+`Append(stream, epoch, events)` is accepted only at the stream's current epoch and only if the events continue the sequence; an exact re-send of logged events is acknowledged without writing. A worker whose append is refused for its epoch stops that stream. `Subscribe(streams)` sends the logged events, then live ones.
+
+After failover. The new holder starts from the live position (the gap's audio is lost). If the log has an open entry, the new holder takes it as the previous entry: if the same track's entry begins within the merge gap of the new holder's first audio, it continues it (no second start; the end keeps the original start, flagged `resumed`); otherwise the new holder closes it with an `end` flagged `interrupted`, ending at its first audio (the song ended somewhere in the gap).
+
+Stream time. A source's first sample gets a broadcast time: the stream server's `X-Landmark-Start` header when present, otherwise the time the first bytes arrived. Window starts are seconds since then, rounded to ms as offline.
 
 ## Test streams and metrics
 

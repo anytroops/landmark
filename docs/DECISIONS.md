@@ -226,3 +226,21 @@ Format: context, options, decision, consequences, date.
 - **Options:** (a) prune: count each track's matches, and let only the top N tracks (N = 200) vote; (b) fewer scale bins per match (1.44 votes per match today, so at most about 30% fewer votes); (c) a tighter stop list for triplet hashes (fewer postings, at an accuracy cost in noise).
 - **Decision:** (a), N = 200, ties going to the smaller track id. Sean's pick.
 - **Consequences:** voting work drops roughly 40x; decoding postings and the count pass remain. The candidates after the top one now come only from the pruned set, so runner-up scores (used by the ratio test and the tracklist decoders) can change: thresholds and decoder settings are recalibrated, and false accepts re-measured, before the speedup is reported. Python reference and Go stay bit-exact (golden queries include a prune of 3 that cuts and breaks ties).
+
+## D38. Live monitoring, online decoder: fixed-lag smoothing (2026-10-21)
+- **Context:** Live stream monitoring (docs/design/live-monitoring.md) must report songs while a stream plays, from the windows seen so far, with a bounded delay. `cmd/tracklist` decodes a whole mix at once.
+- **Options:** (a) run the calibrated smoothing decoder on a sliding buffer, a window's label final once k later windows are in; (b) Viterbi over a sliding buffer, committing the label k steps back; (c) enter and exit thresholds (N windows in a row start a song, M without it end it).
+- **Decision:** (a), with the calibrated k = 1. Sean's pick.
+- **Consequences:** every label, start event, and finished entry equals what offline decoding (smoothing, then merging repeats) gives on the same windows, so the UnmixDB accuracy carries over and is checked exactly rather than re-estimated. A song is reported once its first accepted window and k more are in: 10 + 2.5k = 12.5 s after that window starts, plus search time. Events are never retracted; a merge of repeats is decided before the start event is sent.
+
+## D39. Live monitoring, stream assignment: leases with fencing in a registry (2026-10-21)
+- **Context:** Many streams run on several worker processes; when a worker dies its streams must move, and a worker that stalls and comes back must not keep reporting next to its replacement.
+- **Options:** (a) static assignment in config; (b) workers lease streams from a registry and renew by heartbeat; (c) consistent hashing over announced workers.
+- **Decision:** (b). Sean's pick. Each grant gives the stream a new epoch (a fencing token, stored durably); the event log accepts appends only at the stream's current epoch. Lease TTL 6 s, heartbeat every 2 s. Leases are not persisted: after a registry restart all streams are free, epochs continue from the stored values, and the registry grants nothing for one TTL so old holders time out first.
+- **Consequences:** failover is automatic, in about TTL plus one heartbeat plus the time to reconnect and decode again. Audio broadcast during the gap is lost (a live source cannot be replayed). Correctness does not depend on clocks: a worker that misses its renewal stops on its own, and if it does not (a long pause), the log rejects its stale epoch. The registry is a single process; replicating it is out of scope.
+
+## D40. Live monitoring, event delivery: per-stream log plus live subscription (2026-10-21)
+- **Context:** Reported songs need a durable record and a way to push them to readers (a UI) as they happen.
+- **Options:** (a) an append-only log per stream that readers tail; (b) the same log plus a gRPC stream that pushes events to subscribers.
+- **Decision:** (b). Sean's pick. The log lives in the registry process (one JSON line per event, fsync per append), so the epoch check and the append are one step. Each event has a per-stream sequence number; an append must continue the sequence, and an exact re-send of logged events is acknowledged without writing (safe retries). Subscribers get the logged events, then live ones.
+- **Consequences:** an event is either logged once or not at all; after failover the new holder continues the sequence. Duplicates and losses are measurable by sequence number and against ground truth.
