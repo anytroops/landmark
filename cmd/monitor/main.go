@@ -7,7 +7,7 @@
 //	    -pairs-coordinator localhost:7600 -pairs-index data/segments/medium
 //
 // Decoder settings and -alpha default to cmd/tracklist's (the hybrid's
-// calibration on UnmixDB). A stream URL that is not http(s) is a local file,
+// calibration on UnmixDB, with both clusters' stop lists at 0.04). A stream URL that is not http(s) is a local file,
 // read at -read-rate times real time (simulated live sources). Ports:
 // -admin for Prometheus /metrics (never expose it).
 package main

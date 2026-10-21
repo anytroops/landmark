@@ -13,7 +13,9 @@
 // non-FMA tracks); both must number tracks the same way. Decoder settings
 // and -alpha default to the hybrid's calibration on UnmixDB set222 and
 // set275 (eval/results/tracklist/calibration_unmixdb_s8_b2dhp_hybrid_*;
-// EVAL, hybrid section), which were tuned with the pair index searched.
+// EVAL, hybrid section), which were tuned with the pair index searched and
+// both clusters' stop lists at 4% of tracks (stop_fraction 0.04, D30): the
+// scores, and so the thresholds, depend on it.
 package main
 
 import (
