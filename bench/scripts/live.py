@@ -137,8 +137,22 @@ def equiv(args: argparse.Namespace) -> None:
     files = mixes(args.mixes, args.sets)[: args.limit or None]
     head = git_head()
     with (
-        cluster(B2_INDEX, 1, args.deadline_ms, args.workers, base_port=7100) as (b2, _),
-        cluster(PAIR_INDEX, 1, args.deadline_ms, args.workers, base_port=7200) as (pairs, _),
+        cluster(
+            B2_INDEX,
+            1,
+            args.deadline_ms,
+            args.workers,
+            base_port=7100,
+            stop_fraction=args.stop_fraction,
+        ) as (b2, _),
+        cluster(
+            PAIR_INDEX,
+            1,
+            args.deadline_ms,
+            args.workers,
+            base_port=7200,
+            stop_fraction=args.stop_fraction,
+        ) as (pairs, _),
     ):
         t0 = time.monotonic()
         off = offline(files, b2, pairs, args.parallel, args.timeout)
@@ -159,7 +173,8 @@ def equiv(args: argparse.Namespace) -> None:
         "entries_live": sum(len(v) for v in on.values()),
         "windows_live": len(windows), "windows_unanswered": sum(w["failed"] for w in windows),
         "offline_wall_s": round(t_off, 1), "live_wall_s": round(t_on, 1),
-        "capacity": args.capacity, "parallel_offline": args.parallel, **head,
+        "capacity": args.capacity, "parallel_offline": args.parallel,
+        "stop_fraction": args.stop_fraction, **head,
         "power": run_out("pmset", "-g", "batt").splitlines()[:1],
     }  # fmt: skip
     (out / "result.json").write_text(json.dumps(result, indent=1) + "\n")
@@ -203,8 +218,22 @@ def realtime(args: argparse.Namespace) -> None:
     workers: list[subprocess.Popen] = []
     kill_unix = None
     with (
-        cluster(B2_INDEX, 1, args.deadline_ms, args.shard_workers, base_port=7100) as (b2, _),
-        cluster(PAIR_INDEX, 1, args.deadline_ms, args.shard_workers, base_port=7200) as (pairs, _),
+        cluster(
+            B2_INDEX,
+            1,
+            args.deadline_ms,
+            args.shard_workers,
+            base_port=7100,
+            stop_fraction=args.stop_fraction,
+        ) as (b2, _),
+        cluster(
+            PAIR_INDEX,
+            1,
+            args.deadline_ms,
+            args.shard_workers,
+            base_port=7200,
+            stop_fraction=args.stop_fraction,
+        ) as (pairs, _),
     ):
         try:
             rlog = tmp / "registry.log"
@@ -266,6 +295,7 @@ def realtime(args: argparse.Namespace) -> None:
             "stations": args.stations, "per_station": args.per_station, "sets": args.sets,
             "seed": args.seed, "workers": args.workers, "capacity": args.capacity,
             "heartbeat": args.heartbeat, "ttl": args.ttl, "broadcast_start_unix": start,
+            "stop_fraction": args.stop_fraction,
             "kill_unix": kill_unix, "kill_at_s": args.kill_at or None, "stop_unix": stop_unix,
             **head, "power": run_out("pmset", "-g", "batt").splitlines()[:2]}  # fmt: skip
     (out / "run.json").write_text(json.dumps(meta, indent=1) + "\n")
@@ -291,6 +321,12 @@ def main() -> None:
     eq.add_argument("--timeout", default="10s", help="per-search deadline, both runs")
     eq.add_argument("--live-timeout-s", type=float, default=3600)
     eq.add_argument("--limit", type=int, default=0, help="first N mixes only (smoke test)")
+    eq.add_argument(
+        "--stop-fraction",
+        type=float,
+        default=0.04,
+        help="stop list (D30); the hybrid's calibration used 0.04",
+    )
     rt = sub.add_parser("realtime", help="real-time stations, optional worker kill")
     rt.add_argument("--mixes", default="unmixdb_s8")
     rt.add_argument("--sets", nargs="+", default=TEST_SETS)
@@ -307,6 +343,12 @@ def main() -> None:
     rt.add_argument("--shard-workers", type=int, default=8)
     rt.add_argument("--deadline-ms", type=int, default=10000)
     rt.add_argument("--seed", type=int, default=0)
+    rt.add_argument(
+        "--stop-fraction",
+        type=float,
+        default=0.04,
+        help="stop list (D30); the hybrid's calibration used 0.04",
+    )
     rt.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     os.environ.setdefault("PYTHONHASHSEED", "0")
