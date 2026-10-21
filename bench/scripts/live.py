@@ -3,6 +3,10 @@
   # Live output equals offline output, mix for mix:
   python -m bench.scripts.live equiv --sets set044 --out eval/results/live/equiv_set044
 
+  # Real-time stations (test mixes back to back), two workers, one killed:
+  python -m bench.scripts.live realtime --stations 16 --per-station 3 --workers 2 \
+      --capacity 16 --kill-at 120 --out bench/results/live/rt16_kill
+
 equiv starts the triplet and pair clusters (benchcluster), runs
 bin/tracklist -json on every mix of the sets (offline), then runs the
 registry and one bin/monitor worker with every mix as a file stream read as
@@ -15,14 +19,24 @@ import argparse
 import concurrent.futures
 import json
 import os
+import random
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
 
-from bench.scripts.benchcluster import BIN, ROOT, cluster, wait_for
+from bench.scripts.benchcluster import (
+    BIN,
+    ROOT,
+    cluster,
+    require_ac_power,
+    require_clean_tree,
+    wait_for,
+)
+from eval import live_score
 
 B2_INDEX = ROOT / "data/segments/medium_unmixdb_b2"
 PAIR_INDEX = ROOT / "data/segments/medium_unmixdb"
@@ -152,6 +166,117 @@ def equiv(args: argparse.Namespace) -> None:
     print(json.dumps({k: v for k, v in result.items() if k != "differing"}, indent=1))
 
 
+TEST_SETS = ["set044", "set123", "set230", "set281"]
+
+
+def lag_stats(paths: list[Path], hop: float) -> dict:
+    w = [json.loads(x) for p in paths if p.exists() for x in p.read_text().splitlines()]
+    lag = sorted(x["done_unix"] - x["ready_unix"] for x in w)
+    if not lag:
+        return {"windows": 0}
+
+    def q(p: float) -> float:
+        return round(lag[min(len(lag) - 1, int(p * len(lag)))], 3)
+
+    return {"windows": len(w), "unanswered": sum(x["failed"] for x in w),
+            "lag_s": {"p50": q(0.5), "p90": q(0.9), "p99": q(0.99), "max": round(lag[-1], 3)},
+            "windows_lag_over_hop": sum(x > hop for x in lag)}  # fmt: skip
+
+
+def realtime(args: argparse.Namespace) -> None:
+    require_clean_tree()
+    require_ac_power()
+    out = args.out
+    out.mkdir(parents=True, exist_ok=True)
+    pool = mixes(args.mixes, args.sets)
+    random.Random(args.seed).shuffle(pool)
+    n = args.per_station
+    stations = [{"id": f"st{i:03d}", "files": [str(ROOT / pool[(i * n + j) % len(pool)])
+                                                for j in range(n)]}
+                for i in range(args.stations)]  # fmt: skip
+    (out / "stations.json").write_text(json.dumps(stations, indent=1))
+    streams = [{"id": s["id"], "url": f"http://127.0.0.1:7950/stream/{s['id']}"} for s in stations]
+    tmp = Path(tempfile.mkdtemp(prefix="live-rt-"))
+    (tmp / "streams.json").write_text(json.dumps(streams))
+    head = git_head()
+    procs: list[subprocess.Popen] = []
+    workers: list[subprocess.Popen] = []
+    kill_unix = None
+    with (
+        cluster(B2_INDEX, 1, args.deadline_ms, args.shard_workers, base_port=7100) as (b2, _),
+        cluster(PAIR_INDEX, 1, args.deadline_ms, args.shard_workers, base_port=7200) as (pairs, _),
+    ):
+        try:
+            rlog = tmp / "registry.log"
+            procs.append(subprocess.Popen(
+                [str(BIN / "registry"), "-dir", str(tmp / "registry"), "-streams",
+                 str(tmp / "streams.json"), "-listen", "127.0.0.1:7900", "-admin", "127.0.0.1:7901",
+                 "-ttl", args.ttl],
+                stdout=rlog.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
+            wait_for(rlog, "serving")
+            start = time.time() + args.lead_s
+            slog = tmp / "streamserver.log"
+            procs.append(subprocess.Popen(
+                [str(BIN / "streamserver"), "-stations", str(out / "stations.json"),
+                 "-schedule", str(out / "schedule.jsonl"), "-listen", "127.0.0.1:7950",
+                 "-start", f"{start:.6f}"],
+                stdout=slog.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
+            wait_for(slog, "broadcasting")
+            for i in range(args.workers):
+                log = tmp / f"monitor-w{i}.log"
+                workers.append(subprocess.Popen(
+                    [str(BIN / "monitor"), "-registry", "127.0.0.1:7900", "-id", f"w{i}",
+                     "-capacity", str(args.capacity), "-heartbeat", args.heartbeat,
+                     "-coordinator", b2, "-index", str(B2_INDEX),
+                     "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX),
+                     "-window-log", str(out / f"windows-w{i}.jsonl"),
+                     "-admin", f"127.0.0.1:{7910 + i}"],
+                    stdout=log.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
+            if args.kill_at > 0:
+                time.sleep(max(0.0, start + args.kill_at - time.time()))
+                workers[0].kill()  # SIGKILL: no goodbye, leases must expire
+                kill_unix = time.time()
+            longest = max(len(s["files"]) for s in stations) * 110 + args.lead_s
+            deadline = time.monotonic() + longest + 180
+            while True:
+                ended = sum((tmp / f"monitor-w{i}.log").read_text(errors="replace")
+                            .count("stream source ended") for i in range(args.workers))  # fmt: skip
+                if ended >= len(stations):
+                    break
+                if time.monotonic() > deadline:
+                    raise SystemExit(
+                        f"realtime run stopped: {ended}/{len(stations)} ended; see {tmp}"
+                    )
+                time.sleep(5)
+            stop_unix = time.time()
+            metrics = urllib.request.urlopen("http://127.0.0.1:7901/metrics").read().decode()
+            (out / "registry_metrics.txt").write_text(
+                "".join(x + "\n" for x in metrics.splitlines() if x.startswith("landmark_registry"))
+            )
+        finally:
+            for p in workers + procs:
+                if p.poll() is None:
+                    p.send_signal(signal.SIGTERM)
+            for p in workers + procs:
+                p.wait(timeout=30)
+    shutil.copytree(tmp / "registry" / "events", out / "events", dirs_exist_ok=True)
+    for i in range(args.workers):
+        shutil.copy(tmp / f"monitor-w{i}.log", out / f"monitor-w{i}.log")
+    meta = {"mixes": args.mixes, "catalog": str((B2_INDEX / "catalog.json").relative_to(ROOT)),
+            "stations": args.stations, "per_station": args.per_station, "sets": args.sets,
+            "seed": args.seed, "workers": args.workers, "capacity": args.capacity,
+            "heartbeat": args.heartbeat, "ttl": args.ttl, "broadcast_start_unix": start,
+            "kill_unix": kill_unix, "kill_at_s": args.kill_at or None, "stop_unix": stop_unix,
+            **head, "power": run_out("pmset", "-g", "batt").splitlines()[:2]}  # fmt: skip
+    (out / "run.json").write_text(json.dumps(meta, indent=1) + "\n")
+    result = {
+        **live_score.score(out),
+        **lag_stats([out / f"windows-w{i}.jsonl" for i in range(args.workers)], 2.5),
+    }
+    (out / "result.json").write_text(json.dumps(result, indent=1) + "\n")
+    print(json.dumps(result, indent=1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -166,9 +291,26 @@ def main() -> None:
     eq.add_argument("--timeout", default="10s", help="per-search deadline, both runs")
     eq.add_argument("--live-timeout-s", type=float, default=3600)
     eq.add_argument("--limit", type=int, default=0, help="first N mixes only (smoke test)")
+    rt = sub.add_parser("realtime", help="real-time stations, optional worker kill")
+    rt.add_argument("--mixes", default="unmixdb_s8")
+    rt.add_argument("--sets", nargs="+", default=TEST_SETS)
+    rt.add_argument("--stations", type=int, required=True)
+    rt.add_argument("--per-station", type=int, default=3, help="mixes per station, back to back")
+    rt.add_argument("--workers", type=int, default=2)
+    rt.add_argument("--capacity", type=int, required=True, help="streams per worker")
+    rt.add_argument("--kill-at", type=float, default=0, help="kill -9 worker 0 this many s in")
+    rt.add_argument("--heartbeat", default="2s")
+    rt.add_argument("--ttl", default="6s")
+    rt.add_argument(
+        "--lead-s", type=float, default=15, help="broadcast starts this long after launch"
+    )
+    rt.add_argument("--shard-workers", type=int, default=8)
+    rt.add_argument("--deadline-ms", type=int, default=10000)
+    rt.add_argument("--seed", type=int, default=0)
+    rt.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     os.environ.setdefault("PYTHONHASHSEED", "0")
-    {"equiv": equiv}[args.cmd](args)
+    {"equiv": equiv, "realtime": realtime}[args.cmd](args)
 
 
 if __name__ == "__main__":
