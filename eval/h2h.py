@@ -168,12 +168,18 @@ def panako(*args: str) -> list[str]:
 
 
 def index_panako(args: argparse.Namespace) -> None:
+    """--list resumes a build with the files not yet stored (Panako's native
+    transform crashed once under 12 threads); only a full build's cost is
+    recorded."""
     conf = panako_conf(args.time_filter, args.cores)
     db = Path(conf[1].split("=", 1)[1])
     db.mkdir(parents=True, exist_ok=True)
-    cost = timed(panako("store", *conf, str(WORK / "refs.txt")),
-                 WORK / f"index_panako_t{args.time_filter}.log")  # fmt: skip
-    record_cost(f"panako:{args.time_filter}", {**cost, "bytes": du(db), "cores": args.cores})
+    files = args.list or WORK / "refs.txt"
+    suffix = "" if args.list is None else "_resume"
+    cost = timed(panako("store", *conf, str(files)),
+                 WORK / f"index_panako_t{args.time_filter}{suffix}.log")  # fmt: skip
+    if args.list is None:
+        record_cost(f"panako:{args.time_filter}", {**cost, "bytes": du(db), "cores": args.cores})
 
 
 # Queries ------------------------------------------------------------------
@@ -501,6 +507,7 @@ def main() -> None:
     a.add_argument("--cores", type=int, default=os.cpu_count())
     p = sub.add_parser("index-panako")
     p.add_argument("--time-filter", type=int, default=25)
+    p.add_argument("--list", type=Path, help="store only these files (resume)")
     p.add_argument("--cores", type=int, default=os.cpu_count())
     c = sub.add_parser("clips")
     c.add_argument("--split", choices=["val", "test"], required=True)
