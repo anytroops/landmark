@@ -262,7 +262,7 @@ func (x *HeldLease) GetEpoch() uint64 {
 type HeartbeatRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	WorkerId string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
-	// Streams the worker can run at once.
+	// Leases the worker can hold at once.
 	Capacity uint32 `protobuf:"varint,2,opt,name=capacity,proto3" json:"capacity,omitempty"`
 	// Leases the worker holds and wants renewed.
 	Held          []*HeldLease `protobuf:"bytes,3,rep,name=held,proto3" json:"held,omitempty"`
@@ -403,9 +403,12 @@ type Event struct {
 	// Worker clock when the event was decided.
 	DecidedUnix float64 `protobuf:"fixed64,14,opt,name=decided_unix,json=decidedUnix,proto3" json:"decided_unix,omitempty"`
 	// Set by the registry: its clock when the event was logged.
-	LoggedUnix    float64 `protobuf:"fixed64,15,opt,name=logged_unix,json=loggedUnix,proto3" json:"logged_unix,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LoggedUnix float64 `protobuf:"fixed64,15,opt,name=logged_unix,json=loggedUnix,proto3" json:"logged_unix,omitempty"`
+	// Broadcast time of the first sample the appending holder decoded: its
+	// stream time 0, the window grid's origin.
+	SourceStartUnix float64 `protobuf:"fixed64,16,opt,name=source_start_unix,json=sourceStartUnix,proto3" json:"source_start_unix,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -539,6 +542,13 @@ func (x *Event) GetDecidedUnix() float64 {
 func (x *Event) GetLoggedUnix() float64 {
 	if x != nil {
 		return x.LoggedUnix
+	}
+	return 0
+}
+
+func (x *Event) GetSourceStartUnix() float64 {
+	if x != nil {
+		return x.SourceStartUnix
 	}
 	return 0
 }
@@ -999,7 +1009,7 @@ const file_landmark_v1_monitor_proto_rawDesc = "" +
 	"\x04held\x18\x03 \x03(\v2\x16.landmark.v1.HeldLeaseR\x04held\"V\n" +
 	"\x11HeartbeatResponse\x12*\n" +
 	"\x06leases\x18\x01 \x03(\v2\x12.landmark.v1.LeaseR\x06leases\x12\x15\n" +
-	"\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs\"\xb0\x03\n" +
+	"\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs\"\xdc\x03\n" +
 	"\x05Event\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x14\n" +
@@ -1018,7 +1028,8 @@ const file_landmark_v1_monitor_proto_rawDesc = "" +
 	"\tworker_id\x18\r \x01(\tR\bworkerId\x12!\n" +
 	"\fdecided_unix\x18\x0e \x01(\x01R\vdecidedUnix\x12\x1f\n" +
 	"\vlogged_unix\x18\x0f \x01(\x01R\n" +
-	"loggedUnix\"n\n" +
+	"loggedUnix\x12*\n" +
+	"\x11source_start_unix\x18\x10 \x01(\x01R\x0fsourceStartUnix\"n\n" +
 	"\rAppendRequest\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x12*\n" +

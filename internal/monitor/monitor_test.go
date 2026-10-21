@@ -332,3 +332,37 @@ func TestWorkerStopsWithoutHeartbeats(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// TestEndedSourcesFreeCapacity: with capacity 1, a second file stream runs
+// once the first has ended.
+func TestEndedSourcesFreeCapacity(t *testing.T) {
+	r, _, client := setup(t, 6*time.Second, 15)
+	list, err := r.ListStreams(context.Background(), &landmarkv1.ListStreamsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.AddStream(context.Background(), &landmarkv1.AddStreamRequest{
+		Stream: &landmarkv1.Stream{Id: "s2", Url: list.GetStreams()[0].GetStream().GetUrl()}}); err != nil {
+		t.Fatal(err)
+	}
+	s := &scripted{tracks: []int{4, 4, 4, 4, 4, 4, 4, 4, 4, 4}}
+	w, err := New(config(s, 50*time.Millisecond), client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	streams := map[string]int{}
+	for _, e := range logged(t, client, 4) { // a start and an end per stream
+		streams[e.GetStreamId()]++
+		if e.GetSourceStartUnix() == 0 {
+			t.Errorf("event without its source start: %+v", e)
+		}
+	}
+	cancel()
+	<-done
+	if streams["s1"] != 2 || streams["s2"] != 2 {
+		t.Errorf("events per stream %v, want 2 each", streams)
+	}
+}

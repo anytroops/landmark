@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -45,8 +46,10 @@ const StartHeader = "X-Landmark-Start"
 
 // Config configures a Worker.
 type Config struct {
-	WorkerID  string
-	Capacity  int           // streams run at once
+	WorkerID string
+	// Capacity: streams run at once. A file source that has ended keeps its
+	// lease (so it is not played again) but does not count.
+	Capacity  int
 	Heartbeat time.Duration // D39: 2 s
 	Window    float64       // seconds
 	Hop       float64
@@ -82,9 +85,10 @@ type Worker struct {
 }
 
 type job struct {
-	lease  *landmarkv1.Lease
-	cancel context.CancelFunc
-	done   chan struct{}
+	lease    *landmarkv1.Lease
+	cancel   context.CancelFunc
+	done     chan struct{}
+	finished atomic.Bool // the source ended and every event is logged
 }
 
 // New returns a worker that talks to the registry through reg.
@@ -148,10 +152,16 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) heartbeat(ctx context.Context) (*landmarkv1.HeartbeatResponse, error) {
-	req := &landmarkv1.HeartbeatRequest{WorkerId: w.cfg.WorkerID, Capacity: uint32(w.cfg.Capacity)}
+	capacity := w.cfg.Capacity
+	req := &landmarkv1.HeartbeatRequest{WorkerId: w.cfg.WorkerID}
 	for _, id := range slices.Sorted(maps.Keys(w.jobs)) {
-		req.Held = append(req.Held, &landmarkv1.HeldLease{StreamId: id, Epoch: w.jobs[id].lease.GetEpoch()})
+		j := w.jobs[id]
+		req.Held = append(req.Held, &landmarkv1.HeldLease{StreamId: id, Epoch: j.lease.GetEpoch()})
+		if j.finished.Load() {
+			capacity++
+		}
 	}
+	req.Capacity = uint32(capacity)
 	hctx, cancel := context.WithTimeout(ctx, w.cfg.Heartbeat)
 	defer cancel()
 	return w.reg.Heartbeat(hctx, req)
@@ -185,7 +195,7 @@ func (w *Worker) start(ctx context.Context, l *landmarkv1.Lease) {
 	w.wg.Go(func() {
 		defer w.m.running.Dec()
 		defer close(j.done)
-		err := w.runStream(jctx, l)
+		err := w.runStream(jctx, l, &j.finished)
 		switch {
 		case jctx.Err() != nil:
 		case errors.Is(err, errFenced):
@@ -239,7 +249,7 @@ type window struct {
 // runStream runs one leased stream until ctx ends, the stream is fenced,
 // or the source fails. A source that ends (a file) is decoded to the end
 // and the stream then idles, holding its lease.
-func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease) error {
+func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *atomic.Bool) error {
 	ctx, cancel := context.WithCancel(ctx) // also ends the reader on an early return
 	defer cancel()
 	src, base, err := openSource(ctx, l.GetUrl(), w.cfg.ReadRate)
@@ -282,6 +292,8 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease) error {
 	if err := a.send(ctx, w.events(dec.Close(), base)); err != nil {
 		return err
 	}
+	finished.Store(true)
+	w.m.finished.Inc()
 	slog.Info("stream source ended", "stream", l.GetStreamId())
 	<-ctx.Done()
 	return nil
@@ -357,7 +369,7 @@ func (w *Worker) events(ev []tracklist.Event, base float64) []*landmarkv1.Event 
 		out[i] = &landmarkv1.Event{Kind: kind, TrackId: uint32(e.Entry.Track), Name: w.cfg.Names(e.Entry.Track),
 			StartUnix: base + e.Entry.Start, EndUnix: base + e.Entry.End, Tempo: e.Entry.Factor,
 			Evidence: e.Entry.Evidence, Resumed: e.Resumed, Interrupted: e.Interrupted,
-			WorkerId: w.cfg.WorkerID, DecidedUnix: now}
+			WorkerId: w.cfg.WorkerID, DecidedUnix: now, SourceStartUnix: base}
 	}
 	return out
 }
@@ -475,9 +487,9 @@ func (c *windower) add(x []float32) []cutWindow {
 func unix(t time.Time) float64 { return float64(t.UnixNano()) / 1e9 }
 
 type metrics struct {
-	windows, searchFailures, appended, fenced, heartbeatFailures prometheus.Counter
-	running                                                      prometheus.Gauge
-	lag                                                          prometheus.Histogram
+	windows, searchFailures, appended, fenced, heartbeatFailures, finished prometheus.Counter
+	running                                                                prometheus.Gauge
+	lag                                                                    prometheus.Histogram
 }
 
 func newMetrics(reg prometheus.Registerer) (*metrics, error) {
@@ -492,6 +504,8 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 			Name: "landmark_monitor_streams_fenced_total", Help: "Streams stopped because the log refused their epoch."}),
 		heartbeatFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "landmark_monitor_heartbeat_failures_total", Help: "Failed heartbeats."}),
+		finished: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "landmark_monitor_sources_ended_total", Help: "File sources decoded to their end."}),
 		running: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "landmark_monitor_streams_running", Help: "Streams this worker runs."}),
 		lag: prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -500,7 +514,7 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 	}
 	if reg != nil {
 		for _, c := range []prometheus.Collector{m.windows, m.searchFailures, m.appended, m.fenced,
-			m.heartbeatFailures, m.running, m.lag} {
+			m.heartbeatFailures, m.finished, m.running, m.lag} {
 			if err := reg.Register(c); err != nil {
 				return nil, fmt.Errorf("monitor: metrics: %w", err)
 			}

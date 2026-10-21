@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19landmark/v1/monitor.proto\x12\x0blandmark.v1\"*\n\x06Stream\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n\x03url\x18\x02 \x01(\tR\x03url\"\x8f\x01\n\x05Lease\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x10\n\x03url\x18\x02 \x01(\tR\x03url\x12\x14\n\x05\x65poch\x18\x03 \x01(\x04R\x05\x65poch\x12\x19\n\x08next_seq\x18\x04 \x01(\x04R\x07nextSeq\x12&\n\x04open\x18\x05 \x01(\x0b\x32\x12.landmark.v1.EventR\x04open\">\n\tHeldLease\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x14\n\x05\x65poch\x18\x02 \x01(\x04R\x05\x65poch\"w\n\x10HeartbeatRequest\x12\x1b\n\tworker_id\x18\x01 \x01(\tR\x08workerId\x12\x1a\n\x08\x63\x61pacity\x18\x02 \x01(\rR\x08\x63\x61pacity\x12*\n\x04held\x18\x03 \x03(\x0b\x32\x16.landmark.v1.HeldLeaseR\x04held\"V\n\x11HeartbeatResponse\x12*\n\x06leases\x18\x01 \x03(\x0b\x32\x12.landmark.v1.LeaseR\x06leases\x12\x15\n\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs\"\xb0\x03\n\x05\x45vent\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x10\n\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x14\n\x05\x65poch\x18\x03 \x01(\x04R\x05\x65poch\x12*\n\x04kind\x18\x04 \x01(\x0e\x32\x16.landmark.v1.EventKindR\x04kind\x12\x19\n\x08track_id\x18\x05 \x01(\rR\x07trackId\x12\x12\n\x04name\x18\x06 \x01(\tR\x04name\x12\x1d\n\nstart_unix\x18\x07 \x01(\x01R\tstartUnix\x12\x19\n\x08\x65nd_unix\x18\x08 \x01(\x01R\x07\x65ndUnix\x12\x14\n\x05tempo\x18\t \x01(\x01R\x05tempo\x12\x1a\n\x08\x65vidence\x18\n \x01(\x01R\x08\x65vidence\x12\x18\n\x07resumed\x18\x0b \x01(\x08R\x07resumed\x12 \n\x0binterrupted\x18\x0c \x01(\x08R\x0binterrupted\x12\x1b\n\tworker_id\x18\r \x01(\tR\x08workerId\x12!\n\x0c\x64\x65\x63ided_unix\x18\x0e \x01(\x01R\x0b\x64\x65\x63idedUnix\x12\x1f\n\x0blogged_unix\x18\x0f \x01(\x01R\nloggedUnix\"n\n\rAppendRequest\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x14\n\x05\x65poch\x18\x02 \x01(\x04R\x05\x65poch\x12*\n\x06\x65vents\x18\x03 \x03(\x0b\x32\x12.landmark.v1.EventR\x06\x65vents\"+\n\x0e\x41ppendResponse\x12\x19\n\x08next_seq\x18\x01 \x01(\x04R\x07nextSeq\"N\n\x10SubscribeRequest\x12\x1d\n\nstream_ids\x18\x01 \x03(\tR\tstreamIds\x12\x1b\n\tlive_only\x18\x02 \x01(\x08R\x08liveOnly\"=\n\x11SubscribeResponse\x12(\n\x05\x65vent\x18\x01 \x01(\x0b\x32\x12.landmark.v1.EventR\x05\x65vent\"?\n\x10\x41\x64\x64StreamRequest\x12+\n\x06stream\x18\x01 \x01(\x0b\x32\x13.landmark.v1.StreamR\x06stream\"\x13\n\x11\x41\x64\x64StreamResponse\"\x14\n\x12ListStreamsRequest\"\x84\x01\n\x0cStreamStatus\x12+\n\x06stream\x18\x01 \x01(\x0b\x32\x13.landmark.v1.StreamR\x06stream\x12\x16\n\x06holder\x18\x02 \x01(\tR\x06holder\x12\x14\n\x05\x65poch\x18\x03 \x01(\x04R\x05\x65poch\x12\x19\n\x08next_seq\x18\x04 \x01(\x04R\x07nextSeq\"J\n\x13ListStreamsResponse\x12\x33\n\x07streams\x18\x01 \x03(\x0b\x32\x19.landmark.v1.StreamStatusR\x07streams*Q\n\tEventKind\x12\x1a\n\x16\x45VENT_KIND_UNSPECIFIED\x10\x00\x12\x14\n\x10\x45VENT_KIND_START\x10\x01\x12\x12\n\x0e\x45VENT_KIND_END\x10\x02\x32\x8c\x03\n\x0fRegistryService\x12J\n\tHeartbeat\x12\x1d.landmark.v1.HeartbeatRequest\x1a\x1e.landmark.v1.HeartbeatResponse\x12\x41\n\x06\x41ppend\x12\x1a.landmark.v1.AppendRequest\x1a\x1b.landmark.v1.AppendResponse\x12L\n\tSubscribe\x12\x1d.landmark.v1.SubscribeRequest\x1a\x1e.landmark.v1.SubscribeResponse0\x01\x12J\n\tAddStream\x12\x1d.landmark.v1.AddStreamRequest\x1a\x1e.landmark.v1.AddStreamResponse\x12P\n\x0bListStreams\x12\x1f.landmark.v1.ListStreamsRequest\x1a .landmark.v1.ListStreamsResponseB:Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19landmark/v1/monitor.proto\x12\x0blandmark.v1\"*\n\x06Stream\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n\x03url\x18\x02 \x01(\tR\x03url\"\x8f\x01\n\x05Lease\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x10\n\x03url\x18\x02 \x01(\tR\x03url\x12\x14\n\x05\x65poch\x18\x03 \x01(\x04R\x05\x65poch\x12\x19\n\x08next_seq\x18\x04 \x01(\x04R\x07nextSeq\x12&\n\x04open\x18\x05 \x01(\x0b\x32\x12.landmark.v1.EventR\x04open\">\n\tHeldLease\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x14\n\x05\x65poch\x18\x02 \x01(\x04R\x05\x65poch\"w\n\x10HeartbeatRequest\x12\x1b\n\tworker_id\x18\x01 \x01(\tR\x08workerId\x12\x1a\n\x08\x63\x61pacity\x18\x02 \x01(\rR\x08\x63\x61pacity\x12*\n\x04held\x18\x03 \x03(\x0b\x32\x16.landmark.v1.HeldLeaseR\x04held\"V\n\x11HeartbeatResponse\x12*\n\x06leases\x18\x01 \x03(\x0b\x32\x12.landmark.v1.LeaseR\x06leases\x12\x15\n\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs\"\xdc\x03\n\x05\x45vent\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x10\n\x03seq\x18\x02 \x01(\x04R\x03seq\x12\x14\n\x05\x65poch\x18\x03 \x01(\x04R\x05\x65poch\x12*\n\x04kind\x18\x04 \x01(\x0e\x32\x16.landmark.v1.EventKindR\x04kind\x12\x19\n\x08track_id\x18\x05 \x01(\rR\x07trackId\x12\x12\n\x04name\x18\x06 \x01(\tR\x04name\x12\x1d\n\nstart_unix\x18\x07 \x01(\x01R\tstartUnix\x12\x19\n\x08\x65nd_unix\x18\x08 \x01(\x01R\x07\x65ndUnix\x12\x14\n\x05tempo\x18\t \x01(\x01R\x05tempo\x12\x1a\n\x08\x65vidence\x18\n \x01(\x01R\x08\x65vidence\x12\x18\n\x07resumed\x18\x0b \x01(\x08R\x07resumed\x12 \n\x0binterrupted\x18\x0c \x01(\x08R\x0binterrupted\x12\x1b\n\tworker_id\x18\r \x01(\tR\x08workerId\x12!\n\x0c\x64\x65\x63ided_unix\x18\x0e \x01(\x01R\x0b\x64\x65\x63idedUnix\x12\x1f\n\x0blogged_unix\x18\x0f \x01(\x01R\nloggedUnix\x12*\n\x11source_start_unix\x18\x10 \x01(\x01R\x0fsourceStartUnix\"n\n\rAppendRequest\x12\x1b\n\tstream_id\x18\x01 \x01(\tR\x08streamId\x12\x14\n\x05\x65poch\x18\x02 \x01(\x04R\x05\x65poch\x12*\n\x06\x65vents\x18\x03 \x03(\x0b\x32\x12.landmark.v1.EventR\x06\x65vents\"+\n\x0e\x41ppendResponse\x12\x19\n\x08next_seq\x18\x01 \x01(\x04R\x07nextSeq\"N\n\x10SubscribeRequest\x12\x1d\n\nstream_ids\x18\x01 \x03(\tR\tstreamIds\x12\x1b\n\tlive_only\x18\x02 \x01(\x08R\x08liveOnly\"=\n\x11SubscribeResponse\x12(\n\x05\x65vent\x18\x01 \x01(\x0b\x32\x12.landmark.v1.EventR\x05\x65vent\"?\n\x10\x41\x64\x64StreamRequest\x12+\n\x06stream\x18\x01 \x01(\x0b\x32\x13.landmark.v1.StreamR\x06stream\"\x13\n\x11\x41\x64\x64StreamResponse\"\x14\n\x12ListStreamsRequest\"\x84\x01\n\x0cStreamStatus\x12+\n\x06stream\x18\x01 \x01(\x0b\x32\x13.landmark.v1.StreamR\x06stream\x12\x16\n\x06holder\x18\x02 \x01(\tR\x06holder\x12\x14\n\x05\x65poch\x18\x03 \x01(\x04R\x05\x65poch\x12\x19\n\x08next_seq\x18\x04 \x01(\x04R\x07nextSeq\"J\n\x13ListStreamsResponse\x12\x33\n\x07streams\x18\x01 \x03(\x0b\x32\x19.landmark.v1.StreamStatusR\x07streams*Q\n\tEventKind\x12\x1a\n\x16\x45VENT_KIND_UNSPECIFIED\x10\x00\x12\x14\n\x10\x45VENT_KIND_START\x10\x01\x12\x12\n\x0e\x45VENT_KIND_END\x10\x02\x32\x8c\x03\n\x0fRegistryService\x12J\n\tHeartbeat\x12\x1d.landmark.v1.HeartbeatRequest\x1a\x1e.landmark.v1.HeartbeatResponse\x12\x41\n\x06\x41ppend\x12\x1a.landmark.v1.AppendRequest\x1a\x1b.landmark.v1.AppendResponse\x12L\n\tSubscribe\x12\x1d.landmark.v1.SubscribeRequest\x1a\x1e.landmark.v1.SubscribeResponse0\x01\x12J\n\tAddStream\x12\x1d.landmark.v1.AddStreamRequest\x1a\x1e.landmark.v1.AddStreamResponse\x12P\n\x0bListStreams\x12\x1f.landmark.v1.ListStreamsRequest\x1a .landmark.v1.ListStreamsResponseB:Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,8 +32,8 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'landmark.v1.monitor_pb2', _
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z8github.com/anytroops/landmark/gen/landmark/v1;landmarkv1'
-  _globals['_EVENTKIND']._serialized_start=1559
-  _globals['_EVENTKIND']._serialized_end=1640
+  _globals['_EVENTKIND']._serialized_start=1603
+  _globals['_EVENTKIND']._serialized_end=1684
   _globals['_STREAM']._serialized_start=42
   _globals['_STREAM']._serialized_end=84
   _globals['_LEASE']._serialized_start=87
@@ -45,25 +45,25 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_HEARTBEATRESPONSE']._serialized_start=417
   _globals['_HEARTBEATRESPONSE']._serialized_end=503
   _globals['_EVENT']._serialized_start=506
-  _globals['_EVENT']._serialized_end=938
-  _globals['_APPENDREQUEST']._serialized_start=940
-  _globals['_APPENDREQUEST']._serialized_end=1050
-  _globals['_APPENDRESPONSE']._serialized_start=1052
-  _globals['_APPENDRESPONSE']._serialized_end=1095
-  _globals['_SUBSCRIBEREQUEST']._serialized_start=1097
-  _globals['_SUBSCRIBEREQUEST']._serialized_end=1175
-  _globals['_SUBSCRIBERESPONSE']._serialized_start=1177
-  _globals['_SUBSCRIBERESPONSE']._serialized_end=1238
-  _globals['_ADDSTREAMREQUEST']._serialized_start=1240
-  _globals['_ADDSTREAMREQUEST']._serialized_end=1303
-  _globals['_ADDSTREAMRESPONSE']._serialized_start=1305
-  _globals['_ADDSTREAMRESPONSE']._serialized_end=1324
-  _globals['_LISTSTREAMSREQUEST']._serialized_start=1326
-  _globals['_LISTSTREAMSREQUEST']._serialized_end=1346
-  _globals['_STREAMSTATUS']._serialized_start=1349
-  _globals['_STREAMSTATUS']._serialized_end=1481
-  _globals['_LISTSTREAMSRESPONSE']._serialized_start=1483
-  _globals['_LISTSTREAMSRESPONSE']._serialized_end=1557
-  _globals['_REGISTRYSERVICE']._serialized_start=1643
-  _globals['_REGISTRYSERVICE']._serialized_end=2039
+  _globals['_EVENT']._serialized_end=982
+  _globals['_APPENDREQUEST']._serialized_start=984
+  _globals['_APPENDREQUEST']._serialized_end=1094
+  _globals['_APPENDRESPONSE']._serialized_start=1096
+  _globals['_APPENDRESPONSE']._serialized_end=1139
+  _globals['_SUBSCRIBEREQUEST']._serialized_start=1141
+  _globals['_SUBSCRIBEREQUEST']._serialized_end=1219
+  _globals['_SUBSCRIBERESPONSE']._serialized_start=1221
+  _globals['_SUBSCRIBERESPONSE']._serialized_end=1282
+  _globals['_ADDSTREAMREQUEST']._serialized_start=1284
+  _globals['_ADDSTREAMREQUEST']._serialized_end=1347
+  _globals['_ADDSTREAMRESPONSE']._serialized_start=1349
+  _globals['_ADDSTREAMRESPONSE']._serialized_end=1368
+  _globals['_LISTSTREAMSREQUEST']._serialized_start=1370
+  _globals['_LISTSTREAMSREQUEST']._serialized_end=1390
+  _globals['_STREAMSTATUS']._serialized_start=1393
+  _globals['_STREAMSTATUS']._serialized_end=1525
+  _globals['_LISTSTREAMSRESPONSE']._serialized_start=1527
+  _globals['_LISTSTREAMSRESPONSE']._serialized_end=1601
+  _globals['_REGISTRYSERVICE']._serialized_start=1687
+  _globals['_REGISTRYSERVICE']._serialized_end=2083
 # @@protoc_insertion_point(module_scope)

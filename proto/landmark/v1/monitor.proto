@@ -35,7 +35,7 @@ message HeldLease {
 
 message HeartbeatRequest {
   string worker_id = 1;
-  // Streams the worker can run at once.
+  // Leases the worker can hold at once.
   uint32 capacity = 2;
   // Leases the worker holds and wants renewed.
   repeated HeldLease held = 3;
@@ -84,6 +84,9 @@ message Event {
   double decided_unix = 14;
   // Set by the registry: its clock when the event was logged.
   double logged_unix = 15;
+  // Broadcast time of the first sample the appending holder decoded: its
+  // stream time 0, the window grid's origin.
+  double source_start_unix = 16;
 }
 
 message AppendRequest {

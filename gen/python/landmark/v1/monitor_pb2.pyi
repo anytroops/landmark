@@ -65,7 +65,7 @@ class HeartbeatResponse(_message.Message):
     def __init__(self, leases: _Optional[_Iterable[_Union[Lease, _Mapping]]] = ..., ttl_ms: _Optional[int] = ...) -> None: ...
 
 class Event(_message.Message):
-    __slots__ = ("stream_id", "seq", "epoch", "kind", "track_id", "name", "start_unix", "end_unix", "tempo", "evidence", "resumed", "interrupted", "worker_id", "decided_unix", "logged_unix")
+    __slots__ = ("stream_id", "seq", "epoch", "kind", "track_id", "name", "start_unix", "end_unix", "tempo", "evidence", "resumed", "interrupted", "worker_id", "decided_unix", "logged_unix", "source_start_unix")
     STREAM_ID_FIELD_NUMBER: _ClassVar[int]
     SEQ_FIELD_NUMBER: _ClassVar[int]
     EPOCH_FIELD_NUMBER: _ClassVar[int]
@@ -81,6 +81,7 @@ class Event(_message.Message):
     WORKER_ID_FIELD_NUMBER: _ClassVar[int]
     DECIDED_UNIX_FIELD_NUMBER: _ClassVar[int]
     LOGGED_UNIX_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_START_UNIX_FIELD_NUMBER: _ClassVar[int]
     stream_id: str
     seq: int
     epoch: int
@@ -96,7 +97,8 @@ class Event(_message.Message):
     worker_id: str
     decided_unix: float
     logged_unix: float
-    def __init__(self, stream_id: _Optional[str] = ..., seq: _Optional[int] = ..., epoch: _Optional[int] = ..., kind: _Optional[_Union[EventKind, str]] = ..., track_id: _Optional[int] = ..., name: _Optional[str] = ..., start_unix: _Optional[float] = ..., end_unix: _Optional[float] = ..., tempo: _Optional[float] = ..., evidence: _Optional[float] = ..., resumed: _Optional[bool] = ..., interrupted: _Optional[bool] = ..., worker_id: _Optional[str] = ..., decided_unix: _Optional[float] = ..., logged_unix: _Optional[float] = ...) -> None: ...
+    source_start_unix: float
+    def __init__(self, stream_id: _Optional[str] = ..., seq: _Optional[int] = ..., epoch: _Optional[int] = ..., kind: _Optional[_Union[EventKind, str]] = ..., track_id: _Optional[int] = ..., name: _Optional[str] = ..., start_unix: _Optional[float] = ..., end_unix: _Optional[float] = ..., tempo: _Optional[float] = ..., evidence: _Optional[float] = ..., resumed: _Optional[bool] = ..., interrupted: _Optional[bool] = ..., worker_id: _Optional[str] = ..., decided_unix: _Optional[float] = ..., logged_unix: _Optional[float] = ..., source_start_unix: _Optional[float] = ...) -> None: ...
 
 class AppendRequest(_message.Message):
     __slots__ = ("stream_id", "epoch", "events")
