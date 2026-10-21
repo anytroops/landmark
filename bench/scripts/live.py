@@ -36,6 +36,7 @@ from bench.scripts.benchcluster import (
     require_ac_power,
     require_clean_tree,
     wait_for,
+    wait_until_not_charging,
 )
 from eval import live_score
 
@@ -213,6 +214,8 @@ def lag_stats(paths: list[Path], hop: float) -> dict:
 def realtime(args: argparse.Namespace) -> None:
     require_clean_tree()
     require_ac_power()
+    if not os.environ.get("LANDMARK_ALLOW_BATTERY"):
+        wait_until_not_charging()  # charging draws from the CPU's adapter
     # Keep the machine (and display, so the lid-open requirement shows) awake
     # for this process's lifetime; a sleep mid-run freezes every timing.
     awake = subprocess.Popen(["caffeinate", "-dimsu", "-w", str(os.getpid())])
