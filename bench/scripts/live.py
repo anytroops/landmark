@@ -348,7 +348,7 @@ def main() -> None:
     rt.add_argument("--heartbeat", default="2s")
     rt.add_argument("--ttl", default="6s")
     rt.add_argument(
-        "--lead-s", type=float, default=15, help="broadcast starts this long after launch"
+        "--lead-s", type=float, default=25, help="broadcast starts this long after launch"
     )
     rt.add_argument("--shard-workers", type=int, default=8)
     rt.add_argument("--deadline-ms", type=int, default=10000)
