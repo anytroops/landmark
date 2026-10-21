@@ -251,6 +251,10 @@ def realtime(args: argparse.Namespace) -> None:
                  "-start", f"{start:.6f}"],
                 stdout=slog.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
             wait_for(slog, "broadcasting")
+            # One worker at a time, each once the previous holds its streams, so
+            # the assignment is known: w0 fills first (the one --kill-at kills),
+            # later workers take the rest or stand by.
+            free = len(stations)
             for i in range(args.workers):
                 log = tmp / f"monitor-w{i}.log"
                 workers.append(subprocess.Popen(
@@ -261,6 +265,12 @@ def realtime(args: argparse.Namespace) -> None:
                      "-window-log", str(out / f"windows-w{i}.jsonl"),
                      "-admin", f"127.0.0.1:{7910 + i}"],
                     stdout=log.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
+                want, until = min(args.capacity, free), time.monotonic() + 30
+                while want and log.read_text(errors="replace").count("stream start") < want:
+                    if time.monotonic() > until:
+                        raise SystemExit(f"worker w{i} did not take {want} streams; see {tmp}")
+                    time.sleep(0.2)
+                free -= want
             if args.kill_at > 0:
                 time.sleep(max(0.0, start + args.kill_at - time.time()))
                 workers[0].kill()  # SIGKILL: no goodbye, leases must expire
