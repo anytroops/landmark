@@ -120,7 +120,7 @@ def same(a: dict, b: dict) -> bool:
 def equiv(args: argparse.Namespace) -> None:
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
-    files = mixes(args.mixes, args.sets)
+    files = mixes(args.mixes, args.sets)[: args.limit or None]
     head = git_head()
     with (
         cluster(B2_INDEX, 1, args.deadline_ms, args.workers, base_port=7100) as (b2, _),
@@ -165,6 +165,7 @@ def main() -> None:
     eq.add_argument("--deadline-ms", type=int, default=10000)
     eq.add_argument("--timeout", default="10s", help="per-search deadline, both runs")
     eq.add_argument("--live-timeout-s", type=float, default=3600)
+    eq.add_argument("--limit", type=int, default=0, help="first N mixes only (smoke test)")
     args = ap.parse_args()
     os.environ.setdefault("PYTHONHASHSEED", "0")
     {"equiv": equiv}[args.cmd](args)
