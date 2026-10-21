@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
 	"github.com/anytroops/landmark/internal/audio"
+	"github.com/anytroops/landmark/internal/hybrid"
 )
 
 func TestWindowStarts(t *testing.T) {
@@ -25,33 +25,6 @@ func TestWindowStarts(t *testing.T) {
 		if got := windowStarts(tt.n, tt.window, tt.hop); !slices.Equal(got, tt.want) {
 			t.Errorf("windowStarts(%d, %d, %d) = %v, want %v", tt.n, tt.window, tt.hop, got, tt.want)
 		}
-	}
-}
-
-func TestRowSkipsTheTopClusterForTheRunnerUp(t *testing.T) {
-	cluster := func(d uint32) uint32 {
-		if d == 8 {
-			return 3 // track 8 duplicates track 3
-		}
-		return d
-	}
-	resp := &landmarkv1.IdentifyResponse{Candidates: []*landmarkv1.Candidate{
-		{TrackId: 3, Score: 300, Offset: 430, Scale: 1.04},
-		{TrackId: 8, Score: 290},
-		{TrackId: 5, Score: 12},
-	}}
-	r := row(7.5, "b2_speed", 2, 1, resp, cluster)
-	if r.Track != 3 || r.Score != 300 || r.RunnerUp != 12 || r.Offset != 430 ||
-		math.Abs(r.Factor-2.08) > 1e-6 || r.T0 != 7.5 || r.Mode != "b2_speed" {
-		t.Fatalf("row = %+v", r)
-	}
-	pair := row(0, "none", 1, 1.5, &landmarkv1.IdentifyResponse{Candidates: []*landmarkv1.Candidate{
-		{TrackId: 3, Score: 100}, {TrackId: 5, Score: 10}}}, cluster)
-	if pair.Factor != 1 || pair.Score != 150 || pair.RunnerUp != 15 {
-		t.Errorf("weighted pair row = %+v", pair)
-	}
-	if empty := row(0, "b2", 1, 1, &landmarkv1.IdentifyResponse{}, cluster); empty.Track != -1 || empty.Factor != 1 {
-		t.Errorf("no candidates: %+v", empty)
 	}
 }
 
@@ -85,8 +58,9 @@ func TestSearchWindowsRunsEveryHybridSearch(t *testing.T) {
 		mu.Unlock()
 		return &landmarkv1.IdentifyResponse{Candidates: []*landmarkv1.Candidate{{TrackId: 2, Score: 40}}}, nil
 	}
-	s := searcher{cfg: config{window: 10, hop: 5, shifts: 1, workers: 2, timeout: time.Second,
-		extra: []float64{2, 0.5}, alpha: 2}, b2: b2, pairs: pairs, cluster: func(d uint32) uint32 { return d }}
+	s := searcher{cfg: config{window: 10, hop: 5, workers: 2},
+		hybrid: &hybrid.Searcher{B2: b2, Pairs: pairs, Cluster: func(d uint32) uint32 { return d }, Shifts: 1,
+			Extra: []float64{2, 0.5}, Alpha: 2, Timeout: time.Second}}
 	rows, partial, err := s.searchWindows(context.Background(), pcm)
 	if err != nil {
 		t.Fatal(err)
@@ -104,24 +78,6 @@ func TestSearchWindowsRunsEveryHybridSearch(t *testing.T) {
 	}
 	if modes["b2"] != 4 || modes["b2_speed"] != 8 || modes["none"] != 4 || modes["keylock"] != 8 {
 		t.Errorf("rows per mode = %v", modes)
-	}
-}
-
-func TestParseFactors(t *testing.T) {
-	got, err := parseFactors("2, 0.5,1.02")
-	if err != nil || !slices.Equal(got, []float64{2, 0.5, 1.02}) {
-		t.Errorf("parseFactors = %v, %v", got, err)
-	}
-	if got, err := parseFactors(""); err != nil || len(got) != 0 {
-		t.Errorf("empty: %v, %v", got, err)
-	}
-	for _, bad := range []string{"x", "-1", "0.1234567891"} {
-		if _, err := parseFactors(bad); err == nil {
-			t.Errorf("parseFactors(%q): want an error", bad)
-		}
-	}
-	if p, q, ok := ratio(0.5); !ok || p != 1 || q != 2 {
-		t.Errorf("ratio(0.5) = %d/%d %v", p, q, ok)
 	}
 }
 

@@ -1,0 +1,52 @@
+package catalog
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func write(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoad(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "catalog.json", `[{"dense":0,"fma_id":2,"cluster":0},{"dense":1,"fma_id":900001,"cluster":0}]`)
+	write(t, dir, "extras.json", `[{"fma_id":900001,"name":"Some Artist - Song"}]`)
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		dense int
+		name  string
+	}{{0, "FMA 000002"}, {1, "Some Artist - Song"}, {5, "track 5"}, {-1, "track -1"}}
+	for _, tt := range tests {
+		if got := c.Name(tt.dense); got != tt.name {
+			t.Errorf("Name(%d) = %q, want %q", tt.dense, got, tt.name)
+		}
+	}
+	if c.Cluster(1) != 0 || c.Cluster(9) != 9 {
+		t.Errorf("clusters %d %d", c.Cluster(1), c.Cluster(9))
+	}
+}
+
+func TestSame(t *testing.T) {
+	a, b, c := t.TempDir(), t.TempDir(), t.TempDir()
+	write(t, a, "catalog.json", `[{"dense":0,"fma_id":2},{"dense":1,"fma_id":5}]`)
+	write(t, b, "catalog.json", `[{"dense":0,"fma_id":2},{"dense":1,"fma_id":5}]`)
+	write(t, c, "catalog.json", `[{"dense":0,"fma_id":5},{"dense":1,"fma_id":2}]`)
+	if err := Same(a, b); err != nil {
+		t.Errorf("same catalogs: %v", err)
+	}
+	if err := Same(a, c); err == nil {
+		t.Error("reordered catalog: want an error")
+	}
+	if err := Same(a, t.TempDir()); err == nil {
+		t.Error("missing catalog: want an error")
+	}
+}
