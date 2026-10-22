@@ -7,7 +7,11 @@
 // deadline; on failure or per-attempt timeout, try the other replica with
 // whatever budget is left. Replicas are ejected after consecutive failures
 // and reinstated by health checks (D25), and are only used once verified to
-// serve the expected segment (D26). Partitions are disjoint by track, so the
+// serve the expected content (D26). With songs added while serving (D42),
+// the index has numbered versions (manifests in the index directory); each
+// query is pinned to one version, the newest that every partition has a
+// usable replica for, so an answer never mixes versions, and the response
+// says which version's catalog names its tracks. Partitions are disjoint by track, so the
 // global top-k is an exact merge of per-partition top-k lists. A partition
 // that never answers makes the response partial rather than an error. With a
 // stop list configured (D30), landmarks whose hash has a very long posting
@@ -33,6 +37,7 @@ import (
 
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
 	"github.com/anytroops/landmark/internal/cluster"
+	"github.com/anytroops/landmark/internal/manifest"
 	"github.com/anytroops/landmark/internal/match"
 	"github.com/anytroops/landmark/internal/shard"
 	"github.com/anytroops/landmark/internal/stoplist"
@@ -84,6 +89,9 @@ type Coordinator struct {
 	metrics *metrics
 	stopped chan struct{}
 	wg      sync.WaitGroup
+
+	mu       sync.Mutex
+	expected map[uint64][]uint32 // index version -> each partition's checksum
 }
 
 // New connects to every replica. Connections are lazy, so New does no I/O;
@@ -136,15 +144,115 @@ func (c *Coordinator) Start(ctx context.Context) {
 }
 
 func (c *Coordinator) healthRound(ctx context.Context) {
+	c.refreshVersions()
 	var wg sync.WaitGroup
-	for p, reps := range c.parts {
+	for _, reps := range c.parts {
 		for _, r := range reps {
 			wg.Go(func() {
-				r.check(ctx, c.cl.ExpectedCRC[p], uint32(len(c.parts)), c.opts.Now, c.opts.HealthTimeout)
+				r.check(ctx, c.expect, uint32(len(c.parts)), c.opts.Now, c.opts.HealthTimeout)
 			})
 		}
 	}
 	wg.Wait()
+}
+
+// refreshVersions reads manifests published since the last round. A
+// version that cannot be read yet is retried next round.
+func (c *Coordinator) refreshVersions() {
+	if c.cl.IndexDir == "" {
+		return
+	}
+	vs, err := manifest.Versions(c.cl.IndexDir)
+	if err != nil {
+		return
+	}
+	for _, v := range vs {
+		c.mu.Lock()
+		_, known := c.expected[v]
+		c.mu.Unlock()
+		if known {
+			continue
+		}
+		m, err := manifest.Get(c.cl.IndexDir, v)
+		if err != nil || int(m.NPartitions) != len(c.parts) {
+			continue
+		}
+		sums := make([]uint32, m.NPartitions)
+		for p := range sums {
+			if sums[p], err = m.Checksum(uint32(p)); err != nil {
+				break
+			}
+		}
+		if err != nil {
+			continue
+		}
+		c.mu.Lock()
+		if c.expected == nil {
+			c.expected = map[uint64][]uint32{}
+		}
+		c.expected[v] = sums
+		c.mu.Unlock()
+	}
+}
+
+// expect returns partition p's checksum in index version v. Version 0 is a
+// shard serving one segment file, checked against index.json as before
+// versions (D26).
+func (c *Coordinator) expect(v uint64, p uint32) (uint32, bool) {
+	if v == 0 {
+		return c.cl.ExpectedCRC[p], true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	sums, ok := c.expected[v]
+	if !ok {
+		return 0, false
+	}
+	return sums[p], true
+}
+
+// target picks the version to pin a query to: the newest that the most
+// partitions have a usable replica for (all of them, except while a
+// partition lags a whole rollout behind). Usable means available, or
+// verified when a partition has no available replica, as pick does.
+func (c *Coordinator) target() uint64 {
+	cover := map[uint64]int{}
+	for p := range c.parts {
+		seen := map[uint64]bool{}
+		for _, r := range c.usable(uint32(p)) {
+			for _, v := range r.versions() {
+				seen[v] = true
+			}
+		}
+		for v := range seen {
+			cover[v]++
+		}
+	}
+	var best uint64
+	bestN := 0
+	for v, n := range cover {
+		if n > bestN || (n == bestN && v > best) {
+			best, bestN = v, n
+		}
+	}
+	return best
+}
+
+// usable returns partition p's available replicas, or its verified ones if
+// none is available.
+func (c *Coordinator) usable(p uint32) []*replica {
+	var avail, verified []*replica
+	for _, r := range c.parts[p] {
+		if r.available() {
+			avail = append(avail, r)
+		} else if r.isVerified() {
+			verified = append(verified, r)
+		}
+	}
+	if len(avail) > 0 {
+		return avail
+	}
+	return verified
 }
 
 // Close stops the health loop and closes every connection.
@@ -210,8 +318,11 @@ func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 	// The caller's deadline wins if it is earlier than ours.
 	ctx, cancel := context.WithTimeout(ctx, c.cl.Deadline())
 	defer cancel()
-	// The same arrays go to every partition; the request is only read.
-	shardReq := &landmarkv1.SearchRequest{Hashes: hashes, Times: times, Spans: spans, Bands: bands, TopK: shardTopK}
+	// The same arrays go to every partition, pinned to one index version;
+	// the request is only read.
+	version := c.target()
+	shardReq := &landmarkv1.SearchRequest{Hashes: hashes, Times: times, Spans: spans, Bands: bands, TopK: shardTopK,
+		ManifestVersion: version}
 
 	results := make([]*landmarkv1.SearchResponse, n)
 	errs := make([]error, n)
@@ -258,6 +369,7 @@ func (c *Coordinator) identify(ctx context.Context, req *landmarkv1.IdentifyRequ
 		Partial:             responded < n,
 		PartitionsResponded: responded,
 		PartitionsTotal:     n,
+		IndexVersion:        version,
 	}, nil
 }
 
@@ -275,7 +387,7 @@ func (c *Coordinator) searchPartition(ctx context.Context, p uint32, req *landma
 	var tried *replica
 	lastErr := status.Error(codes.Unavailable, "no usable replica")
 	for attempt := range len(c.parts[p]) {
-		r, alternative := c.pick(p, tried)
+		r, alternative := c.pick(p, tried, req.GetManifestVersion())
 		if r == nil {
 			break
 		}
@@ -302,6 +414,11 @@ func (c *Coordinator) searchPartition(ctx context.Context, p uint32, req *landma
 			r.markUnverified("answered for the wrong partition")
 			c.metrics.attempt(r, "wrong_partition")
 			lastErr = status.Errorf(codes.Internal, "replica %s answered for partition %d", r.addr, resp.GetPartitionId())
+		case err == nil && resp.GetManifestVersion() != req.GetManifestVersion():
+			r.markUnverified("answered from another index version")
+			c.metrics.attempt(r, "wrong_version")
+			lastErr = status.Errorf(codes.Internal, "replica %s answered from version %d, asked %d",
+				r.addr, resp.GetManifestVersion(), req.GetManifestVersion())
 		case err == nil:
 			r.recordSuccess()
 			c.metrics.attempt(r, "ok")
@@ -318,9 +435,10 @@ func (c *Coordinator) searchPartition(ctx context.Context, p uint32, req *landma
 			switch code {
 			case codes.InvalidArgument:
 				return nil, err // same answer from every replica
-			case codes.ResourceExhausted:
+			case codes.ResourceExhausted, codes.FailedPrecondition:
 				// Overload is not failure: ejecting a busy replica would push
 				// its load onto its partner and cascade. Just try the other.
+				// Nor is having moved past the pinned version (D42).
 			default:
 				if r.recordFailure(c.opts.Now(), c.opts) {
 					c.metrics.ejections.WithLabelValues(r.addr).Inc()
@@ -332,8 +450,9 @@ func (c *Coordinator) searchPartition(ctx context.Context, p uint32, req *landma
 	return nil, lastErr
 }
 
-// pick returns the replica of partition p to try next, skipping exclude,
-// and whether another candidate would remain for a retry.
+// pick returns the replica of partition p to try next, among those
+// verified to serve version, skipping exclude, and whether another
+// candidate would remain for a retry.
 //
 // Preference: available replicas (verified, healthy, not ejected) by fewest
 // in-flight requests, ties broken randomly. If none is available, fall back
@@ -341,10 +460,10 @@ func (c *Coordinator) searchPartition(ctx context.Context, p uint32, req *landma
 // trying a possibly-recovered replica beats giving up on the partition.
 // Unverified replicas are never used; a partial answer is better than an
 // answer from the wrong index.
-func (c *Coordinator) pick(p uint32, exclude *replica) (*replica, bool) {
+func (c *Coordinator) pick(p uint32, exclude *replica, version uint64) (*replica, bool) {
 	var avail, verified []*replica
 	for _, r := range c.parts[p] {
-		if r == exclude {
+		if r == exclude || !r.serves(version) {
 			continue
 		}
 		if r.available() {

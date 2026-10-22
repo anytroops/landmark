@@ -16,10 +16,11 @@ import (
 
 // replica is one shard server holding a copy of one partition.
 //
-// It is available for traffic when it is verified (serves the expected
-// segment, D26), healthy (last health check said SERVING), and not ejected
-// (D25). The health loop owns verified and healthy; request outcomes drive
-// ejection; mu guards all three.
+// It is available for traffic when it is verified (serves an index version
+// the coordinator knows, with that version's content, D26 and D42),
+// healthy (last health check said SERVING), and not ejected (D25). The
+// health loop owns served and healthy; request outcomes drive ejection; mu
+// guards them.
 type replica struct {
 	addr      string
 	partition uint32
@@ -30,7 +31,7 @@ type replica struct {
 	outstanding atomic.Int64 // in-flight Searches, for least-outstanding picks
 
 	mu           sync.Mutex
-	verified     bool
+	served       map[uint64]bool // verified index versions it can search
 	healthy      bool
 	consecFails  int
 	ejected      bool
@@ -41,13 +42,31 @@ type replica struct {
 func (r *replica) available() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.verified && r.healthy && !r.ejected
+	return len(r.served) > 0 && r.healthy && !r.ejected
 }
 
 func (r *replica) isVerified() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.verified
+	return len(r.served) > 0
+}
+
+// serves reports whether the replica was verified to search version v.
+func (r *replica) serves(v uint64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.served[v]
+}
+
+// versions returns the verified versions it serves.
+func (r *replica) versions() []uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]uint64, 0, len(r.served))
+	for v := range r.served {
+		out = append(out, v)
+	}
+	return out
 }
 
 func (r *replica) recordSuccess() {
@@ -74,19 +93,22 @@ func (r *replica) recordFailure(now time.Time, opts Options) (ejectedNow bool) {
 // wrong partition; it stays out until the health loop re-verifies it.
 func (r *replica) markUnverified(reason string) {
 	r.mu.Lock()
-	r.verified = false
+	r.served = nil
 	r.mu.Unlock()
 	slog.Warn("replica excluded", "addr", r.addr, "partition", r.partition, "reason", reason)
 }
 
-// check runs one health round for this replica: verify its segment identity
-// with Info, then read its serving status. A passing check after the
-// minimum ejection time reinstates an ejected replica.
-func (r *replica) check(ctx context.Context, wantCRC uint32, nParts uint32, now func() time.Time, timeout time.Duration) {
+// check runs one health round for this replica: verify which index
+// versions it serves with Info (each one's checksum must equal what the
+// coordinator expects for that version and partition), then read its
+// serving status. A passing check after the minimum ejection time
+// reinstates an ejected replica.
+func (r *replica) check(ctx context.Context, expect func(version uint64, p uint32) (uint32, bool), nParts uint32,
+	now func() time.Time, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	verified, problem := false, ""
+	served, problem := map[uint64]bool{}, ""
 	info, err := r.shard.Info(ctx, &landmarkv1.InfoRequest{})
 	switch {
 	case err != nil:
@@ -94,11 +116,27 @@ func (r *replica) check(ctx context.Context, wantCRC uint32, nParts uint32, now 
 	case info.GetPartitionId() != r.partition || info.GetNPartitions() != nParts:
 		problem = fmt.Sprintf("serves partition %d of %d, want %d of %d",
 			info.GetPartitionId(), info.GetNPartitions(), r.partition, nParts)
-	case info.GetSegmentCrc32C() != wantCRC:
-		problem = fmt.Sprintf("segment crc32c %08x, want %08x", info.GetSegmentCrc32C(), wantCRC)
 	default:
-		verified = true
+		versions := info.GetVersions()
+		if len(versions) == 0 { // a shard from before versions: its one segment
+			versions = []*landmarkv1.ServedVersion{{Checksum: info.GetSegmentCrc32C()}}
+		}
+		for _, sv := range versions {
+			want, ok := expect(sv.GetVersion(), r.partition)
+			switch {
+			case !ok:
+				problem = fmt.Sprintf("serves index version %d, unknown here", sv.GetVersion())
+			case sv.GetChecksum() != want:
+				problem = fmt.Sprintf("version %d checksum %08x, want %08x", sv.GetVersion(), sv.GetChecksum(), want)
+			default:
+				served[sv.GetVersion()] = true
+			}
+		}
+		if len(served) > 0 {
+			problem = "" // a version it can serve correctly is enough
+		}
 	}
+	verified := len(served) > 0
 
 	healthy := false
 	if verified {
@@ -112,7 +150,7 @@ func (r *replica) check(ctx context.Context, wantCRC uint32, nParts uint32, now 
 	}
 
 	r.mu.Lock()
-	r.verified, r.healthy = verified, healthy
+	r.served, r.healthy = served, healthy
 	if healthy && r.ejected && !now().Before(r.ejectedUntil) {
 		r.ejected, r.consecFails = false, 0
 	}

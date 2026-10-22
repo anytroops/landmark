@@ -62,6 +62,7 @@ const (
 	overloaded
 	wrongPartition
 	wrongCRC
+	movedOn // no longer holds the version a search is pinned to (D42)
 )
 
 // testShard wraps a real shard.Server with injectable faults.
@@ -86,6 +87,8 @@ func (s *testShard) Search(ctx context.Context, req *landmarkv1.SearchRequest) (
 		return nil, status.Error(codes.Unavailable, "injected failure")
 	case overloaded:
 		return nil, status.Error(codes.ResourceExhausted, "injected overload")
+	case movedOn:
+		return nil, status.Errorf(codes.FailedPrecondition, "index version %d is not served here", req.GetManifestVersion())
 	}
 	resp, err := s.real.Search(ctx, req)
 	if err == nil && mode(s.mode.Load()) == wrongPartition {
@@ -98,6 +101,9 @@ func (s *testShard) Info(ctx context.Context, req *landmarkv1.InfoRequest) (*lan
 	info, err := s.real.Info(ctx, req)
 	if err == nil && mode(s.mode.Load()) == wrongCRC {
 		info.SegmentCrc32C ^= 1
+		for _, v := range info.GetVersions() {
+			v.Checksum ^= 1
+		}
 	}
 	return info, err
 }

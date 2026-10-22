@@ -46,25 +46,43 @@ var fileName = regexp.MustCompile(`^manifest-(\d{8})\.json$`)
 // Name is the file name of version v.
 func Name(v uint64) string { return fmt.Sprintf("manifest-%08d.json", v) }
 
-// Latest returns the newest version in dir, or version 1 synthesized from
-// index.json if dir has no manifest.
-func Latest(dir string) (Manifest, error) {
+// Versions lists the published versions in dir, ascending; an index
+// without manifests has version 1 only.
+func Versions(dir string) ([]uint64, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("manifest: %w", err)
+		return nil, fmt.Errorf("manifest: %w", err)
 	}
-	var best uint64
-	for _, e := range entries {
+	var out []uint64
+	for _, e := range entries { // ReadDir sorts by name, and names are zero-padded
 		if m := fileName.FindStringSubmatch(e.Name()); m != nil {
-			if v, _ := strconv.ParseUint(m[1], 10, 64); v > best {
-				best = v
-			}
+			v, _ := strconv.ParseUint(m[1], 10, 64)
+			out = append(out, v)
 		}
 	}
-	if best == 0 {
+	if len(out) == 0 {
+		return []uint64{1}, nil
+	}
+	return out, nil
+}
+
+// Get returns version v: its manifest file, or for version 1 of an index
+// without manifests, the version synthesized from index.json.
+func Get(dir string, v uint64) (Manifest, error) {
+	m, err := Read(dir, v)
+	if v == 1 && errors.Is(err, os.ErrNotExist) {
 		return fromIndexJSON(dir)
 	}
-	return Read(dir, best)
+	return m, err
+}
+
+// Latest returns the newest version in dir.
+func Latest(dir string) (Manifest, error) {
+	vs, err := Versions(dir)
+	if err != nil {
+		return Manifest{}, err
+	}
+	return Get(dir, vs[len(vs)-1])
 }
 
 // Read returns version v.
