@@ -19,7 +19,8 @@ DJ-set tracklisting is done (hybrid matcher D36, pruned B2 D37). Sean's roadmap 
 - 2026-10-21 to 22: head-to-head harness (D41; audfprint and Panako installed, indexed, clip queries answered by all four systems); adding songs while serving built (D42: segment sets, manifests, shard version swaps, version-pinned coordinator, ingest -add/-merge, catalog per version, load harness); D43 picked.
 
 ## Next
-- Head-to-head: finish tuning (audfprint density, Panako time filter on val), test passes for the chosen settings, DJ-mix windows for both tools through the same decoder, cost on AC power (`python -m eval.h2h cost`), write-up in EVAL; then remove the tools (D41).
+- See docs/handoffs/2026-10-22.md for exact commands.
+- Head-to-head: tuning done (audfprint 80, Panako 15 on val; Panako 10 optional), test passes and DJ windows done; score DJ mixes with the merged calibrations, cost on AC power, write-up in EVAL; then remove the tools (D41).
 - Adding songs under load (AC power, idle machine): `python -m bench.scripts.live_writes --batches 10 --batch-size 100 --rate 200`.
 - DJ analysis (D43): gain curves, tempo and BPM, `tracklist -analyze`.
 - Live monitoring measurements that need AC power: `bench.scripts.live realtime`: real-time stations per machine (window lag p99 under the 2.5 s hop, no unanswered windows), real-time detection delay, and a worker `kill -9` (audio lost, time to the new holder's first event, repeats, stale appends refused).
