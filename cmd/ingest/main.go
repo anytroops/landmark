@@ -5,6 +5,11 @@
 // (same as the Python prototype). Partition = dense mod P (D2). Decode
 // failures are logged, counted, and skipped.
 //
+// -add list.tsv adds songs to the index in -out while it serves, as the
+// next index version (D42): one delta segment per partition that receives
+// songs, then the version's catalog and its manifest. -merge folds every
+// partition's deltas into a new base segment as the next version.
+//
 // -extra adds audio files that are not FMA tracks (e.g. a DJ-mix benchmark's
 // reference songs), listed one per line as name<TAB>path. They follow the
 // manifest's tracks in dense order (or stand alone with -manifest ""), get
@@ -73,6 +78,8 @@ func main() {
 	flag.StringVar(&enc, "encoding", "varint", "postings encoding: varint or fixed")
 	flag.StringVar(&kind, "fingerprint", "pairs", "landmarks: pairs, or triplets (tempo-invariant, D33)")
 	flag.IntVar(&cfg.workers, "workers", runtime.NumCPU(), "decode+fingerprint goroutines")
+	add := flag.String("add", "", "add these songs (name<TAB>path lines) to the index in -out as its next version (D42)")
+	merge := flag.Bool("merge", false, "merge the index in -out's delta segments into new bases (D42)")
 	flag.Parse()
 	for _, f := range strings.Split(*parts, ",") {
 		p, err := strconv.Atoi(strings.TrimSpace(f))
@@ -103,7 +110,16 @@ func main() {
 	// Ctrl-C cancels the context, which kills in-flight ffmpeg processes.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	if err := run(ctx, cfg); err != nil {
+	var err error
+	switch {
+	case *add != "":
+		err = addSongs(ctx, cfg, cfg.out, *add)
+	case *merge:
+		err = mergeDeltas(cfg.out, cfg.encoding)
+	default:
+		err = run(ctx, cfg)
+	}
+	if err != nil {
 		fatal("ingest failed", "err", err)
 	}
 }
