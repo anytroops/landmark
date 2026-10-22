@@ -1,6 +1,7 @@
-// Package catalog reads an index's catalog.json (written by cmd/ingest):
-// each dense track id's FMA id and duplicate cluster, plus display names of
-// non-FMA tracks from extras.json beside it.
+// Package catalog reads an index's catalog (written by cmd/ingest): each
+// dense track id's FMA id and duplicate cluster, plus display names of
+// non-FMA tracks. An index with songs added while serving (D42) has one
+// catalog per version, named by its manifest; Load reads the newest.
 package catalog
 
 import (
@@ -8,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/anytroops/landmark/internal/manifest"
 )
 
 // Track is one entry of catalog.json.
@@ -23,14 +26,27 @@ type Catalog struct {
 	extras map[int]string // FMA id -> name, for tracks not from FMA
 }
 
-// Load reads dir/catalog.json and, if present, dir/extras.json.
+// files names the newest version's catalog and extras in dir (catalog.json
+// and extras.json for an index without manifests).
+func files(dir string) (catalogFile, extrasFile string) {
+	if m, err := manifest.Latest(dir); err == nil && m.Catalog != "" {
+		return m.Catalog, m.Extras
+	}
+	return "catalog.json", "extras.json"
+}
+
+// Load reads the newest version's catalog in dir.
 func Load(dir string) (*Catalog, error) {
-	tracks, err := readTracks(dir)
+	catalogFile, extrasFile := files(dir)
+	tracks, err := readTracksFile(filepath.Join(dir, catalogFile))
 	if err != nil {
 		return nil, err
 	}
 	c := &Catalog{Tracks: tracks, extras: map[int]string{}}
-	if b, err := os.ReadFile(filepath.Join(dir, "extras.json")); err == nil {
+	if extrasFile == "" {
+		return c, nil
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, extrasFile)); err == nil {
 		var ex []struct {
 			FMAID int    `json:"fma_id"`
 			Name  string `json:"name"`
@@ -46,13 +62,18 @@ func Load(dir string) (*Catalog, error) {
 }
 
 func readTracks(dir string) ([]Track, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "catalog.json"))
+	catalogFile, _ := files(dir)
+	return readTracksFile(filepath.Join(dir, catalogFile))
+}
+
+func readTracksFile(path string) ([]Track, error) {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read catalog: %w", err)
 	}
 	var tracks []Track
 	if err := json.Unmarshal(b, &tracks); err != nil {
-		return nil, fmt.Errorf("parse %s catalog: %w", dir, err)
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return tracks, nil
 }
@@ -77,8 +98,8 @@ func (c *Catalog) Cluster(dense uint32) uint32 {
 	return dense
 }
 
-// Same checks that two indexes number the same tracks the same way, so
-// their answers can be combined.
+// Same checks that two indexes' newest catalogs number the same tracks the
+// same way, so their answers can be combined.
 func Same(a, b string) error {
 	ca, err := readTracks(a)
 	if err != nil {

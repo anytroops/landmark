@@ -50,3 +50,19 @@ func TestSame(t *testing.T) {
 		t.Error("missing catalog: want an error")
 	}
 }
+
+func TestLoadReadsTheNewestVersion(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "catalog.json", `[{"dense":0,"fma_id":2,"cluster":0}]`)
+	write(t, dir, "catalog-00000002.json", `[{"dense":0,"fma_id":2,"cluster":0},{"dense":1,"fma_id":-1,"cluster":1}]`)
+	write(t, dir, "extras-00000002.json", `[{"fma_id":-1,"name":"Added Song"}]`)
+	write(t, dir, "manifest-00000002.json", `{"version":2,"n_partitions":1,"n_tracks":2,"partitions":[[]],`+
+		`"catalog":"catalog-00000002.json","extras":"extras-00000002.json"}`)
+	c, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Tracks) != 2 || c.Name(1) != "Added Song" {
+		t.Fatalf("tracks %d, name %q", len(c.Tracks), c.Name(1))
+	}
+}
