@@ -6,6 +6,7 @@ A distributed audio fingerprinting and identification service in Go, in the styl
 
 - **Identify:** landmark (constellation) hashing, a document-partitioned index of mmap'd immutable segments, and a gRPC coordinator that scatter-gathers each query across replicated shards with deadlines, retries, and replica ejection.
 - **Tracklist DJ mixes:** a tempo-invariant triplet fingerprint (hashes built from time and pitch ratios that a tempo change cannot move), a matcher that fits each match's speed and offset, and sequence decoding into a tracklist.
+- **Add songs while serving:** new songs go into small immutable delta segments published as a new index version (a manifest); replicas swap versions without a restart, and the coordinator pins every query to one version so an answer never mixes catalogs.
 - **Monitor live streams:** workers lease streams from a registry by heartbeat and report songs as they play; leases carry epochs (fencing tokens), so a worker that lost its stream cannot log next to its replacement, and the online decoder reports exactly what offline tracklisting would.
 
 Every component has a Python reference and a Go implementation tested for parity against it (bit-exact for the triplet matcher). Every number below traces to a committed run.
@@ -18,6 +19,8 @@ Every component has a Python reference and a Go implementation tested for parity
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
 | DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
+| Adding songs while serving (D42) | Built: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`. Measurement under load: in progress |
+| Head-to-head against audfprint and Panako (D41) | Running: clip identification done for every system at default settings; tuning, DJ mixes, and cost in progress |
 | Live stream monitoring (D38-D40) | Built: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes. Real-time capacity and failover: in progress |
 
 ## Architecture
@@ -100,7 +103,14 @@ bin/monitor -registry 127.0.0.1:7700 -capacity 8 \
     -pairs-coordinator 127.0.0.1:7600 -pairs-index data/segments/medium
 ```
 
-Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
+To add songs to a serving index, run its shards with `-index <dir> -partition <p>` (they follow its newest version) and:
+
+```bash
+bin/ingest -out data/segments/medium -add new_songs.tsv   # name<TAB>path per line; publishes the next version
+bin/ingest -out data/segments/medium -merge               # fold delta segments into new bases
+```
+
+Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list; add songs; merge), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
 
 ## Data
 

@@ -16,7 +16,12 @@ DJ-set tracklisting is done (hybrid matcher D36, pruned B2 D37). Sean's roadmap 
 
 - 2026-10-21, live monitoring built (D38-D40): online decoder (equal to offline, unit-tested), shared hybrid window search, streaming audio, registry (leases, epochs, fenced appends, event logs, subscriptions), worker, test stream server, harness and scorer. Live output equals `cmd/tracklist` and the eval decode on all 96 set044 mixes (268/285 songs, precision 97.8%); stream-time detection delay median 12.5 s.
 
+- 2026-10-21 to 22: head-to-head harness (D41; audfprint and Panako installed, indexed, clip queries answered by all four systems); adding songs while serving built (D42: segment sets, manifests, shard version swaps, version-pinned coordinator, ingest -add/-merge, catalog per version, load harness); D43 picked.
+
 ## Next
+- Head-to-head: finish tuning (audfprint density, Panako time filter on val), test passes for the chosen settings, DJ-mix windows for both tools through the same decoder, cost on AC power (`python -m eval.h2h cost`), write-up in EVAL; then remove the tools (D41).
+- Adding songs under load (AC power, idle machine): `python -m bench.scripts.live_writes --batches 10 --batch-size 100 --rate 200`.
+- DJ analysis (D43): gain curves, tempo and BPM, `tracklist -analyze`.
 - Live monitoring measurements that need AC power: `bench.scripts.live realtime`: real-time stations per machine (window lag p99 under the 2.5 s hop, no unanswered windows), real-time detection delay, and a worker `kill -9` (audio lost, time to the new holder's first event, repeats, stale appends refused).
 - Roadmap items 2 to 4: design drafts written (`docs/design/head-to-head.md`, `live-writes.md`, `dj-analysis.md`); waiting for Sean's picks. Item 2 also needs approval to install audfprint and Panako (Java).
 - When the DJ work is finished: delete fma_medium, UnmixDB, the medium indexes, data/queries.

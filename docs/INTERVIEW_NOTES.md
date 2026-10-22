@@ -53,3 +53,8 @@ After each core component: 3 interview-style questions and Sean's answers.
 1. A worker pauses for 30 s (a long GC pause or a frozen VM), its lease expires, another worker takes the stream, then the first one wakes up and tries to append. Walk through exactly what stops it, and why "check the lease before appending" on the worker alone would not be enough.
 2. Why does the registry store the epoch before replying to the heartbeat that granted it, but not store the leases themselves? What does it do after a restart, and why wait one TTL?
 3. The online decoder never retracts an event, yet its output equals the offline decoder's. What makes that possible, and what would you have to give up to report songs sooner than 12.5 s?
+
+### Adding songs while serving (D42)
+1. Two replicas of a partition swap to version 7 a second apart, and a query arrives in that second. Walk through how the coordinator keeps the answer from mixing versions, and what happens if the replica it picked swaps again before the search runs.
+2. A shard swaps versions while 30 searches are reading the old segment files through mmap. Why can't it just close the old files, and how does it know when it can?
+3. The merge rewrites a partition's whole base to fold in a few small deltas. What does that cost as the catalog grows, and how would an LSM tree's tiered or leveled compaction change it?
