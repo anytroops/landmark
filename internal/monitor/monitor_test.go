@@ -151,7 +151,7 @@ func config(s *scripted, heartbeat time.Duration) Config {
 // logged waits until the stream's log holds n events and returns them.
 func logged(t *testing.T, client landmarkv1.RegistryServiceClient, n int) []*landmarkv1.Event {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute) // a wait, not a bound: fingerprinting slows on a busy machine
 	defer cancel()
 	sub, err := client.Subscribe(ctx, &landmarkv1.SubscribeRequest{})
 	if err != nil {
@@ -230,7 +230,9 @@ func abs(x float64) float64 {
 // TestWorkerStopsWhenFenced: once another worker holds the stream, the
 // first one's next append is refused and it stops the stream.
 func TestWorkerStopsWhenFenced(t *testing.T) {
-	r, c, client := setup(t, 30*time.Second, 40)
+	// One heartbeat only (at start): a later one would also stop the stream,
+	// before a slow machine gets to the refused append this test is about.
+	r, c, client := setup(t, 10*time.Minute, 40)
 	release := make(chan struct{})
 	s := &scripted{tracks: []int{5, 5, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}}
 	s.gate = func(_ context.Context, n int) {
@@ -238,7 +240,7 @@ func TestWorkerStopsWhenFenced(t *testing.T) {
 			<-release // hold the fourth window until the takeover
 		}
 	}
-	w, err := New(config(s, 10*time.Second), client, nil) // no renewal during the test
+	w, err := New(config(s, 5*time.Minute), client, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,13 +251,13 @@ func TestWorkerStopsWhenFenced(t *testing.T) {
 	if e := logged(t, client, 1)[0]; e.GetKind() != landmarkv1.EventKind_EVENT_KIND_START || e.GetEpoch() != 1 {
 		t.Fatalf("first event %+v", e)
 	}
-	c.advance(time.Minute) // w1's lease expires; w2 takes the stream
+	c.advance(11 * time.Minute) // w1's lease expires; w2 takes the stream
 	resp, err := r.Heartbeat(context.Background(), &landmarkv1.HeartbeatRequest{WorkerId: "w2", Capacity: 1})
 	if err != nil || len(resp.GetLeases()) != 1 || resp.GetLeases()[0].GetEpoch() != 2 {
 		t.Fatalf("takeover: %v, %v", resp, err)
 	}
 	close(release)
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(2 * time.Minute)
 	for testutil.ToFloat64(w.m.fenced) < 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("worker never fenced")
