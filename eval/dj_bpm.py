@@ -16,7 +16,7 @@ mix's speed factor for that song.
 import argparse
 import csv
 import json
-from multiprocessing import Pool
+import multiprocessing
 from pathlib import Path
 
 import librosa
@@ -67,7 +67,8 @@ def main() -> None:
     labels = labeled_bpm()
     songs = json.loads(args.songs.read_text())
     dense = sorted({s["track"] for s in songs if s["track"] in refs})
-    with Pool(args.workers) as pool:
+    # spawn, not fork: forked workers deadlocked once librosa's threads had started
+    with multiprocessing.get_context("spawn").Pool(args.workers) as pool:
         est = dict(zip(dense, pool.map(estimate, [refs[d]["path"] for d in dense]), strict=True))
 
     ref_rows = []
