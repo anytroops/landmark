@@ -76,7 +76,7 @@ func TestOpenLoop(t *testing.T) {
 	queries := []Query{{Expected: -1, Landmarks: []fingerprint.Landmark{{Hash: 1}}}}
 	reqs := []*landmarkv1.IdentifyRequest{{Hashes: []uint32{1}, Times: []uint32{0}}}
 	start := time.Now()
-	recs, _ := schedule(cfg, queries, reqs, []landmarkv1.CoordinatorServiceClient{landmarkv1.NewCoordinatorServiceClient(conn)})
+	recs, _, _ := schedule(cfg, queries, reqs, []landmarkv1.CoordinatorServiceClient{landmarkv1.NewCoordinatorServiceClient(conn)})
 	if len(recs) != 100 {
 		t.Fatalf("scheduled %d requests, want 100", len(recs))
 	}

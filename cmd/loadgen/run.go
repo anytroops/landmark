@@ -96,7 +96,7 @@ func runCmd(args []string) error {
 		clients[i] = landmarkv1.NewCoordinatorServiceClient(conn)
 	}
 
-	records, event := schedule(cfg, queries, reqs, clients)
+	records, event, start := schedule(cfg, queries, reqs, clients)
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		return err
 	}
@@ -105,6 +105,7 @@ func runCmd(args []string) error {
 	}
 	sum := summarize(cfg, records)
 	sum.Event = event
+	sum.StartUnix = float64(start.UnixNano()) / 1e9
 	b, err := json.MarshalIndent(sum, "", "  ")
 	if err != nil {
 		return err
@@ -148,7 +149,9 @@ func identifyRequest(q Query) *landmarkv1.IdentifyRequest {
 	return r
 }
 
-func schedule(cfg runConfig, queries []Query, reqs []*landmarkv1.IdentifyRequest, clients []landmarkv1.CoordinatorServiceClient) ([]record, *eventResult) {
+// schedule sends every request on time and returns the records, the event
+// injected (if any), and the wall time at which due times count from.
+func schedule(cfg runConfig, queries []Query, reqs []*landmarkv1.IdentifyRequest, clients []landmarkv1.CoordinatorServiceClient) ([]record, *eventResult, time.Time) {
 	rng := rand.New(rand.NewPCG(cfg.Seed, 7))
 	total := cfg.Warmup + cfg.Duration
 	var dues []time.Duration
@@ -218,7 +221,7 @@ func schedule(cfg runConfig, queries []Query, reqs []*landmarkv1.IdentifyRequest
 	}
 	wg.Wait()
 	<-eventDone
-	return records, event
+	return records, event, start
 }
 
 type stats struct {
@@ -248,6 +251,9 @@ type summary struct {
 	Timeline []bucket          `json:"timeline"` // 1 s buckets over the whole run
 	Event    *eventResult      `json:"event,omitempty"`
 	Note     string            `json:"note"`
+	// Wall time (Unix seconds) that due_ms in requests.csv.gz counts from,
+	// to line requests up with outside events.
+	StartUnix float64 `json:"start_unix"`
 }
 
 // computeStats summarizes recs. Percentiles cover every sent request,
