@@ -29,12 +29,24 @@ message SearchRequest {
   // span t_k - t_i and the anchor band. Empty for pair landmarks.
   bytes spans = 5;
   bytes bands = 6;
+  // Index version to search (D42); 0: whichever the shard serves now. A
+  // shard that no longer holds the version answers FAILED_PRECONDITION.
+  uint64 manifest_version = 7;
 }
 
 message SearchResponse {
   repeated Candidate candidates = 1;
   uint32 partition_id = 2;
   uint64 postings_scanned = 3;
+  // The index version that answered.
+  uint64 manifest_version = 4;
+}
+
+// ServedVersion is an index version a shard can search, and its content
+// checksum for this partition (D26, D42).
+message ServedVersion {
+  uint64 version = 1;
+  fixed32 checksum = 2;
 }
 
 message InfoRequest {}
@@ -50,6 +62,10 @@ message InfoResponse {
   // CRC-32C footer of the segment file: its content identity.
   fixed32 segment_crc32c = 6;
   uint32 format_version = 7;
+  // Versions this shard can search, newest first: the current one and,
+  // while its searches drain, the one before (D42). segment_crc32c is the
+  // current version's checksum.
+  repeated ServedVersion versions = 8;
 }
 
 service ShardService {
@@ -74,6 +90,9 @@ message IdentifyResponse {
   bool partial = 3;
   uint32 partitions_responded = 4;
   uint32 partitions_total = 5;
+  // The index version every partition answered from (D42): read track ids
+  // with that version's catalog.
+  uint64 index_version = 6;
 }
 
 service CoordinatorService {

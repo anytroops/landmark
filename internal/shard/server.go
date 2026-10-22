@@ -1,4 +1,8 @@
-// Package shard serves Search over one immutable segment (one partition).
+// Package shard serves Search over one partition: an immutable segment, or
+// a manifest version's segment set (a base and its deltas, D42) that Swap
+// replaces with a newer version while searches run. It keeps the version
+// before the current one until its searches drain and a newer one replaces
+// it, so a coordinator can pin every partition of a query to one version.
 //
 // The segment's version picks the matcher: version 1 (pair landmarks) uses
 // offset voting, version 2 (triplet landmarks, D34) the tempo-invariant
@@ -16,7 +20,10 @@ package shard
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,34 +56,159 @@ type worker struct {
 	triplets *match.TripletMatcher
 }
 
+// Content is what a shard searches: a segment set with its index version
+// and the partition's content checksum for that version (D26, D42).
+type Content struct {
+	Set      *segment.Set
+	Version  uint64
+	Checksum uint32
+}
+
+// Single wraps one segment as version 0, identified by its own CRC: a
+// shard started on a segment file rather than a manifest.
+func Single(seg *segment.Segment) (Content, error) {
+	set, err := segment.NewSet([]*segment.Segment{seg})
+	if err != nil {
+		return Content{}, err
+	}
+	return Content{Set: set, Checksum: seg.Checksum()}, nil
+}
+
+// view is one served Content and the searches using it. A view is retired
+// when a newer one replaces it and closed once retired with no searches.
+type view struct {
+	Content
+	mu      sync.Mutex
+	refs    int
+	retired bool
+	closed  bool
+}
+
+func (v *view) release() {
+	v.mu.Lock()
+	v.refs--
+	done := v.retired && v.refs == 0 && !v.closed
+	v.closed = v.closed || done
+	v.mu.Unlock()
+	if done {
+		_ = v.Set.Close()
+	}
+}
+
+func (v *view) retire() {
+	v.mu.Lock()
+	v.retired = true
+	done := v.refs == 0 && !v.closed
+	v.closed = v.closed || done
+	v.mu.Unlock()
+	if done {
+		_ = v.Set.Close()
+	}
+}
+
 // Server implements landmarkv1.ShardServiceServer.
 type Server struct {
 	landmarkv1.UnimplementedShardServiceServer
-	seg     *segment.Segment
 	cfg     Config
 	pool    chan *worker
 	metrics *metrics
+	aux     bool   // triplet landmarks: fixed for the server's life
+	part    uint32 // partition and partition count: fixed too
+	nParts  uint32
+
+	swapMu   sync.Mutex // serializes Swap
+	cur      atomic.Pointer[view]
+	previous atomic.Pointer[view] // the version before cur, until replaced
 }
 
-// New returns a Server over seg. Metrics are registered on reg.
-func New(seg *segment.Segment, cfg Config, reg prometheus.Registerer) (*Server, error) {
+// New returns a Server over c. Metrics are registered on reg.
+func New(c Content, cfg Config, reg prometheus.Registerer) (*Server, error) {
 	if cfg.Workers < 1 || cfg.MaxQueueWait <= 0 {
 		return nil, errors.New("shard: Workers must be >= 1 and MaxQueueWait > 0")
 	}
+	aux := c.Set.HasAux()
 	pool := make(chan *worker, cfg.Workers)
 	for range cfg.Workers {
-		if seg.HasAux() {
+		if aux {
 			pool <- &worker{triplets: match.NewTripletMatcher()}
 		} else {
 			pool <- &worker{pairs: &match.Matcher{}}
 		}
 	}
-	partition, _ := seg.Partition()
+	partition, nParts := c.Set.Partition()
 	m, err := newMetrics(reg, partition)
 	if err != nil {
 		return nil, err
 	}
-	return &Server{seg: seg, cfg: cfg, pool: pool, metrics: m}, nil
+	s := &Server{cfg: cfg, pool: pool, metrics: m, aux: aux, part: partition, nParts: nParts}
+	s.cur.Store(&view{Content: c})
+	m.version.Set(float64(c.Version))
+	return s, nil
+}
+
+// Swap makes c the current content. Searches already running finish on the
+// content they started with; the previous current version stays searchable
+// (by version) until the next Swap, and each retired version is closed once
+// its last search ends. c must be the same partition and landmark kind, at a
+// newer version.
+func (s *Server) Swap(c Content) error {
+	s.swapMu.Lock()
+	defer s.swapMu.Unlock()
+	part, nParts := c.Set.Partition()
+	cur := s.cur.Load()
+	switch {
+	case part != s.part || nParts != s.nParts:
+		return fmt.Errorf("shard: swap to partition %d of %d, serving %d of %d", part, nParts, s.part, s.nParts)
+	case c.Set.HasAux() != s.aux:
+		return errors.New("shard: swap to another landmark kind")
+	case c.Version <= cur.Version:
+		return fmt.Errorf("shard: swap to version %d, serving %d", c.Version, cur.Version)
+	}
+	s.cur.Store(&view{Content: c})
+	if old := s.previous.Swap(cur); old != nil {
+		old.retire()
+	}
+	s.metrics.version.Set(float64(c.Version))
+	return nil
+}
+
+// Version is the current content's index version.
+func (s *Server) Version() uint64 { return s.cur.Load().Version }
+
+// Close retires every view (closing each once its searches end).
+func (s *Server) Close() {
+	s.swapMu.Lock()
+	defer s.swapMu.Unlock()
+	if v := s.previous.Swap(nil); v != nil {
+		v.retire()
+	}
+	s.cur.Load().retire()
+}
+
+// hold returns the view serving version (0: the current one) with a
+// reference taken, or nil if this shard does not hold that version. Swap
+// never retires the current view (it becomes the previous one), so a
+// retired current view means the server is closed.
+func (s *Server) hold(version uint64) *view {
+	for _, p := range []*atomic.Pointer[view]{&s.cur, &s.previous} {
+		v := p.Load()
+		if v == nil || (version != 0 && v.Version != version) {
+			continue
+		}
+		v.mu.Lock()
+		ok := !v.retired
+		if ok {
+			v.refs++
+		}
+		v.mu.Unlock()
+		if ok {
+			return v
+		}
+		if version == 0 {
+			return nil
+		}
+	}
+	return nil
 }
 
 // Search scores this partition's tracks against the query landmarks and
@@ -91,7 +223,7 @@ func (s *Server) Search(ctx context.Context, req *landmarkv1.SearchRequest) (*la
 func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, start time.Time) (*landmarkv1.SearchResponse, error) {
 	topK := int(req.GetTopK())
 	hashes, times, spans, bands := req.GetHashes(), req.GetTimes(), req.GetSpans(), req.GetBands()
-	triplets := s.seg.HasAux()
+	triplets := s.aux
 	switch {
 	case len(hashes) != len(times):
 		return nil, status.Errorf(codes.InvalidArgument, "%d hashes but %d times", len(hashes), len(times))
@@ -110,6 +242,12 @@ func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, star
 		topK = DefaultTopK
 	}
 
+	v := s.hold(req.GetManifestVersion())
+	if v == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "index version %d is not served here", req.GetManifestVersion())
+	}
+	defer v.release()
+
 	w, err := s.acquire(ctx)
 	s.metrics.queueWait.Observe(time.Since(start).Seconds())
 	if err != nil {
@@ -117,12 +255,11 @@ func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, star
 	}
 	defer func() { s.pool <- w }()
 
-	partition, _ := s.seg.Partition()
-	out := &landmarkv1.SearchResponse{PartitionId: partition}
+	out := &landmarkv1.SearchResponse{PartitionId: s.part, ManifestVersion: v.Version}
 	if triplets {
-		err = s.searchTriplets(w.triplets, req, topK, out)
+		err = s.searchTriplets(v.Set, w.triplets, req, topK, out)
 	} else {
-		err = s.searchPairs(w.pairs, req, topK, out)
+		err = s.searchPairs(v.Set, w.pairs, req, topK, out)
 	}
 	if err != nil {
 		// Only a corrupt segment gets here; it passed validation at load, so
@@ -133,13 +270,13 @@ func (s *Server) search(ctx context.Context, req *landmarkv1.SearchRequest, star
 	return out, nil
 }
 
-func (s *Server) searchPairs(m *match.Matcher, req *landmarkv1.SearchRequest, topK int, out *landmarkv1.SearchResponse) error {
+func (s *Server) searchPairs(set *segment.Set, m *match.Matcher, req *landmarkv1.SearchRequest, topK int, out *landmarkv1.SearchResponse) error {
 	hashes, times := req.GetHashes(), req.GetTimes()
 	query := make([]fingerprint.Landmark, len(hashes))
 	for i := range hashes {
 		query[i] = fingerprint.Landmark{Hash: hashes[i], T: times[i]}
 	}
-	res, err := m.Search(s.seg, query, topK)
+	res, err := m.Search(set, query, topK)
 	if err != nil {
 		return err
 	}
@@ -147,7 +284,7 @@ func (s *Server) searchPairs(m *match.Matcher, req *landmarkv1.SearchRequest, to
 	out.Candidates = make([]*landmarkv1.Candidate, len(res.Candidates))
 	for i, c := range res.Candidates {
 		out.Candidates[i] = &landmarkv1.Candidate{
-			TrackId: s.seg.GlobalTrack(c.Track),
+			TrackId: set.GlobalTrack(c.Track),
 			Score:   c.Score,
 			Offset:  c.Offset,
 		}
@@ -155,13 +292,13 @@ func (s *Server) searchPairs(m *match.Matcher, req *landmarkv1.SearchRequest, to
 	return nil
 }
 
-func (s *Server) searchTriplets(m *match.TripletMatcher, req *landmarkv1.SearchRequest, topK int, out *landmarkv1.SearchResponse) error {
+func (s *Server) searchTriplets(set *segment.Set, m *match.TripletMatcher, req *landmarkv1.SearchRequest, topK int, out *landmarkv1.SearchResponse) error {
 	hashes, times, spans, bands := req.GetHashes(), req.GetTimes(), req.GetSpans(), req.GetBands()
 	query := make([]triplet.Landmark, len(hashes))
 	for i := range hashes {
 		query[i] = triplet.Landmark{Hash: hashes[i], T: times[i], Span: spans[i], Band: bands[i]}
 	}
-	res, err := m.Search(s.seg, query, topK)
+	res, err := m.Search(set, query, topK)
 	if err != nil {
 		return err
 	}
@@ -169,7 +306,7 @@ func (s *Server) searchTriplets(m *match.TripletMatcher, req *landmarkv1.SearchR
 	out.Candidates = make([]*landmarkv1.Candidate, len(res.Candidates))
 	for i, c := range res.Candidates {
 		out.Candidates[i] = &landmarkv1.Candidate{
-			TrackId: s.seg.GlobalTrack(c.Track),
+			TrackId: set.GlobalTrack(c.Track),
 			Score:   c.Score,
 			Offset:  roundFrames(c.Offset),
 			Scale:   float32(c.Scale),
@@ -183,19 +320,37 @@ func roundFrames(x float64) int32 {
 	return int32(max(min(math.Round(x), math.MaxInt32), math.MinInt32))
 }
 
-// Info reports which segment this shard serves. It does not take a worker,
-// so it answers even when the shard is saturated.
+// Info reports what this shard serves: the current content and every
+// version it can search. It does not take a worker, so it answers even
+// when the shard is saturated.
 func (s *Server) Info(context.Context, *landmarkv1.InfoRequest) (*landmarkv1.InfoResponse, error) {
-	partition, nParts := s.seg.Partition()
-	return &landmarkv1.InfoResponse{
-		PartitionId:   partition,
-		NPartitions:   nParts,
-		NTracks:       s.seg.NTracks(),
-		NKeys:         uint64(s.seg.NKeys()),
-		NPostings:     s.seg.NPostings(),
-		SegmentCrc32C: s.seg.Checksum(),
-		FormatVersion: uint32(s.seg.Version()),
-	}, nil
+	cur := s.hold(0)
+	if cur == nil {
+		return nil, status.Error(codes.Unavailable, "shard closed")
+	}
+	defer cur.release()
+	resp := &landmarkv1.InfoResponse{
+		PartitionId:   s.part,
+		NPartitions:   s.nParts,
+		NTracks:       cur.Set.NTracks(),
+		NKeys:         cur.Set.NKeys(),
+		NPostings:     cur.Set.NPostings(),
+		SegmentCrc32C: cur.Checksum,
+		FormatVersion: uint32(cur.Set.Version()),
+		Versions:      []*landmarkv1.ServedVersion{{Version: cur.Version, Checksum: cur.Checksum}},
+	}
+	if prev := s.hold(s.previousVersion()); prev != nil && prev != cur {
+		resp.Versions = append(resp.Versions, &landmarkv1.ServedVersion{Version: prev.Version, Checksum: prev.Checksum})
+		prev.release()
+	}
+	return resp, nil
+}
+
+func (s *Server) previousVersion() uint64 {
+	if v := s.previous.Load(); v != nil {
+		return v.Version
+	}
+	return ^uint64(0) // no version has this number
 }
 
 // acquire takes a worker, waiting at most until ctx ends or MaxQueueWait.

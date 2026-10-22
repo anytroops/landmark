@@ -63,9 +63,19 @@ func startServer(t *testing.T, srv *Server) landmarkv1.ShardServiceClient {
 	return landmarkv1.NewShardServiceClient(conn)
 }
 
+// single serves seg as version 0, as a shard started with -segment does.
+func single(t *testing.T, seg *segment.Segment) Content {
+	t.Helper()
+	c, err := Single(seg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
 func newServer(t *testing.T, cfg Config) *Server {
 	t.Helper()
-	srv, err := New(testSegment(t), cfg, prometheus.NewRegistry())
+	srv, err := New(single(t, testSegment(t)), cfg, prometheus.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +203,7 @@ func TestInfoReportsSegmentIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if info.GetPartitionId() != 1 || info.GetNPartitions() != 2 || info.GetNTracks() != 4 ||
-		info.GetNPostings() != 25 || info.GetSegmentCrc32C() != srv.seg.Checksum() || info.GetFormatVersion() != 1 {
+		info.GetNPostings() != 25 || info.GetSegmentCrc32C() != srv.cur.Load().Checksum || info.GetFormatVersion() != 1 {
 		t.Fatalf("Info = %v", info)
 	}
 }
@@ -216,7 +226,7 @@ func tripletServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = seg.Close() })
-	srv, err := New(seg, Config{Workers: 2, MaxQueueWait: time.Second}, prometheus.NewRegistry())
+	srv, err := New(single(t, seg), Config{Workers: 2, MaxQueueWait: time.Second}, prometheus.NewRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}

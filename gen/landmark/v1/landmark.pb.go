@@ -104,10 +104,13 @@ type SearchRequest struct {
 	Times  []uint32               `protobuf:"varint,4,rep,packed,name=times,proto3" json:"times,omitempty"`
 	// Triplet landmarks (D31 B2, D33) also carry, one byte per landmark, the
 	// span t_k - t_i and the anchor band. Empty for pair landmarks.
-	Spans         []byte `protobuf:"bytes,5,opt,name=spans,proto3" json:"spans,omitempty"`
-	Bands         []byte `protobuf:"bytes,6,opt,name=bands,proto3" json:"bands,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Spans []byte `protobuf:"bytes,5,opt,name=spans,proto3" json:"spans,omitempty"`
+	Bands []byte `protobuf:"bytes,6,opt,name=bands,proto3" json:"bands,omitempty"`
+	// Index version to search (D42); 0: whichever the shard serves now. A
+	// shard that no longer holds the version answers FAILED_PRECONDITION.
+	ManifestVersion uint64 `protobuf:"varint,7,opt,name=manifest_version,json=manifestVersion,proto3" json:"manifest_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SearchRequest) Reset() {
@@ -175,11 +178,20 @@ func (x *SearchRequest) GetBands() []byte {
 	return nil
 }
 
+func (x *SearchRequest) GetManifestVersion() uint64 {
+	if x != nil {
+		return x.ManifestVersion
+	}
+	return 0
+}
+
 type SearchResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Candidates      []*Candidate           `protobuf:"bytes,1,rep,name=candidates,proto3" json:"candidates,omitempty"`
 	PartitionId     uint32                 `protobuf:"varint,2,opt,name=partition_id,json=partitionId,proto3" json:"partition_id,omitempty"`
 	PostingsScanned uint64                 `protobuf:"varint,3,opt,name=postings_scanned,json=postingsScanned,proto3" json:"postings_scanned,omitempty"`
+	// The index version that answered.
+	ManifestVersion uint64 `protobuf:"varint,4,opt,name=manifest_version,json=manifestVersion,proto3" json:"manifest_version,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -235,6 +247,67 @@ func (x *SearchResponse) GetPostingsScanned() uint64 {
 	return 0
 }
 
+func (x *SearchResponse) GetManifestVersion() uint64 {
+	if x != nil {
+		return x.ManifestVersion
+	}
+	return 0
+}
+
+// ServedVersion is an index version a shard can search, and its content
+// checksum for this partition (D26, D42).
+type ServedVersion struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       uint64                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	Checksum      uint32                 `protobuf:"fixed32,2,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServedVersion) Reset() {
+	*x = ServedVersion{}
+	mi := &file_landmark_v1_landmark_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServedVersion) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServedVersion) ProtoMessage() {}
+
+func (x *ServedVersion) ProtoReflect() protoreflect.Message {
+	mi := &file_landmark_v1_landmark_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServedVersion.ProtoReflect.Descriptor instead.
+func (*ServedVersion) Descriptor() ([]byte, []int) {
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ServedVersion) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ServedVersion) GetChecksum() uint32 {
+	if x != nil {
+		return x.Checksum
+	}
+	return 0
+}
+
 type InfoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -243,7 +316,7 @@ type InfoRequest struct {
 
 func (x *InfoRequest) Reset() {
 	*x = InfoRequest{}
-	mi := &file_landmark_v1_landmark_proto_msgTypes[3]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +328,7 @@ func (x *InfoRequest) String() string {
 func (*InfoRequest) ProtoMessage() {}
 
 func (x *InfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_landmark_v1_landmark_proto_msgTypes[3]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,7 +341,7 @@ func (x *InfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InfoRequest.ProtoReflect.Descriptor instead.
 func (*InfoRequest) Descriptor() ([]byte, []int) {
-	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{3}
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{4}
 }
 
 // InfoResponse identifies the segment a shard serves, so the coordinator can
@@ -283,13 +356,17 @@ type InfoResponse struct {
 	// CRC-32C footer of the segment file: its content identity.
 	SegmentCrc32C uint32 `protobuf:"fixed32,6,opt,name=segment_crc32c,json=segmentCrc32c,proto3" json:"segment_crc32c,omitempty"`
 	FormatVersion uint32 `protobuf:"varint,7,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	// Versions this shard can search, newest first: the current one and,
+	// while its searches drain, the one before (D42). segment_crc32c is the
+	// current version's checksum.
+	Versions      []*ServedVersion `protobuf:"bytes,8,rep,name=versions,proto3" json:"versions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InfoResponse) Reset() {
 	*x = InfoResponse{}
-	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -301,7 +378,7 @@ func (x *InfoResponse) String() string {
 func (*InfoResponse) ProtoMessage() {}
 
 func (x *InfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_landmark_v1_landmark_proto_msgTypes[4]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -314,7 +391,7 @@ func (x *InfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InfoResponse.ProtoReflect.Descriptor instead.
 func (*InfoResponse) Descriptor() ([]byte, []int) {
-	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{4}
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *InfoResponse) GetPartitionId() uint32 {
@@ -366,6 +443,13 @@ func (x *InfoResponse) GetFormatVersion() uint32 {
 	return 0
 }
 
+func (x *InfoResponse) GetVersions() []*ServedVersion {
+	if x != nil {
+		return x.Versions
+	}
+	return nil
+}
+
 type IdentifyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TopK          uint32                 `protobuf:"varint,2,opt,name=top_k,json=topK,proto3" json:"top_k,omitempty"`
@@ -379,7 +463,7 @@ type IdentifyRequest struct {
 
 func (x *IdentifyRequest) Reset() {
 	*x = IdentifyRequest{}
-	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -391,7 +475,7 @@ func (x *IdentifyRequest) String() string {
 func (*IdentifyRequest) ProtoMessage() {}
 
 func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_landmark_v1_landmark_proto_msgTypes[5]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -404,7 +488,7 @@ func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifyRequest.ProtoReflect.Descriptor instead.
 func (*IdentifyRequest) Descriptor() ([]byte, []int) {
-	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{5}
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *IdentifyRequest) GetTopK() uint32 {
@@ -450,13 +534,16 @@ type IdentifyResponse struct {
 	Partial             bool   `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`
 	PartitionsResponded uint32 `protobuf:"varint,4,opt,name=partitions_responded,json=partitionsResponded,proto3" json:"partitions_responded,omitempty"`
 	PartitionsTotal     uint32 `protobuf:"varint,5,opt,name=partitions_total,json=partitionsTotal,proto3" json:"partitions_total,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// The index version every partition answered from (D42): read track ids
+	// with that version's catalog.
+	IndexVersion  uint64 `protobuf:"varint,6,opt,name=index_version,json=indexVersion,proto3" json:"index_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *IdentifyResponse) Reset() {
 	*x = IdentifyResponse{}
-	mi := &file_landmark_v1_landmark_proto_msgTypes[6]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -468,7 +555,7 @@ func (x *IdentifyResponse) String() string {
 func (*IdentifyResponse) ProtoMessage() {}
 
 func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_landmark_v1_landmark_proto_msgTypes[6]
+	mi := &file_landmark_v1_landmark_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -481,7 +568,7 @@ func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifyResponse.ProtoReflect.Descriptor instead.
 func (*IdentifyResponse) Descriptor() ([]byte, []int) {
-	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{6}
+	return file_landmark_v1_landmark_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *IdentifyResponse) GetCandidates() []*Candidate {
@@ -519,6 +606,13 @@ func (x *IdentifyResponse) GetPartitionsTotal() uint32 {
 	return 0
 }
 
+func (x *IdentifyResponse) GetIndexVersion() uint64 {
+	if x != nil {
+		return x.IndexVersion
+	}
+	return 0
+}
+
 var File_landmark_v1_landmark_proto protoreflect.FileDescriptor
 
 const file_landmark_v1_landmark_proto_rawDesc = "" +
@@ -528,20 +622,25 @@ const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"\btrack_id\x18\x01 \x01(\rR\atrackId\x12\x14\n" +
 	"\x05score\x18\x02 \x01(\rR\x05score\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x14\n" +
-	"\x05scale\x18\x04 \x01(\x02R\x05scale\"\x8f\x01\n" +
+	"\x05scale\x18\x04 \x01(\x02R\x05scale\"\xba\x01\n" +
 	"\rSearchRequest\x12\x13\n" +
 	"\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n" +
 	"\x06hashes\x18\x03 \x03(\aR\x06hashes\x12\x14\n" +
 	"\x05times\x18\x04 \x03(\rR\x05times\x12\x14\n" +
 	"\x05spans\x18\x05 \x01(\fR\x05spans\x12\x14\n" +
-	"\x05bands\x18\x06 \x01(\fR\x05bandsJ\x04\b\x01\x10\x02R\tlandmarks\"\x96\x01\n" +
+	"\x05bands\x18\x06 \x01(\fR\x05bands\x12)\n" +
+	"\x10manifest_version\x18\a \x01(\x04R\x0fmanifestVersionJ\x04\b\x01\x10\x02R\tlandmarks\"\xc1\x01\n" +
 	"\x0eSearchResponse\x126\n" +
 	"\n" +
 	"candidates\x18\x01 \x03(\v2\x16.landmark.v1.CandidateR\n" +
 	"candidates\x12!\n" +
 	"\fpartition_id\x18\x02 \x01(\rR\vpartitionId\x12)\n" +
-	"\x10postings_scanned\x18\x03 \x01(\x04R\x0fpostingsScanned\"\r\n" +
-	"\vInfoRequest\"\xf3\x01\n" +
+	"\x10postings_scanned\x18\x03 \x01(\x04R\x0fpostingsScanned\x12)\n" +
+	"\x10manifest_version\x18\x04 \x01(\x04R\x0fmanifestVersion\"E\n" +
+	"\rServedVersion\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\x04R\aversion\x12\x1a\n" +
+	"\bchecksum\x18\x02 \x01(\aR\bchecksum\"\r\n" +
+	"\vInfoRequest\"\xab\x02\n" +
 	"\fInfoResponse\x12!\n" +
 	"\fpartition_id\x18\x01 \x01(\rR\vpartitionId\x12!\n" +
 	"\fn_partitions\x18\x02 \x01(\rR\vnPartitions\x12\x19\n" +
@@ -550,13 +649,14 @@ const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"\n" +
 	"n_postings\x18\x05 \x01(\x04R\tnPostings\x12%\n" +
 	"\x0esegment_crc32c\x18\x06 \x01(\aR\rsegmentCrc32c\x12%\n" +
-	"\x0eformat_version\x18\a \x01(\rR\rformatVersion\"\x91\x01\n" +
+	"\x0eformat_version\x18\a \x01(\rR\rformatVersion\x126\n" +
+	"\bversions\x18\b \x03(\v2\x1a.landmark.v1.ServedVersionR\bversions\"\x91\x01\n" +
 	"\x0fIdentifyRequest\x12\x13\n" +
 	"\x05top_k\x18\x02 \x01(\rR\x04topK\x12\x16\n" +
 	"\x06hashes\x18\x03 \x03(\aR\x06hashes\x12\x14\n" +
 	"\x05times\x18\x04 \x03(\rR\x05times\x12\x14\n" +
 	"\x05spans\x18\x05 \x01(\fR\x05spans\x12\x14\n" +
-	"\x05bands\x18\x06 \x01(\fR\x05bandsJ\x04\b\x01\x10\x02R\tlandmarks\"\xdc\x01\n" +
+	"\x05bands\x18\x06 \x01(\fR\x05bandsJ\x04\b\x01\x10\x02R\tlandmarks\"\x81\x02\n" +
 	"\x10IdentifyResponse\x126\n" +
 	"\n" +
 	"candidates\x18\x01 \x03(\v2\x16.landmark.v1.CandidateR\n" +
@@ -564,7 +664,8 @@ const file_landmark_v1_landmark_proto_rawDesc = "" +
 	"\amatched\x18\x02 \x01(\bR\amatched\x12\x18\n" +
 	"\apartial\x18\x03 \x01(\bR\apartial\x121\n" +
 	"\x14partitions_responded\x18\x04 \x01(\rR\x13partitionsResponded\x12)\n" +
-	"\x10partitions_total\x18\x05 \x01(\rR\x0fpartitionsTotal2\x8e\x01\n" +
+	"\x10partitions_total\x18\x05 \x01(\rR\x0fpartitionsTotal\x12#\n" +
+	"\rindex_version\x18\x06 \x01(\x04R\findexVersion2\x8e\x01\n" +
 	"\fShardService\x12A\n" +
 	"\x06Search\x12\x1a.landmark.v1.SearchRequest\x1a\x1b.landmark.v1.SearchResponse\x12;\n" +
 	"\x04Info\x12\x18.landmark.v1.InfoRequest\x1a\x19.landmark.v1.InfoResponse2]\n" +
@@ -583,30 +684,32 @@ func file_landmark_v1_landmark_proto_rawDescGZIP() []byte {
 	return file_landmark_v1_landmark_proto_rawDescData
 }
 
-var file_landmark_v1_landmark_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_landmark_v1_landmark_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_landmark_v1_landmark_proto_goTypes = []any{
 	(*Candidate)(nil),        // 0: landmark.v1.Candidate
 	(*SearchRequest)(nil),    // 1: landmark.v1.SearchRequest
 	(*SearchResponse)(nil),   // 2: landmark.v1.SearchResponse
-	(*InfoRequest)(nil),      // 3: landmark.v1.InfoRequest
-	(*InfoResponse)(nil),     // 4: landmark.v1.InfoResponse
-	(*IdentifyRequest)(nil),  // 5: landmark.v1.IdentifyRequest
-	(*IdentifyResponse)(nil), // 6: landmark.v1.IdentifyResponse
+	(*ServedVersion)(nil),    // 3: landmark.v1.ServedVersion
+	(*InfoRequest)(nil),      // 4: landmark.v1.InfoRequest
+	(*InfoResponse)(nil),     // 5: landmark.v1.InfoResponse
+	(*IdentifyRequest)(nil),  // 6: landmark.v1.IdentifyRequest
+	(*IdentifyResponse)(nil), // 7: landmark.v1.IdentifyResponse
 }
 var file_landmark_v1_landmark_proto_depIdxs = []int32{
 	0, // 0: landmark.v1.SearchResponse.candidates:type_name -> landmark.v1.Candidate
-	0, // 1: landmark.v1.IdentifyResponse.candidates:type_name -> landmark.v1.Candidate
-	1, // 2: landmark.v1.ShardService.Search:input_type -> landmark.v1.SearchRequest
-	3, // 3: landmark.v1.ShardService.Info:input_type -> landmark.v1.InfoRequest
-	5, // 4: landmark.v1.CoordinatorService.Identify:input_type -> landmark.v1.IdentifyRequest
-	2, // 5: landmark.v1.ShardService.Search:output_type -> landmark.v1.SearchResponse
-	4, // 6: landmark.v1.ShardService.Info:output_type -> landmark.v1.InfoResponse
-	6, // 7: landmark.v1.CoordinatorService.Identify:output_type -> landmark.v1.IdentifyResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 1: landmark.v1.InfoResponse.versions:type_name -> landmark.v1.ServedVersion
+	0, // 2: landmark.v1.IdentifyResponse.candidates:type_name -> landmark.v1.Candidate
+	1, // 3: landmark.v1.ShardService.Search:input_type -> landmark.v1.SearchRequest
+	4, // 4: landmark.v1.ShardService.Info:input_type -> landmark.v1.InfoRequest
+	6, // 5: landmark.v1.CoordinatorService.Identify:input_type -> landmark.v1.IdentifyRequest
+	2, // 6: landmark.v1.ShardService.Search:output_type -> landmark.v1.SearchResponse
+	5, // 7: landmark.v1.ShardService.Info:output_type -> landmark.v1.InfoResponse
+	7, // 8: landmark.v1.CoordinatorService.Identify:output_type -> landmark.v1.IdentifyResponse
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_landmark_v1_landmark_proto_init() }
@@ -620,7 +723,7 @@ func file_landmark_v1_landmark_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_landmark_v1_landmark_proto_rawDesc), len(file_landmark_v1_landmark_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

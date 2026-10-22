@@ -12,6 +12,7 @@ type metrics struct {
 	latency   *prometheus.HistogramVec // by gRPC status code
 	queueWait prometheus.Histogram
 	postings  prometheus.Histogram
+	version   prometheus.Gauge // index version served (D42)
 }
 
 func newMetrics(reg prometheus.Registerer, partition uint32) (*metrics, error) {
@@ -31,8 +32,12 @@ func newMetrics(reg prometheus.Registerer, partition uint32) (*metrics, error) {
 			Name: "landmark_shard_postings_scanned", Help: "Postings visited per search.",
 			Buckets: prometheus.ExponentialBuckets(1000, 2, 14), ConstLabels: labels,
 		}),
+		version: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "landmark_shard_index_version", Help: "Index version served (D42; 0: a single segment file).",
+			ConstLabels: labels,
+		}),
 	}
-	for _, c := range []prometheus.Collector{m.latency, m.queueWait, m.postings} {
+	for _, c := range []prometheus.Collector{m.latency, m.queueWait, m.postings, m.version} {
 		if err := reg.Register(c); err != nil {
 			return nil, fmt.Errorf("shard: register metrics: %w", err)
 		}

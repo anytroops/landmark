@@ -171,7 +171,11 @@ func newTestClusterWith(t *testing.T, tRatio float64, opts Options, configure fu
 		t.Cleanup(func() { _ = seg.Close() })
 		crcs[p] = seg.Checksum()
 		for k := range 2 {
-			srv, err := shard.New(seg, shard.Config{Workers: 4, MaxQueueWait: time.Second}, prometheus.NewRegistry())
+			content, err := shard.Single(seg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv, err := shard.New(content, shard.Config{Workers: 4, MaxQueueWait: time.Second}, prometheus.NewRegistry())
 			if err != nil {
 				t.Fatal(err)
 			}
