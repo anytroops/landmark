@@ -54,6 +54,16 @@ Recommendation: (a). Content-addressed immutable files plus a version number is 
 
 Recommendation: (a) first, with the drift measured (postings scanned per query as songs are added), then (b) if the drift matters.
 
+## Design as built (D42)
+
+- **Ids.** New songs take the next global dense ids (D19: partition = id mod P, local id = id / P), so a partition's new songs continue its local numbering. A delta segment stores local ids like any segment; its header's track count is the partition's id range so far (base plus every earlier delta plus its own), because readers check that postings stay inside it.
+- **Search over a set.** A shard serves a segment set: its base and deltas, searched as one source whose postings for a hash are each segment's postings in turn. Votes are sorted before counting, so the order does not matter: a set must answer exactly as one segment holding the same postings, which is tested on the golden queries for both matchers.
+- **Manifests.** Each partition directory holds `manifest-<version>.json`: the version, and the segment files with their CRC-32C and track counts, written atomically. A shard loads the newest manifest at start, checks every listed CRC, polls for a newer one, opens it, switches searches to it atomically, and closes the old set once its searches drain. Info reports the manifest version and a checksum over the listed CRCs.
+- **Coordinator.** A replica serves one version; the coordinator answers each query from replicas of a single version (the newest one that every partition has a verified replica of), so an answer never mixes catalogs. A replica behind it is skipped until it catches up.
+- **Adding.** `ingest add` fingerprints new files, assigns the next ids, writes one delta per partition that received songs, then manifests at version N+1 for every partition, then the extended catalog. Readers ignore a manifest until every file it lists exists with its CRC.
+- **Merging.** `ingest merge` folds a partition's base and deltas into a new base and publishes it as the next version; results are identical by the set property above.
+- **Stop list (W3).** Frozen at its ingest-time counts; drift measured as postings scanned per query while songs are added.
+
 ## How to show it works
 
 - Add 1,000 fma_medium tracks held out of the index in batches while load runs at a fixed rate: p99 latency and errors during adds and merges, time from add to identifiable, accuracy on the new tracks equal to tracks present from the start.
