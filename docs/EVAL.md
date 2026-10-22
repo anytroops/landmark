@@ -259,6 +259,25 @@ Streams are decoded as audio arrives, cut into 10 s windows every 2.5 s, searche
 - **Detection delay, stream time.** A start event is decided when its entry's first window and one more are in: 12.5 s after that window starts. From each found song's true transition (the middle of the crossfade into it) to that point: median 12.5 s, p10 8.2 s, p90 14.9 s, max 31.0 s over the 268 songs (`delay.json`, `python -m eval.live_score --equiv`). In real time the searches' lag comes on top.
 - **Real time, capacity, failover:** [TBD] (`bench.scripts.live realtime`; needs AC power).
 
+## DJ mix analysis: gain curves (D43, Python prototype)
+
+How each song was faded in and out, not only which songs played. For each tracklisted song, its reference is warped onto the mix by its triplet alignment (reference time = a + rate x mix time; and a pitch shift of 36 log2(rate) bands when the fit says turntable rather than keylock), and per spectrogram frame the mix's band powers are split into non-negative gains of the songs playing there. Each fade is read off the gain curve by fitting a linear ramp. Checked against UnmixDB's labels (linear crossfades, per its README). `eval/dj_analysis.py`; results `eval/results/dj_analysis/`.
+
+- **Method chosen on the calibration sets** (set222, set275, 393 songs): the ramp fit over 10%/90% crossings, for steadier tails; a band-edge bug (a pitch shift zeroed the 55 Hz band, so turntable never won) was found and fixed there. Development started on set044, a test set, before moving to the calibration sets; the choices were made on calibration data.
+- **Test sets** (set044, set123, set230, set281; 1,058 songs; scored once). Median error of each fade edge, against the window decoder alone (a song's fade-in spans its entry's first 10 s window, its fade-out the last):
+
+| Fade edge | Gain curves | Window decoder |
+|---|---|---|
+| Fade-in start | 0.77 s | 2.62 s |
+| Fade-in end | 1.80 s | 4.80 s |
+| Fade-out start | 1.53 s | 2.88 s |
+| Fade-out end | 1.63 s | 2.18 s |
+
+- The tails are mixed: the 90th percentile is better than the window decoder for fade-ins (7.7 and 6.7 s against 10.1 and 12.5 s) and worse for fade-outs (8.1 and 9.1 s against 6.8 and 5.7 s).
+- Gain-curve error against the labeled ramp, inside fades: median 0.28 (gain 0 to 1). By effect: 0.08 with no effect, 0.16 with the bass swap, 0.41 and 0.39 with the compressor and distortion, which change the sound non-linearly, so the additive power model fits worse.
+- Turntable vs keylock (songs changed by more than 2%): right for 88.5% (no effect 100%, bass swap 95.5%, compressor 93.8%, distortion 86.4%).
+- Limitations: needs the reference audio; effects beyond gain are outside the model; fades are read as linear ramps (UnmixDB's are). BPM (D43 A2) and the Go command (A3) are not built yet.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.
