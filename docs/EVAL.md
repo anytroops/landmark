@@ -275,7 +275,7 @@ How each song was faded in and out, not only which songs played. For each trackl
 
 - The tails are mixed: the 90th percentile is better than the window decoder for fade-ins (7.7 and 6.7 s against 10.1 and 12.5 s) and worse for fade-outs (8.1 and 9.1 s against 6.8 and 5.7 s).
 - Gain-curve error against the labeled ramp, inside fades: median 0.28 (gain 0 to 1). By effect: 0.08 with no effect, 0.16 with the bass swap, 0.41 and 0.39 with the compressor and distortion, which change the sound non-linearly, so the additive power model fits worse.
-- Turntable vs keylock (songs changed by more than 2%): right for 88.5% (no effect 100%, bass swap 95.5%, compressor 93.8%, distortion 86.4%).
+- Turntable vs keylock: right for 94.7% of the 225 songs changed by more than 2% (no effect 100%, bass swap 95.5%, compressor 93.8%, distortion 86.4%), and 88.5% of the 338 changed by more than 0.5%, where the pitch shift is under a third of a band.
 - Limitations: needs the reference audio; effects beyond gain are outside the model; fades are read as linear ramps (UnmixDB's are). BPM (D43 A2) and the Go command (A3) are not built yet.
 
 ## Go system parity (Phase 2 done criterion)
