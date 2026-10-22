@@ -445,6 +445,89 @@ def mixes(args: argparse.Namespace) -> None:
              "rate": RATE, "windows": len(w)}, indent=1) + "\n")  # fmt: skip
 
 
+# Cost ---------------------------------------------------------------------
+
+
+def cost(args: argparse.Namespace) -> None:
+    """Index build on the same subset of references, and query time on one
+    core, for every system; needs AC power, not charging (as benchmarks).
+    Build cost is compared in CPU seconds per track (Panako runs on fewer
+    threads: its native transform crashed under 12). Query time excludes
+    loading the database or starting the JVM: each tool also answers a
+    single query, and that run's wall time is subtracted."""
+    from bench.scripts.benchcluster import battery, cluster, require_ac_power
+
+    require_ac_power()
+    out = WORK / "cost"
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    pairs = [x.split("\t") for x in (WORK / "refs.tsv").read_text().splitlines()[: args.tracks]]
+    (out / "refs.txt").write_text("".join(path + "\n" for path, _ in pairs))
+    (out / "extras.tsv").write_text("".join(f"{rid}\t{path}\n" for path, rid in pairs))
+    result: dict = {"tracks": len(pairs), "power_before": battery()}
+    cores = os.cpu_count() or 1
+    builds = {}
+    for kind in ("pairs", "triplets"):
+        dest = out / f"landmark_{kind}"
+        cmd = [str(ROOT / "bin" / "ingest"), "-manifest", "", "-extra", str(out / "extras.tsv"),
+               "-fingerprint", kind, "-out", str(dest)]  # fmt: skip
+        builds[f"landmark_{kind}"] = {**timed(cmd, out / f"ingest_{kind}.log"), "dest": dest,
+                                      "cores": cores}  # fmt: skip
+    afp = out / "audfprint.pklz"
+    cmd = [str(AUDFPRINT_PY), str(AUDFPRINT), "new", "--dbase", str(afp), "--density",
+           str(args.density), "--ncores", str(cores), "--list", str(out / "refs.txt")]  # fmt: skip
+    builds[f"audfprint:{args.density:g}"] = {**timed(cmd, out / "audfprint_new.log"), "dest": afp,
+                                             "cores": cores}  # fmt: skip
+    conf = panako_conf(args.time_filter, args.panako_cores)
+    conf[1] = f"PANAKO_LMDB_FOLDER={out / 'panako'}"
+    conf[2] = f"PANAKO_CACHE_FOLDER={out / 'panako_cache'}"
+    (out / "panako").mkdir()
+    builds[f"panako:{args.time_filter}"] = {
+        **timed(panako("store", *conf, str(out / "refs.txt")), out / "panako_store.log"),
+        "dest": out / "panako", "cores": args.panako_cores,
+    }  # fmt: skip
+    for b in builds.values():
+        b["bytes"] = du(b.pop("dest"))
+        b["cpu_ms_per_track"] = round(1000 * b["cpu_s"] / len(pairs), 1)
+        b["bytes_per_track"] = round(b["bytes"] / len(pairs))
+    result["build"] = builds
+
+    # Query time on one core: clean test positives against the full indexes.
+    d, made = make_queries("test", "clean_10s", 8)
+    files = [r["file"] for r in made if "error" not in r and r["label"] == "pos"][: args.queries]
+    (d / "one.txt").write_text(files[0] + "\n")
+    (d / "list.txt").write_text("".join(f + "\n" for f in files))
+    runs = {}
+    db = audfprint_db(args.density)
+    for name, lst in (("one", d / "one.txt"), ("many", d / "list.txt")):
+        cmd = [str(AUDFPRINT_PY), str(AUDFPRINT), "match", "--dbase", str(db),
+               "--density", str(args.density), "--ncores", "1", "--list", str(lst)]  # fmt: skip
+        runs[f"audfprint_{name}"] = timed(cmd, d / f"audfprint_{name}.log")
+        cmd = panako("query", *panako_conf(args.time_filter, 1), *lst.read_text().split())
+        runs[f"panako_{name}"] = timed(cmd, d / f"panako_{name}.log")
+
+    def per_query(tool: str) -> float:
+        return (runs[f"{tool}_many"]["wall_s"] - runs[f"{tool}_one"]["wall_s"]) / (len(files) - 1)
+
+    secs = {f"audfprint:{args.density:g}": per_query("audfprint"),
+            f"panako:{args.time_filter}": per_query("panako")}  # fmt: skip
+    with (  # one matcher per shard: one core per search
+        cluster(INDEX, 1, 10000, 1, base_port=8200, stop_fraction=0.04) as (pc, _),
+        cluster(B2_INDEX, 1, 10000, 1, base_port=8300, stop_fraction=0.04) as (bc, _),
+    ):
+        lm = run_landmark(d, 1, pc, bc)
+    for system, g in lm.groupby("system"):
+        secs[system] = float((g["decode_ms"] + g["fp_ms"] + g["search_ms"]).median()) / 1000
+    result["query_s_per_clip_one_core"] = {k: round(v, 4) for k, v in secs.items()}
+    result["query_runs"] = runs
+    result["power_after"] = battery()
+    shutil.rmtree(d)
+    RES.mkdir(parents=True, exist_ok=True)
+    (RES / "costs.json").write_text(json.dumps(result, indent=1) + "\n")
+    print(json.dumps(result, indent=1))
+
+
 # Scoring ------------------------------------------------------------------
 
 
@@ -542,11 +625,17 @@ def main() -> None:
     x.add_argument("--batch", type=int, default=24, help="mixes cut into windows at once")
     x.add_argument("--workers", type=int, default=8)
     x.add_argument("--cores", type=int, default=os.cpu_count())
+    k = sub.add_parser("cost")
+    k.add_argument("--tracks", type=int, default=2000)
+    k.add_argument("--queries", type=int, default=200)
+    k.add_argument("--density", type=float, required=True, help="audfprint, as chosen on val")
+    k.add_argument("--time-filter", type=int, required=True, help="Panako, as chosen on val")
+    k.add_argument("--panako-cores", type=int, default=4)
     s = sub.add_parser("score")
     s.add_argument("--systems", nargs="+", required=True)
     args = ap.parse_args()
     {"refs": refs, "index-audfprint": index_audfprint, "index-panako": index_panako, "clips": clips,
-     "mixes": mixes, "score": score}[args.cmd](args)  # fmt: skip
+     "mixes": mixes, "cost": cost, "score": score}[args.cmd](args)  # fmt: skip
 
 
 if __name__ == "__main__":
