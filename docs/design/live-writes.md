@@ -1,6 +1,6 @@
 # Design: adding songs while serving
 
-Status: draft, 2026-10-21. Decisions marked **DECIDE** need Sean's pick. Roadmap item 3.
+Status: decided 2026-10-22 (D42: W1 (a), W2 (a), W3 (a)); not started. Roadmap item 3.
 
 ## Goal
 
@@ -17,7 +17,7 @@ Live writes break the last two assumptions: replicas change, so they can differ,
 
 ## W1. Where new postings live
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Delta segments | (b) In-memory delta plus write-ahead log | (c) Rebuild and swap |
 |---|---|---|---|
@@ -31,7 +31,7 @@ Recommendation: (a). It keeps every segment immutable and verifiable by CRC, mak
 
 ## W2. Keeping replicas consistent
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Versioned manifests | (b) Primary per partition with log shipping | (c) Consensus (Raft) per partition |
 |---|---|---|---|
@@ -44,7 +44,7 @@ Recommendation: (a). Content-addressed immutable files plus a version number is 
 
 ## W3. Global state: the stop list and track ids
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Freeze the stop list; extend ids | (b) Recompute at merges |
 |---|---|---|

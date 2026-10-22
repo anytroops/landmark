@@ -1,6 +1,6 @@
 # Design: DJ mix analysis
 
-Status: draft, 2026-10-21. Decisions marked **DECIDE** need Sean's pick. Roadmap item 4.
+Status: decided 2026-10-22 (D43: A1 (c), A2 (b), A3 (a)); not started. Roadmap item 4.
 
 ## Goal
 
@@ -14,7 +14,7 @@ Go past "which songs, when" to "how it was mixed": for each transition, when the
 
 ## A1. Transitions and overlaps
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) From window answers | (b) Fine re-search near transitions | (c) Gain curves from the reference audio |
 |---|---|---|---|
@@ -28,7 +28,7 @@ Recommendation: (c), with (a) as the baseline it must beat. It is the only optio
 
 ## A2. Tempo curve
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Relative tempo | (b) Relative tempo plus BPM |
 |---|---|---|
@@ -41,7 +41,7 @@ Recommendation: (b): BPM is how DJs talk about a set; the relative factor alone 
 
 ## A3. Where it appears
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) `cmd/tracklist -analyze` | (b) Also live events |
 |---|---|---|

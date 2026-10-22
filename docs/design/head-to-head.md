@@ -1,6 +1,6 @@
 # Design: head-to-head against open-source fingerprinters
 
-Status: draft, 2026-10-21. Decisions marked **DECIDE** need Sean's pick. Roadmap item 2 (after live monitoring).
+Status: decided 2026-10-21 (D41: H1 (c), H2 (a), H3 (b)); running. Roadmap item 2 (after live monitoring).
 
 ## Goal
 
@@ -16,7 +16,7 @@ Installing either is a download: audfprint is a pip install from GitHub (small);
 
 ## H1. What to compare
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Clip identification only | (b) Clips and DJ mixes | (c) Clips, DJ mixes, and cost |
 |---|---|---|---|
@@ -29,7 +29,7 @@ Recommendation: (c). Accuracy without cost invites the obvious objection (a slow
 
 ## H2. Catalog
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Full fma_medium (25k tracks) | (b) A 3,000-track subset |
 |---|---|---|
@@ -41,7 +41,7 @@ Recommendation: (a), with (b) as the fallback if a tool cannot index 25k tracks 
 
 ## H3. Settings
 
-**DECIDE: pick one.**
+**Decided (see the status line).**
 
 | | (a) Defaults | (b) Defaults plus one tuned setting each |
 |---|---|---|
