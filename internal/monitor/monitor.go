@@ -276,18 +276,21 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *a
 	fp := hybrid.NewFingerprinters()
 	quick := 0 // live connections in a row that ended before their first window
 	for src != nil {
-		n, err := w.decode(ctx, id, src, base, dec, a, fp)
+		n, dropped, err := w.decode(ctx, id, src, base, dec, a, fp)
 		_ = src.Close()
 		if ctx.Err() != nil {
 			return nil
 		}
-		if !isLive(url) {
-			if err != nil {
-				return err
-			}
-			break
+		if err != nil { // fenced, or the decoder refused a window
+			return err
 		}
-		slog.Warn("live source dropped, joining again", "stream", id, "err", err, "windows", n)
+		if !isLive(url) {
+			if dropped != nil {
+				return dropped
+			}
+			break // read to its end
+		}
+		slog.Warn("live source dropped, joining again", "stream", id, "err", dropped, "windows", n)
 		if n > 0 {
 			quick = 0
 		} else { // a server that accepts and drops at once must not be hammered
@@ -374,16 +377,16 @@ func (w *Worker) decoder(open *landmarkv1.Event, base float64) (*tracklist.Onlin
 }
 
 // decode searches the source's windows and feeds them to dec, appending
-// its events, until the source ends (nil) or fails. It returns how many
-// windows it decoded.
+// its events, until the source ends or fails, and returns how many windows
+// it decoded and the source's error (nil at its end). err is any other
+// failure: the decoder refusing a window, or an append (fenced).
 func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base float64, dec *tracklist.Online,
-	a *appender, fp *hybrid.Fingerprinters) (int, error) {
+	a *appender, fp *hybrid.Fingerprinters) (n int, dropped, err error) {
 	ctx, cancel := context.WithCancel(ctx) // ends the reader on an early return
 	defer cancel()
 	windows := make(chan window, 64)
 	readErr := make(chan error, 1)
 	go func() { readErr <- w.readWindows(ctx, src, windows) }()
-	n := 0
 	for win := range windows {
 		rows := w.search(ctx, id, win, fp)
 		if ctx.Err() != nil {
@@ -391,14 +394,14 @@ func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base 
 		}
 		ev, err := dec.Push(rows)
 		if err != nil {
-			return n, err
+			return n, nil, err
 		}
 		n++
 		if err := a.send(ctx, w.events(ev, base)); err != nil {
-			return n, err
+			return n, nil, err
 		}
 	}
-	return n, <-readErr
+	return n, <-readErr, nil
 }
 
 // readWindows cuts the source into windows and sends them in order; it

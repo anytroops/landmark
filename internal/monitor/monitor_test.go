@@ -248,48 +248,71 @@ func abs(x float64) float64 {
 }
 
 // TestWorkerStopsWhenFenced: once another worker holds the stream, the
-// first one's next append is refused and it stops the stream.
+// first one's next append is refused and it stops the stream, for a file
+// and for a live source (which must not take the refusal for a drop and
+// join the source again).
 func TestWorkerStopsWhenFenced(t *testing.T) {
-	// One heartbeat only (at start): a later one would also stop the stream,
-	// before a slow machine gets to the refused append this test is about.
-	r, c, client := setup(t, 10*time.Minute, 40)
-	release := make(chan struct{})
-	s := &scripted{tracks: []int{5, 5, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}}
-	s.gate = func(_ context.Context, n int) {
-		if n == 3 {
-			<-release // hold the fourth window until the takeover
-		}
+	for _, live := range []bool{false, true} {
+		t.Run(map[bool]string{false: "file", true: "live"}[live], func(t *testing.T) {
+			// One heartbeat only (at start): a later one would also stop the
+			// stream, before a slow machine gets to the refused append this
+			// test is about.
+			wav := noiseWAV(t, 40)
+			url := wav
+			var st *station
+			if live {
+				pcm, err := audio.Decode(context.Background(), wav, audio.SampleRate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				st = &station{replies: []reply{{start: 1000, pcm: pcm}}}
+				srv := httptest.NewServer(st)
+				defer srv.Close()
+				url = srv.URL + "/stream/s1"
+			}
+			r, c, client := setupURL(t, 10*time.Minute, url)
+			release := make(chan struct{})
+			s := &scripted{tracks: []int{5, 5, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}}
+			s.gate = func(_ context.Context, n int) {
+				if n == 3 {
+					<-release // hold the fourth window until the takeover
+				}
+			}
+			w, err := New(config(s, 5*time.Minute), client, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- w.Run(ctx) }()
+			if e := logged(t, client, 1)[0]; e.GetKind() != landmarkv1.EventKind_EVENT_KIND_START || e.GetEpoch() != 1 {
+				t.Fatalf("first event %+v", e)
+			}
+			c.advance(11 * time.Minute) // w1's lease expires; w2 takes the stream
+			resp, err := r.Heartbeat(context.Background(), &landmarkv1.HeartbeatRequest{WorkerId: "w2", Capacity: 1})
+			if err != nil || len(resp.GetLeases()) != 1 || resp.GetLeases()[0].GetEpoch() != 2 {
+				t.Fatalf("takeover: %v, %v", resp, err)
+			}
+			close(release)
+			deadline := time.Now().Add(2 * time.Minute)
+			for testutil.ToFloat64(w.m.fenced) < 1 {
+				if time.Now().After(deadline) {
+					t.Fatal("worker never fenced")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			list, err := r.ListStreams(context.Background(), &landmarkv1.ListStreamsRequest{})
+			if err != nil || list.GetStreams()[0].GetNextSeq() != 2 {
+				t.Errorf("log after fencing: %v, %v; want only the first event", list, err)
+			}
+			if live && (testutil.ToFloat64(w.m.reconnects) != 0 || st.requests() != 1) {
+				t.Errorf("joined the source again after being fenced (%d requests)", st.requests())
+			}
+			cancel()
+			<-done
+		})
 	}
-	w, err := New(config(s, 5*time.Minute), client, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- w.Run(ctx) }()
-	if e := logged(t, client, 1)[0]; e.GetKind() != landmarkv1.EventKind_EVENT_KIND_START || e.GetEpoch() != 1 {
-		t.Fatalf("first event %+v", e)
-	}
-	c.advance(11 * time.Minute) // w1's lease expires; w2 takes the stream
-	resp, err := r.Heartbeat(context.Background(), &landmarkv1.HeartbeatRequest{WorkerId: "w2", Capacity: 1})
-	if err != nil || len(resp.GetLeases()) != 1 || resp.GetLeases()[0].GetEpoch() != 2 {
-		t.Fatalf("takeover: %v, %v", resp, err)
-	}
-	close(release)
-	deadline := time.Now().Add(2 * time.Minute)
-	for testutil.ToFloat64(w.m.fenced) < 1 {
-		if time.Now().After(deadline) {
-			t.Fatal("worker never fenced")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	list, err := r.ListStreams(context.Background(), &landmarkv1.ListStreamsRequest{})
-	if err != nil || list.GetStreams()[0].GetNextSeq() != 2 {
-		t.Errorf("log after fencing: %v, %v; want only the first event", list, err)
-	}
-	cancel()
-	<-done
 }
 
 // failingRegistry answers heartbeats until one has succeeded, then fails
