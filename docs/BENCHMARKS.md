@@ -333,3 +333,18 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 | The hybrid's whole fingerprinting (all of the above, plus the keylock rescales) | 486.8 ms |
 
 - With about 145 ms of search per window (B8's rates), fingerprinting is about three quarters of a live window's CPU; the double-time triplet fingerprint alone is over half. This is what limits a laptop to about 32 live stations (B9), and what `docs/design/throughput.md` proposes to cut.
+
+## B13: one FFT per frame for both query filterbanks (D44)
+
+`bench/querycost` as in B12, run twice in one session: at 97e7330 (before) and at 6e4ff44 (D44), AC power, battery "100%; charged" both times. Raw: `bench/results/b13_querycost_before.json`, `b13_querycost_after.json`; CPU profiles of one extra, untimed pass of the hybrid's fingerprinting: `b13_profile_before.txt`, `b13_profile_after.txt` (and `.pprof`).
+
+| Per 10 s window, one core, median | Before | D44 |
+|---|---|---|
+| Triplets, the window as is (dual filterbank) | 123.3 ms | 77.2 ms |
+| Triplets, resampled to double time | 258.7 ms | 161.0 ms |
+| Triplets, resampled to half time | 61.8 ms | 38.5 ms |
+| Pairs (code unchanged) | 30.6 ms | 32.0 ms |
+| The hybrid's whole fingerprinting | 481.5 ms | 310.3 ms |
+
+- 1.55x less fingerprinting per window for the same landmarks (median 13,977.5 per triplet query in both runs; D44's test checks identity landmark for landmark). The index side is unchanged (48.0 and 48.1 ms per track). The before run is within 1% of B12 (486.8 ms); the unchanged pair code moved 5% between runs, a guide to run-to-run spread.
+- Before, the triplet spectrogram was 83% of the profile (the FFT 46% with its call overhead, magnitudes 21%), computed twice per frame. After, the triplet spectrograms are 74% (FFT 36%, magnitudes 16%) and peak picking 10%. With about 145 ms of search per window (B12), fingerprinting drops from about three quarters of a live window's CPU to about two thirds.

@@ -1,0 +1,38 @@
+# go tool pprof -top: one untimed pass of the hybrid's per-window fingerprinting (bench/querycost -cpuprofile), 100 windows, commit 6e4ff44 (D44)
+File: querycost
+Type: cpu
+Duration: 31.19s, Total samples = 30.37s (97.38%)
+Showing nodes accounting for 29.65s, 97.63% of 30.37s total
+Dropped 54 nodes (cum <= 0.15s)
+Showing top 30 nodes out of 46
+      flat  flat%   sum%        cum   cum%
+     4.57s 15.05% 15.05%      4.96s 16.33%  math.hypot
+     4.27s 14.06% 29.11%      4.48s 14.75%  math.log
+     4.04s 13.30% 42.41%     22.52s 74.15%  github.com/anytroops/landmark/internal/triplet.(*Fingerprinter).spectrograms
+     3.67s 12.08% 54.49%     10.07s 33.16%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.radf4
+     2.77s  9.12% 63.62%      2.78s  9.15%  github.com/anytroops/landmark/internal/fingerprint.maxFilter1D
+     2.29s  7.54% 71.16%      2.30s  7.57%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.setCmplx (inline)
+     1.65s  5.43% 76.59%      1.66s  5.47%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.atCmplx (inline)
+     1.53s  5.04% 81.63%      1.53s  5.04%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.at (inline)
+     0.91s  3.00% 84.62%      0.91s  3.00%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.set (inline)
+     0.59s  1.94% 86.57%     11.02s 36.29%  gonum.org/v1/gonum/dsp/fourier.(*FFT).Coefficients
+     0.58s  1.91% 88.48%      0.58s  1.91%  github.com/anytroops/landmark/internal/audio.ResamplePoly
+     0.56s  1.84% 90.32%      0.56s  1.84%  runtime.memmove
+     0.40s  1.32% 91.64%      0.40s  1.32%  math.IsInf (inline)
+     0.24s  0.79% 92.43%      3.18s 10.47%  github.com/anytroops/landmark/internal/fingerprint.FindPeaks
+     0.24s  0.79% 93.22%      0.71s  2.34%  internal/reflectlite.typedmemmove
+     0.23s  0.76% 93.97%      0.42s  1.38%  sort.partition_func
+     0.18s  0.59% 94.57%      0.89s  2.93%  internal/reflectlite.Swapper.func9
+     0.18s  0.59% 95.16%      0.47s  1.55%  runtime.typedmemmove
+     0.16s  0.53% 95.69%      2.15s  7.08%  github.com/anytroops/landmark/internal/fingerprint.(*Fingerprinter).Spectrogram
+     0.14s  0.46% 96.15%      1.14s  3.75%  sort.symMerge_func
+     0.12s   0.4% 96.54%      0.75s  2.47%  sort.swapRange_func (inline)
+     0.10s  0.33% 96.87%     10.17s 33.49%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.rfftf1
+     0.10s  0.33% 97.20%      0.85s  2.80%  sort.rotate_func
+     0.07s  0.23% 97.43%      0.21s  0.69%  sort.insertionSort_func
+     0.03s 0.099% 97.53%     26.47s 87.16%  github.com/anytroops/landmark/internal/triplet.(*Fingerprinter).FingerprintQuery
+     0.02s 0.066% 97.60%      0.64s  2.11%  sort.pdqsort_func
+     0.01s 0.033% 97.63%      0.17s  0.56%  math.frexp
+         0     0% 97.63%      3.17s 10.44%  github.com/anytroops/landmark/internal/fingerprint.(*Fingerprinter).Fingerprint
+         0     0% 97.63%      3.21s 10.57%  github.com/anytroops/landmark/internal/fingerprint.(*Fingerprinter).FingerprintQuery
+         0     0% 97.63%      2.79s  9.19%  github.com/anytroops/landmark/internal/fingerprint.maxFilter
