@@ -32,7 +32,7 @@ Recommendation: (a). It removes the duplicated work without giving up any of the
 |---|---|---|---|
 | Idea | Merge deltas with each other once several of similar size pile up; fold them into the base only when they reach a set fraction of it (e.g. 10%) | Keep a few levels, each about 10x the one before; a full level merges into the next | As today |
 | Merge cost | Mostly proportional to what was added; an occasional full rewrite | Steady, about proportional to what was added, more total rewriting | Proportional to the catalog every time |
-| Searches | A few more segments per search between merges | Few segments | One segment after each merge |
+| Searches | A few more segments per search between merges (a first hint, B10: p99 22.5 ms between adds, with up to 10 deltas and 4% more songs, against 20.8 ms before) | Few segments | One segment after each merge |
 | Effort | Small to medium | Medium | None |
 
 Recommendation: (a), the LSM idea in its simplest form; the search cost of a few extra segments is measurable with the existing load harness.

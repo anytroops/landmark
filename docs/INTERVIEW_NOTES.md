@@ -69,6 +69,11 @@ After each core component: 3 interview-style questions and Sean's answers.
 2. `math.Hypot` is a sixth of the remaining time and a plain square root would be faster. Why keep it, and what could a one-ulp change in a magnitude do downstream?
 3. How does the test show the optimization changed nothing, and what kind of bug could still get past it?
 
+### Rejoining dropped live sources (D45)
+1. A live stream's connection drops mid-song and is back 3 s later. Walk through what the worker does, what the log shows, and why the song comes out as one entry, not two.
+2. The first version of the rejoin treated a refused append as a dropped source. What did that do once another worker took the stream, and why did the system still recover by itself?
+3. Why does a connection that ends before its first window get a backoff, when one that played for a while is rejoined at once?
+
 ### DJ mix analysis (D43)
 1. How do you get a song's gain curve out of a mix when you only know which songs play and how they are aligned? Why do it in power, and why non-negative?
 2. A turntable change and a keylock change at the same tempo look identical to the triplet matcher. How does the analysis tell them apart, and what bug once made it always answer keylock?
