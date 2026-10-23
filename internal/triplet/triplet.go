@@ -130,7 +130,7 @@ func sparse(fb [][]float64) []band {
 // safe for concurrent use: give each goroutine its own.
 type Fingerprinter struct {
 	p      Params
-	half   *Fingerprinter // HalfBand(p), built on first FingerprintQuery (D35)
+	half   []band // HalfBand(p)'s filterbank, built on first FingerprintQuery (D35)
 	fft    *fourier.FFT
 	window []float64
 	bands  []band
@@ -155,12 +155,26 @@ func New(p Params) *Fingerprinter {
 // Spectrogram computes the log-frequency magnitude in dB: frame k starts at
 // sample k*Hop, no centering or padding.
 func (fp *Fingerprinter) Spectrogram(pcm []float32) fingerprint.Spectrogram {
+	return fp.spectrograms(pcm, fp.bands)[0]
+}
+
+// spectrograms computes pcm's spectrogram on each filterbank from one FFT
+// per frame (D44): the two filterbanks of a query (D35) share NFFT, Hop, and
+// window, so only the band sums differ. Each result equals that
+// filterbank's Spectrogram exactly.
+func (fp *Fingerprinter) spectrograms(pcm []float32, banks ...[]band) []fingerprint.Spectrogram {
 	p := fp.p
+	out := make([]fingerprint.Spectrogram, len(banks))
 	if len(pcm) < p.NFFT {
-		return fingerprint.Spectrogram{Bins: p.NBands}
+		for i := range out {
+			out[i] = fingerprint.Spectrogram{Bins: p.NBands}
+		}
+		return out
 	}
 	frames := (len(pcm)-p.NFFT)/p.Hop + 1
-	data := make([]float64, frames*p.NBands)
+	for i := range out {
+		out[i] = fingerprint.Spectrogram{Frames: frames, Bins: p.NBands, Data: make([]float64, frames*p.NBands)}
+	}
 	for t := 0; t < frames; t++ {
 		start := t * p.Hop
 		for n := range fp.frame {
@@ -170,16 +184,18 @@ func (fp *Fingerprinter) Spectrogram(pcm []float32) fingerprint.Spectrogram {
 		for k, c := range fp.coeffs {
 			fp.mag[k] = cmplx.Abs(c)
 		}
-		row := data[t*p.NBands : (t+1)*p.NBands]
-		for b, bd := range fp.bands {
-			s := 0.0
-			for i, w := range bd.W {
-				s += w * fp.mag[bd.Lo+i]
+		for i, bands := range banks {
+			row := out[i].Data[t*p.NBands : (t+1)*p.NBands]
+			for b, bd := range bands {
+				s := 0.0
+				for j, w := range bd.W {
+					s += w * fp.mag[bd.Lo+j]
+				}
+				row[b] = 20 * math.Log10(s+1e-10)
 			}
-			row[b] = 20 * math.Log10(s+1e-10)
 		}
 	}
-	return fingerprint.Spectrogram{Frames: frames, Bins: p.NBands, Data: data}
+	return out
 }
 
 func (p Params) peakParams() fingerprint.Params {
@@ -252,16 +268,16 @@ func HalfBand(p Params) Params {
 // prototype.b2.fingerprint_query does. The index side uses Fingerprint.
 func (fp *Fingerprinter) FingerprintQuery(pcm []float32, nShifts int) []Landmark {
 	if fp.half == nil {
-		fp.half = New(HalfBand(fp.p))
+		fp.half = sparse(Filterbank(HalfBand(fp.p)))
 	}
 	step := fp.p.Hop / nShifts
 	var all []Landmark
-	for _, f := range []*Fingerprinter{fp, fp.half} {
-		for k := 0; k < nShifts; k++ {
-			if k*step >= len(pcm) {
-				break
-			}
-			all = append(all, f.Fingerprint(pcm[k*step:])...)
+	for k := 0; k < nShifts; k++ {
+		if k*step >= len(pcm) {
+			break
+		}
+		for _, s := range fp.spectrograms(pcm[k*step:], fp.bands, fp.half) {
+			all = append(all, Triplets(fingerprint.FindPeaks(s, fp.p.peakParams()), fp.p)...)
 		}
 	}
 	key := func(l Landmark) uint64 {
