@@ -198,7 +198,8 @@ func (fp *Fingerprinter) spectrograms(pcm []float32, banks ...[]band) []fingerpr
 	return out
 }
 
-func (p Params) peakParams() fingerprint.Params {
+// PeakParams returns the peak-picking parameters (fingerprint.FindPeaks).
+func (p Params) PeakParams() fingerprint.Params {
 	return fingerprint.Params{
 		NbhdT: p.NbhdT, NbhdF: p.NbhdF, FloorDB: p.FloorDB,
 		BlockFrames: p.BlockFrames, PeaksPerBlock: p.PeaksPerBlock,
@@ -252,7 +253,7 @@ func Triplets(peaks []fingerprint.Peak, p Params) []Landmark {
 
 // Fingerprint returns the triplet landmarks of pcm.
 func (fp *Fingerprinter) Fingerprint(pcm []float32) []Landmark {
-	return Triplets(fingerprint.FindPeaks(fp.Spectrogram(pcm), fp.p.peakParams()), fp.p)
+	return Triplets(fingerprint.FindPeaks(fp.Spectrogram(pcm), fp.p.PeakParams()), fp.p)
 }
 
 // HalfBand returns p with every filterbank center half a band higher (D35).
@@ -261,23 +262,31 @@ func HalfBand(p Params) Params {
 	return p
 }
 
+// QuerySpectrograms returns pcm's spectrograms on this filterbank and the
+// HalfBand one (D35), from one FFT per frame (D44): FingerprintQuery's
+// front end for one sub-hop grid.
+func (fp *Fingerprinter) QuerySpectrograms(pcm []float32) [2]fingerprint.Spectrogram {
+	if fp.half == nil {
+		fp.half = sparse(Filterbank(HalfBand(fp.p)))
+	}
+	s := fp.spectrograms(pcm, fp.bands, fp.half)
+	return [2]fingerprint.Spectrogram{s[0], s[1]}
+}
+
 // FingerprintQuery fingerprints pcm on nShifts sub-hop grids (D15), on both
 // this filterbank and the HalfBand one (D35: a turntable pitch shift near
 // half a band still lines up with one of them), and returns the union
 // sorted by (Hash, T, Span, Band) without exact duplicates, as
 // prototype.b2.fingerprint_query does. The index side uses Fingerprint.
 func (fp *Fingerprinter) FingerprintQuery(pcm []float32, nShifts int) []Landmark {
-	if fp.half == nil {
-		fp.half = sparse(Filterbank(HalfBand(fp.p)))
-	}
 	step := fp.p.Hop / nShifts
 	var all []Landmark
 	for k := 0; k < nShifts; k++ {
 		if k*step >= len(pcm) {
 			break
 		}
-		for _, s := range fp.spectrograms(pcm[k*step:], fp.bands, fp.half) {
-			all = append(all, Triplets(fingerprint.FindPeaks(s, fp.p.peakParams()), fp.p)...)
+		for _, s := range fp.QuerySpectrograms(pcm[k*step:]) {
+			all = append(all, Triplets(fingerprint.FindPeaks(s, fp.p.PeakParams()), fp.p)...)
 		}
 	}
 	key := func(l Landmark) uint64 {
