@@ -4,7 +4,10 @@
       --out eval/results/dj_analysis/test
 
 Each reference excerpt's tempo is estimated once, as ingest would, with
-librosa's beat tracker, and checked against UnmixDB's own BPM for it (the
+librosa's global tempo estimate (onset strength, then an autocorrelation
+tempogram weighted by a log-normal prior; its beat tracker segfaults in
+this environment, and the tempo alone is what the set's BPM needs), and
+checked against UnmixDB's own BPM for it (the
 excerpt's .txt file, from IRCAM's beat tracker): within 4% (the MIR
 "accuracy 1" tolerance), and within 4% of the label, twice it, or half it
 ("accuracy 2", which forgives the octave errors beat trackers make). A
@@ -27,6 +30,11 @@ from prototype.audio import decode
 ROOT = Path(__file__).resolve().parent.parent
 TOLERANCE = 0.04
 RATE = 22_050
+# Prior for club music, chosen on the calibration sets' 25 references
+# (librosa's default, 120 BPM with a one-octave width: 19 within 4%; 125
+# BPM with half an octave: 24): estimators confuse a tempo with its double,
+# half, or 3:2 and 4:3 relatives, and a DJ set's songs sit in a narrow band.
+PRIOR_BPM, PRIOR_OCTAVES = 125.0, 0.5
 
 
 def labeled_bpm() -> dict[str, float]:
@@ -44,7 +52,10 @@ def labeled_bpm() -> dict[str, float]:
 
 def estimate(path: str) -> float:
     y = decode(path, RATE)
-    tempo, _ = librosa.beat.beat_track(y=y, sr=RATE)
+    onset = librosa.onset.onset_strength(y=y, sr=RATE)
+    tempo = librosa.feature.tempo(
+        onset_envelope=onset, sr=RATE, start_bpm=PRIOR_BPM, std_bpm=PRIOR_OCTAVES
+    )
     return float(np.atleast_1d(tempo)[0])
 
 
