@@ -7,7 +7,7 @@ A distributed audio fingerprinting and identification service in Go, in the styl
 - **Identify:** landmark (constellation) hashing, a document-partitioned index of mmap'd immutable segments, and a gRPC coordinator that scatter-gathers each query across replicated shards with deadlines, retries, and replica ejection.
 - **Tracklist DJ mixes:** a tempo-invariant triplet fingerprint (hashes built from time and pitch ratios that a tempo change cannot move), a matcher that fits each match's speed and offset, and sequence decoding into a tracklist.
 - **Add songs while serving:** new songs go into small immutable delta segments published as a new index version (a manifest); replicas swap versions without a restart, and the coordinator pins every query to one version so an answer never mixes catalogs.
-- **Monitor live streams:** workers lease streams from a registry by heartbeat and report songs as they play; leases carry epochs (fencing tokens), so a worker that lost its stream cannot log next to its replacement, and the online decoder reports exactly what offline tracklisting would.
+- **Monitor live streams:** workers lease streams from a registry by heartbeat and report songs as they play; leases carry epochs (fencing tokens), so a worker that lost its stream cannot log next to its replacement; a stream whose connection drops is joined again and its song in progress continues; and the online decoder reports exactly what offline tracklisting would.
 
 Every component has a Python reference and a Go implementation tested for parity against it (bit-exact for the triplet matcher). Every number below traces to a committed run.
 
