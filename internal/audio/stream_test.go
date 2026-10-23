@@ -95,8 +95,10 @@ func TestFileStreamIsPaced(t *testing.T) {
 	if _, err := readAll(t, s); !errors.Is(err, io.EOF) {
 		t.Fatal(err)
 	}
-	if d := time.Since(start); d < 150*time.Millisecond {
-		t.Errorf("1 s at 4x read in %v, want about 250 ms", d)
+	// ffmpeg sends the first 0.5 s at once (-readrate_initial_burst), then
+	// paces the rest: at least 0.5 s / 4 = 125 ms. Unpaced, it takes ~20 ms.
+	if d := time.Since(start); d < 100*time.Millisecond {
+		t.Errorf("1 s at 4x read in %v, want at least 125 ms", d)
 	}
 }
 
