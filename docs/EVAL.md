@@ -295,7 +295,7 @@ DJ mixes (UnmixDB test sets, 1,135 known songs): every system's per-window answe
 
 - Landmark's hybrid spends 6 searches per window; its triplet search alone (3 searches, with double and half time) found 90.7% (pruned B2, above).
 - Cost (BENCHMARKS B11): per clip on one core, Landmark's pair search 75 ms and audfprint 84 ms; Landmark's triplet search 179 ms and Panako 235 ms; Landmark's triplet index takes a quarter of Panako's space per track.
-- Limitations: one machine; each tool as shipped with one tuned setting (more tuning could help it); Panako's native transform crashed several times while indexing (resumed, every track stored); open-source systems only, not commercial services.
+- Limitations: one machine; each tool as shipped with one tuned setting (more tuning could help it: audfprint got six densities, Panako two time filters, and Panako was still improving at the denser one); Panako's native transform crashed several times while indexing (resumed, every track stored); open-source systems only, not commercial services.
 
 ## DJ mix analysis: gain curves (D43, Python prototype)
 
