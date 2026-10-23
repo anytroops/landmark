@@ -74,6 +74,26 @@ func NewFingerprinters() *Fingerprinters {
 // by each extra factor. It returns one row per search and how many answers
 // came from only some partitions.
 func (s *Searcher) Window(ctx context.Context, x []float32, t0 float64, fp *Fingerprinters) ([]tracklist.Row, int, error) {
+	trips := [][]triplet.Landmark{fp.trip.FingerprintQuery(x, s.Shifts)}
+	for _, f := range s.Extra {
+		p, q, ok := Ratio(f)
+		if !ok {
+			return nil, 0, fmt.Errorf("tempo factor %v is not a ratio of integers up to 1000", f)
+		}
+		y := audio.ResamplePoly(x, p, q) // play it 1/f as fast: undoes a turntable change of f
+		trips = append(trips, fp.trip.FingerprintQuery(y, s.Shifts))
+	}
+	return s.WindowFrom(ctx, x, t0, trips, fp)
+}
+
+// WindowFrom is Window with the window's triplet landmarks already computed
+// (by a shared front end, D48): trips[0] for the window as is, trips[i+1]
+// for Extra[i]. The pair searches still fingerprint x.
+func (s *Searcher) WindowFrom(ctx context.Context, x []float32, t0 float64, trips [][]triplet.Landmark,
+	fp *Fingerprinters) ([]tracklist.Row, int, error) {
+	if len(trips) != 1+len(s.Extra) {
+		return nil, 0, fmt.Errorf("hybrid: %d triplet queries for %d tempo factors", len(trips), 1+len(s.Extra))
+	}
 	var rows []tracklist.Row
 	partial := 0
 	ask := func(identify IdentifyFunc, req *landmarkv1.IdentifyRequest, mode string, factor, weight float64) error {
@@ -93,16 +113,11 @@ func (s *Searcher) Window(ctx context.Context, x []float32, t0 float64, fp *Fing
 		rows = append(rows, row(t0, mode, factor, weight, resp, s.Cluster))
 		return nil
 	}
-	if err := ask(s.B2, request(fp.trip.FingerprintQuery(x, s.Shifts)), "b2", 1, 1); err != nil {
+	if err := ask(s.B2, request(trips[0]), "b2", 1, 1); err != nil {
 		return nil, 0, err
 	}
-	for _, f := range s.Extra {
-		p, q, ok := Ratio(f)
-		if !ok {
-			return nil, 0, fmt.Errorf("tempo factor %v is not a ratio of integers up to 1000", f)
-		}
-		y := audio.ResamplePoly(x, p, q) // play it 1/f as fast: undoes a turntable change of f
-		if err := ask(s.B2, request(fp.trip.FingerprintQuery(y, s.Shifts)), "b2_speed", f, 1); err != nil {
+	for i, f := range s.Extra {
+		if err := ask(s.B2, request(trips[i+1]), "b2_speed", f, 1); err != nil {
 			return nil, 0, err
 		}
 	}
