@@ -372,3 +372,20 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 - 2.5x less triplet fingerprinting per window. With the pair fingerprint unchanged (32 ms, B13), a window's fingerprinting would go from 310 ms to about 143 ms.
 - **Same landmarks.** Every one of the 117 windows gets exactly the landmarks today's FingerprintQuery gives for that window, at all three speeds (5.73M landmarks compared). Resampling the stream instead of each window changes only a window's outer few samples (the resampling filter reaches at most 20 samples past an edge), where the spectrogram's Hann window is near zero. So the option changes where windows start, not what a window yields.
 - Not built: this measures the computation in batch. A live worker would compute the same frames incrementally as audio arrives.
+
+## B15: what delta segments cost a search (D42; throughput T2)
+
+`bench.scripts.delta_cost`: the same 1,000 never-indexed fma_medium tracks added to clones of the fma_medium pair index (P=1, 24,287 tracks before) as 1, 10, or 40 delta segments, or as one delta merged into the base (0). All four layouts served at once, each by one shard (8 workers) following its manifests, behind a coordinator with the 4% stop list; loadgen offered each 400 qps of 10 s test queries for 60 s after a 10 s warmup, the layouts taking turns, 3 reps. Shard CPU per search from `ps` (warmup included). Commit f364839, AC power, battery "100%; charged" throughout. Raw: `bench/results/b15_delta_cost/`.
+
+| Layout | Segments | Shard CPU per search | p50 | p99 | Answered |
+|---|---|---|---|---|---|
+| Merged | 1 | 12.3 ms | 12.7 ms | 21.7 ms | 100% |
+| 1 delta | 2 | 12.8 ms | 13.3 ms | 22.0 ms | 100% |
+| 10 deltas | 11 | 14.9 ms | 15.4 ms | 24.0 ms | 100% |
+| 40 deltas | 41 | 20.5 ms | 113 ms | 125-131 ms | 96.2-98.9% |
+
+(Medians of 3 reps; the reps agree within 0.2 ms of CPU.)
+
+- Every layout scans the same postings (576k per search); the extra cost is per segment, 0.2 to 0.5 ms of CPU per search for each delta (2 to 4% of a merged search; 0.5 ms for the first, 0.2 ms each across 40): each query hash is looked up in every segment.
+- At 40 deltas the shard needs 400 x 20.5 ms = 8.2 cores of search against its 8 workers, so it saturates: queues grow, p50 jumps to 113 ms, and 1 to 4% of queries are shed. Ten deltas cost 21% more CPU; forty, 67%.
+- So the number of segments, not the postings in them, is what a merge policy must bound: size-tiered merging (T2 (a)) keeps a handful of deltas between rewrites of the base.
