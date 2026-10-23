@@ -370,5 +370,5 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 | Triplet fingerprints, all three speeds | 278.2 ms (mean) | 111.4 ms |
 
 - 2.5x less triplet fingerprinting per window. With the pair fingerprint unchanged (32 ms, B13), a window's fingerprinting would go from 310 ms to about 143 ms.
-- **Same landmarks.** Every one of the 117 windows gets exactly the landmarks today's FingerprintQuery gives for that window, at all three speeds (5.73M landmarks compared). Resampling the stream instead of each window changes only a window's outer few samples (the resampling filter is 10 input samples each side), where the spectrogram's Hann window is near zero. So the option changes where windows start, not what a window yields.
+- **Same landmarks.** Every one of the 117 windows gets exactly the landmarks today's FingerprintQuery gives for that window, at all three speeds (5.73M landmarks compared). Resampling the stream instead of each window changes only a window's outer few samples (the resampling filter reaches at most 20 samples past an edge), where the spectrogram's Hann window is near zero. So the option changes where windows start, not what a window yields.
 - Not built: this measures the computation in batch. A live worker would compute the same frames incrementally as audio arrives.
