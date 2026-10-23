@@ -10,6 +10,7 @@ import (
 	"time"
 
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
+	"github.com/anytroops/landmark/internal/analysis"
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/hybrid"
 	"github.com/anytroops/landmark/internal/tracklist"
@@ -94,12 +95,12 @@ func TestClock(t *testing.T) {
 
 func TestDescribe(t *testing.T) {
 	tests := []struct {
-		a    songAnalysis
+		a    analysis.SongReport
 		want string
 	}{
-		{songAnalysis{FadeIn: []float64{33.4, 41.1}, FadeOut: []float64{66, 74}, Rate: 1, BPM: 122}, "  in 0:33-0:41  out 1:06-1:14  122.0 BPM"},
-		{songAnalysis{Rate: 1.04, Turntable: true}, "  turntable"},
-		{songAnalysis{Rate: 0.97}, "  keylock"},
+		{analysis.SongReport{FadeIn: []float64{33.4, 41.1}, FadeOut: []float64{66, 74}, Rate: 1, BPM: 122}, "  in 0:33-0:41  out 1:06-1:14  122.0 BPM"},
+		{analysis.SongReport{Rate: 1.04, Turntable: true}, "  turntable"},
+		{analysis.SongReport{Rate: 0.97}, "  keylock"},
 	}
 	for _, tt := range tests {
 		if got := describe(tt.a); got != tt.want {

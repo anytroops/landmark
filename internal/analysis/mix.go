@@ -1,4 +1,4 @@
-package main
+package analysis
 
 import (
 	"context"
@@ -9,33 +9,33 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/anytroops/landmark/internal/analysis"
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/catalog"
 	"github.com/anytroops/landmark/internal/tracklist"
 	"github.com/anytroops/landmark/internal/triplet"
 )
 
-// songAnalysis is how one entry was mixed in (D43, internal/analysis).
-type songAnalysis struct {
+// SongReport is how one tracklist entry was mixed in (D43).
+type SongReport struct {
 	FadeIn, FadeOut []float64 // mix seconds, start and end; nil if not fitted
 	Turntable       bool      // the tempo change moved the pitch too
 	Rate            float64   // playback rate (reference time per mix time)
 	BPM             float64   // the song's tempo in the set; 0 if its reference BPM is unknown
 }
 
-// analyzeMix estimates every entry's fades and kind of tempo change from
-// its reference audio, and its BPM in the set from bpm (reference BPM by
-// dense id). Entries whose reference audio or triplet rows are missing are
-// left out.
-func analyzeMix(ctx context.Context, pcm []float32, rows []tracklist.Row, entries []tracklist.Entry,
-	cat *catalog.Catalog, fmaDir string, bpm map[int]float64) (map[int]songAnalysis, error) {
+// Mix estimates every tracklist entry's fades and kind of tempo change from
+// its reference audio (found through cat, FMA tracks under fmaDir), and its
+// BPM in the set from bpm (reference BPM by dense id), keyed by entry
+// index. Entries whose reference audio or triplet rows are missing are left
+// out.
+func Mix(ctx context.Context, pcm []float32, rows []tracklist.Row, entries []tracklist.Entry,
+	cat *catalog.Catalog, fmaDir string, bpm map[int]float64) (map[int]SongReport, error) {
 	fp := triplet.New(triplet.DefaultParams())
-	mix := analysis.Power(fp.Spectrogram(pcm))
-	var songs []analysis.Song
+	mix := Power(fp.Spectrogram(pcm))
+	var songs []Song
 	var entryOf []int
 	for i, e := range entries {
-		a, rate, ok := analysis.Alignment(rows, e.Track, e.Start, e.End)
+		a, rate, ok := Alignment(rows, e.Track, e.Start, e.End)
 		path, known := cat.Audio(e.Track, fmaDir)
 		if !ok || !known {
 			continue
@@ -47,13 +47,13 @@ func analyzeMix(ctx context.Context, pcm []float32, rows []tracklist.Row, entrie
 		if err != nil {
 			return nil, fmt.Errorf("reference of track %d: %w", e.Track, err)
 		}
-		songs = append(songs, analysis.Song{Track: e.Track, Start: e.Start, End: e.End, A: a, Rate: rate,
-			Ref: analysis.Power(fp.Spectrogram(ref))})
+		songs = append(songs, Song{Track: e.Track, Start: e.Start, End: e.End, A: a, Rate: rate,
+			Ref: Power(fp.Spectrogram(ref))})
 		entryOf = append(entryOf, i)
 	}
-	out := map[int]songAnalysis{}
-	for _, r := range analysis.Analyze(mix, songs) {
-		s := songAnalysis{Turntable: r.Turntable, Rate: r.Rate}
+	out := map[int]SongReport{}
+	for _, r := range Analyze(mix, songs) {
+		s := SongReport{Turntable: r.Turntable, Rate: r.Rate}
 		if r.FadeInOK {
 			s.FadeIn = r.FadeIn[:]
 		}
@@ -68,8 +68,9 @@ func analyzeMix(ctx context.Context, pcm []float32, rows []tracklist.Row, entrie
 	return out, nil
 }
 
-// readBPM reads the index's bpm.json (dense id -> reference BPM), if any.
-func readBPM(dir string) (map[int]float64, error) {
+// ReadBPM reads an index's bpm.json (dense id -> reference BPM, written by
+// eval.dj_bpm), if any.
+func ReadBPM(dir string) (map[int]float64, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "bpm.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil

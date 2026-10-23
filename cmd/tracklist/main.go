@@ -34,6 +34,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anytroops/landmark/internal/analysis"
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/catalog"
 	"github.com/anytroops/landmark/internal/hybrid"
@@ -154,13 +155,13 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	if cfg.mergeGap >= 0 {
 		entries = tracklist.MergeRepeats(entries, cfg.mergeGap)
 	}
-	var an map[int]songAnalysis
+	var an map[int]analysis.SongReport
 	if cfg.analyze {
-		bpm, err := readBPM(cfg.index)
+		bpm, err := analysis.ReadBPM(cfg.index)
 		if err != nil {
 			return err
 		}
-		if an, err = analyzeMix(ctx, pcm, rows, entries, cat, cfg.fmaDir, bpm); err != nil {
+		if an, err = analysis.Mix(ctx, pcm, rows, entries, cat, cfg.fmaDir, bpm); err != nil {
 			return err
 		}
 	}
@@ -286,7 +287,7 @@ type jsonEntry struct {
 	BPM       float64   `json:"bpm,omitempty"`
 }
 
-func jsonEntries(entries []tracklist.Entry, names func(int) string, an map[int]songAnalysis) []jsonEntry {
+func jsonEntries(entries []tracklist.Entry, names func(int) string, an map[int]analysis.SongReport) []jsonEntry {
 	out := make([]jsonEntry, len(entries))
 	for i, e := range entries {
 		out[i] = jsonEntry{Track: e.Track, Name: names(e.Track), StartS: e.Start, EndS: e.End,
@@ -299,7 +300,7 @@ func jsonEntries(entries []tracklist.Entry, names func(int) string, an map[int]s
 	return out
 }
 
-func formatEntries(entries []tracklist.Entry, names func(int) string, an map[int]songAnalysis) string {
+func formatEntries(entries []tracklist.Entry, names func(int) string, an map[int]analysis.SongReport) string {
 	if len(entries) == 0 {
 		return "no tracks found\n"
 	}
@@ -316,7 +317,7 @@ func formatEntries(entries []tracklist.Entry, names func(int) string, an map[int
 }
 
 // describe summarizes one song's analysis for the text output.
-func describe(a songAnalysis) string {
+func describe(a analysis.SongReport) string {
 	var b strings.Builder
 	if a.FadeIn != nil {
 		fmt.Fprintf(&b, "  in %s-%s", clock(a.FadeIn[0]), clock(a.FadeIn[1]))
