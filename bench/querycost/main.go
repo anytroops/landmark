@@ -1,6 +1,8 @@
 // Command querycost measures client-side fingerprinting cost per DJ-mix
 // window and per indexed track, for the pair fingerprint and the B2 triplet
-// fingerprint (D31, D33, D35), on one core.
+// fingerprint (D31, D33, D35), on one core, and the hybrid's whole
+// per-window fingerprinting (D36: triplets as is, at double and half time,
+// and pairs with their keylock rescales).
 //
 // Per window (a 10 s excerpt, 4 sub-hop shifts): the pair query
 // fingerprint, which the speed grid repeats once per audio-undone
@@ -51,6 +53,12 @@ type result struct {
 	PairQuery           timing            `json:"pair_query_per_window"`
 	GridQueryLowerBound timing            `json:"grid_query_per_window_lower_bound"`
 	B2DualQuery         timing            `json:"b2_dual_query_per_window"`
+	// The hybrid's other per-window fingerprints (D36): the window resampled
+	// to double and half time (resampling included) for the triplet
+	// searches, and its whole client-side work per window.
+	B2DoubleTime timing `json:"b2_double_time_per_window"`
+	B2HalfTime   timing `json:"b2_half_time_per_window"`
+	HybridWindow timing `json:"hybrid_fingerprints_per_window"`
 	PairIndex           timing            `json:"pair_index_per_track"`
 	B2Index             timing            `json:"b2_index_per_track"`
 	PairQueryLandmarks  float64           `json:"pair_query_landmarks_median"`
@@ -99,6 +107,16 @@ func main() {
 		grid[i] = gridAudioHypotheses * v
 	}
 	res.GridQueryLowerBound = summarize(grid)
+	res.B2DoubleTime = summarize(best(*reps, windows, func(x []float32) { trips.FingerprintQuery(audio.ResamplePoly(x, 2, 1), *shifts) }))
+	res.B2HalfTime = summarize(best(*reps, windows, func(x []float32) { trips.FingerprintQuery(audio.ResamplePoly(x, 1, 2), *shifts) }))
+	res.HybridWindow = summarize(best(*reps, windows, func(x []float32) {
+		trips.FingerprintQuery(x, *shifts)
+		trips.FingerprintQuery(audio.ResamplePoly(x, 2, 1), *shifts)
+		trips.FingerprintQuery(audio.ResamplePoly(x, 1, 2), *shifts)
+		lms := pairs.FingerprintQuery(x, *shifts)
+		fingerprint.RescaleTempo(lms, 2)
+		fingerprint.RescaleTempo(lms, 0.5)
+	}))
 	res.PairQueryLandmarks, res.B2QueryLandmarks = median(pairN), median(tripN)
 	res.PairIndex = summarize(best(*reps, tracks, func(x []float32) { pairs.Fingerprint(x) }))
 	res.B2Index = summarize(best(*reps, tracks, func(x []float32) { trips.Fingerprint(x) }))
@@ -110,9 +128,9 @@ func main() {
 	if err := os.WriteFile(*out, append(b, '\n'), 0o644); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("per window: pairs %.1f ms (grid >= %.0f ms), B2 dual %.1f ms; per track: pairs %.1f ms, B2 %.1f ms",
-		res.PairQuery.MedianMs, res.GridQueryLowerBound.MedianMs, res.B2DualQuery.MedianMs,
-		res.PairIndex.MedianMs, res.B2Index.MedianMs)
+	log.Printf("per window: pairs %.1f ms (grid >= %.0f ms), B2 dual %.1f ms, double time %.1f ms, half time %.1f ms, hybrid %.1f ms; per track: pairs %.1f ms, B2 %.1f ms",
+		res.PairQuery.MedianMs, res.GridQueryLowerBound.MedianMs, res.B2DualQuery.MedianMs, res.B2DoubleTime.MedianMs,
+		res.B2HalfTime.MedianMs, res.HybridWindow.MedianMs, res.PairIndex.MedianMs, res.B2Index.MedianMs)
 }
 
 // best runs f over every input reps times and returns each input's fastest
