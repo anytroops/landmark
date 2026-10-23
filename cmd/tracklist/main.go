@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,7 @@ type config struct {
 	jsonOut                      bool
 	analyze                      bool   // D43: fades, turntable or keylock, BPM
 	fmaDir                       string // FMA references' audio, for -analyze
+	rowsPath                     string // also write every search's row here (CSV)
 }
 
 func main() {
@@ -80,6 +82,7 @@ func main() {
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
 	flag.BoolVar(&cfg.jsonOut, "json", false, "print entries as JSON")
 	flag.BoolVar(&cfg.analyze, "analyze", false, "also estimate each song's fades, turntable or keylock, and BPM in the set (needs the references' audio)")
+	flag.StringVar(&cfg.rowsPath, "rows", "", "also write every window search's answer here, as CSV (eval.tracklist's columns), e.g. to calibrate the decoder")
 	flag.StringVar(&cfg.fmaDir, "fma-dir", "data/fma_medium", "with -analyze: FMA tracks' audio (non-FMA references use the paths in extras.json)")
 	flag.Parse()
 	var err error
@@ -131,6 +134,11 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 		return err
 	}
 	tracklist.SortRows(rows)
+	if cfg.rowsPath != "" {
+		if err := writeRows(cfg.rowsPath, rows); err != nil {
+			return err
+		}
+	}
 	var entries []tracklist.Entry
 	if cfg.decoder == "align" {
 		entries = tracklist.Align(rows, cfg.window, cfg.minEvidence, cfg.sw)
@@ -164,6 +172,21 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	_, err = io.WriteString(w, b.String())
 	return err
 }
+
+// writeRows writes rows as CSV with eval.tracklist's columns (less the mix
+// index and landmark count): scores as the decoder saw them, so run with
+// -alpha 1 to get the pair searches' own scores.
+func writeRows(path string, rows []tracklist.Row) error {
+	var b strings.Builder
+	b.WriteString("t0,mode,factor,top1_dense,score,runner_up,offset\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%s,%s,%s,%d,%s,%s,%s\n", fmtFloat(r.T0), r.Mode, fmtFloat(r.Factor), r.Track,
+			fmtFloat(r.Score), fmtFloat(r.RunnerUp), fmtFloat(r.Offset))
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+func fmtFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 
 // windowStarts returns the start sample of each full window.
 func windowStarts(n, window, hop int) []int {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/hybrid"
+	"github.com/anytroops/landmark/internal/tracklist"
 )
 
 func TestWindowStarts(t *testing.T) {
@@ -102,5 +105,26 @@ func TestDescribe(t *testing.T) {
 		if got := describe(tt.a); got != tt.want {
 			t.Errorf("describe(%+v) = %q, want %q", tt.a, got, tt.want)
 		}
+	}
+}
+
+func TestWriteRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.csv")
+	rows := []tracklist.Row{
+		{T0: 0, Mode: "b2", Factor: 1.0001362562179565, Track: 23986, Score: 668, RunnerUp: 109, Offset: 83},
+		{T0: 2.5, Mode: "keylock", Factor: 0.5, Track: -1},
+	}
+	if err := writeRows(path, rows); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "t0,mode,factor,top1_dense,score,runner_up,offset\n" +
+		"0,b2,1.0001362562179565,23986,668,109,83\n" +
+		"2.5,keylock,0.5,-1,0,0,0\n"
+	if string(b) != want {
+		t.Errorf("wrote\n%s\nwant\n%s", b, want)
 	}
 }
