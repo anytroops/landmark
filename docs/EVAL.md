@@ -257,7 +257,45 @@ Streams are decoded as audio arrives, cut into 10 s windows every 2.5 s, searche
 - **Live output equals offline output.** All 96 mixes of set044 played as file streams through the registry and one worker (8 streams at a time) log the same entries as `cmd/tracklist` gives offline, value for value (track, start, end, tempo, evidence): 274 entries each, 0 of 96 mixes differ, no window left unanswered. Both equal the eval's decode of the same mixes: 268 of 285 songs found (94.0%), precision 97.8%. Run: `eval/results/live/equiv_set044/` (`python -m bench.scripts.live equiv`), commit 43bae83; a correctness check run on battery, so no timings from it are reported. The decoder's equality with offline decoding is also unit-tested on random window sequences (k 0 to 3, five merge gaps) and the golden rows (`internal/tracklist/online_test.go`).
 - **Both clusters need the 4% stop list** the hybrid was calibrated with (D30, D37). A first run without it found 264 of 285 songs through `cmd/tracklist`, with live and offline still identical: more matches per search raise the scores, and the calibrated thresholds no longer fit. The harness now sets it, and `cmd/tracklist` says so.
 - **Detection delay, stream time.** A start event is decided when its entry's first window and one more are in: 12.5 s after that window starts. From each found song's true transition (the middle of the crossfade into it) to that point: median 12.5 s, p10 8.2 s, p90 14.9 s, max 31.0 s over the 268 songs (`delay.json`, `python -m eval.live_score --equiv`). In real time the searches' lag comes on top.
-- **Real time, capacity, failover:** [TBD] (`bench.scripts.live realtime`; needs AC power).
+- **Real time** (BENCHMARKS B9): with 24 stations playing test mixes live to one worker, 95.3% of songs found at 98.6% precision, each reported a median 12.6 s after its transition; one laptop keeps up with somewhere between 24 and 48 stations. With a worker killed mid-broadcast, its 16 streams moved to a standby worker, each losing 5.2 s of audio, with no sequence gaps and 2 songs reported twice.
+
+## Against open-source systems (D41)
+
+Landmark next to audfprint (Ellis; landmark pairs, the family of Landmark's pair fingerprint) and Panako 2.1 (Six; tempo- and pitch-robust triplets, the family of B2). Design: `docs/design/head-to-head.md`; harness `eval/h2h.py`; results `eval/results/h2h/`.
+
+- **Same data for every system.** Each indexes the same 24,287 tracks (fma_medium's indexed tracks plus the 302 UnmixDB references) and answers the same files: 10 s excerpts of 1,000 positives and 500 never-indexed negatives per split, degraded per condition, written at 22,050 Hz so each tool decodes at its own rate (Landmark and audfprint 11,025 Hz, Panako 16,000 Hz).
+- **Same accept rule.** Each system's thresholds (minimum top score, and top over the best score outside the top's duplicate cluster) are calibrated on val to a pooled false-accept rate of at most 0.1%, maximizing mean accuracy over all ten conditions; test is reported.
+- **One tuned setting per tool, chosen on val** (D41 H3): audfprint `--density` 80 (tried 10, 20 default, 40, 60, 80, 100; mean val accuracy 0.43 at the default, 0.61 at 80, 0.60 at 100), Panako's event-point time filter 15 (tried 25 default and 15; 0.74 and 0.80). Landmark: the pair and the triplet fingerprint, searched separately (stop list 4%).
+
+Test accuracy (positives identified and accepted; false accepts at most 0.6% in any cell, 0.1% pooled on val by construction):
+
+| Condition | Landmark pairs | Landmark triplets | audfprint 20 (default) | audfprint 80 | Panako 25 (default) | Panako 15 |
+|---|---|---|---|---|---|---|
+| Clean | 99.9% | 99.9% | 98.8% | 99.8% | 94.2% | 94.2% |
+| White noise 10 dB | 99.6% | 99.6% | 72.4% | 89.6% | 73.7% | 79.0% |
+| White noise 0 dB | 98.1% | 96.8% | 32.2% | 54.0% | 38.0% | 52.0% |
+| MP3 64 kbps | 99.9% | 99.9% | 98.3% | 99.8% | 91.1% | 93.1% |
+| Turntable +2% | 0.2% | 99.9% | 0.6% | 6.2% | 79.0% | 82.0% |
+| Turntable -5% | 0.1% | 99.9% | 0.0% | 0.1% | 78.2% | 72.5% |
+| Turntable +8% | 0.0% | 99.9% | 0.0% | 0.0% | 59.2% | 73.4% |
+| Keylock -2% | 99.9% | 99.9% | 92.0% | 99.8% | 88.1% | 89.6% |
+| Keylock +5% | 99.8% | 99.9% | 26.9% | 93.1% | 76.1% | 84.8% |
+| Keylock -8% | 97.8% | 99.7% | 2.6% | 56.5% | 84.4% | 77.0% |
+
+- **Noise is where the pair systems part ways**: at 0 dB, Landmark's pair fingerprint keeps 98.1% against audfprint's 54.0% even after audfprint's tuning; both find almost every clean or MP3 clip.
+- **Tempo is where the triplet systems part ways**: Landmark's triplet fingerprint identifies 99.7-99.9% of clips at every turntable and keylock step tested; Panako, built for the same problem, 72.5-89.6% at its tuned setting, and 52-94% across the other conditions.
+
+DJ mixes (UnmixDB test sets, 1,135 known songs): every system's per-window answers through the same smoothing decoder, its settings calibrated on set222 and set275 with the merge step `cmd/tracklist` applies, scored once on the test sets (`eval/results/tracklist/score_unmixdb_s8_*_merged.json`).
+
+| System | Searches per window | Songs found | Precision | Unchanged | Turntable | Keylock |
+|---|---|---|---|---|---|---|
+| Landmark hybrid (D36, D37) | 6 | 1,080 (95.2%) | 98.9% | 383/384 | 328/367 | 369/384 |
+| audfprint, density 80 | 1 | 909 (80.1%) | 97.0% | 379/384 | 209/367 | 321/384 |
+| Panako, time filter 15 | 1 | 892 (78.6%) | 95.4% | 335/384 | 260/367 | 297/384 |
+
+- Landmark's hybrid spends 6 searches per window; its triplet search alone (3 searches, with double and half time) found 90.7% (pruned B2, above).
+- Cost (BENCHMARKS B11): per clip on one core, Landmark's pair search 75 ms and audfprint 84 ms; Landmark's triplet search 179 ms and Panako 235 ms; Landmark's triplet index takes a quarter of Panako's space per track.
+- Limitations: one machine; each tool as shipped with one tuned setting (more tuning could help it); Panako's native transform crashed several times while indexing (resumed, every track stored); open-source systems only, not commercial services.
 
 ## DJ mix analysis: gain curves (D43, Python prototype)
 

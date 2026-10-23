@@ -271,3 +271,49 @@ Same harness and configuration as B7 (P=1, RF=1, stop list 4%, same indexes and 
 - **Pruning makes a B2 search 2.4-3.2x cheaper**: 286-378 qps against 118 (B7), and it now meets the interactive SLO, which unpruned B2 missed even at 20 qps.
 - **The two B2 numbers are one knee seen twice**: the batch search's probe at 298 qps shed 0.3% of requests (completeness, not latency, failed), so it confirmed 286; the interactive search, run first, confirmed 378 with every run passing. As in B2, a few percent of offered load decides pass or fail near capacity.
 - **One B2 search now costs about 1.9-2.6 pair searches** (734 / 378 to 734 / 286; 5.9 before). Per DJ-mix window at P=1: the speed grid's 37 pair searches allow about 20 windows per second; the hybrid's 3 B2 + 3 pair searches 69-83 (3.5-4.2x the grid); the two-search hybrid 206-250 (10-13x), at 93.7% of UnmixDB songs against the hybrid's 95.2% (EVAL, D37).
+
+## B9: live monitoring in real time (D38-D40)
+
+One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mixes back to back in real time from `cmd/streamserver`, against the triplet and pair clusters (P=1, stop list 4%) on the same laptop. Every window gets the hybrid's 6 searches. Lag is the time from a window's last sample arriving to its searches finishing; it must stay under the 2.5 s hop, or windows queue up. Detection delay runs from each song's true transition (middle of its crossfade) to its start event. Commit 61f245e, AC power, battery "100%; charged". Raw: `bench/results/live/` (its README lists the runs invalidated by power changes).
+
+| Stations | Window lag p50 / p99 | Songs found | Precision | Detection delay p50 / p90 |
+|---|---|---|---|---|
+| 24 | 1.4 / 1.7 s | 205/215 (95.3%) | 98.6% | 12.6 / 21.1 s |
+| 48 | 53 / 109 s | 406/428 (94.9%) | 99.0% | 61.1 / 107.2 s |
+| 64 | did not finish: 6 of 64 streams reached their end in the time limit | | | |
+
+- **One laptop keeps up with somewhere between 24 and 48 stations** in real time. At 48 the worker falls behind steadily: every window is still answered (none unanswered), so accuracy holds, but songs are reported a minute or more late. The 16- and 32-station points were invalidated by power changes and are to be rerun.
+- **Detection delay at real time** is the 12.5 s the decoder needs (D38) plus search time: median 12.6 s at 24 stations.
+- **Failover** (`rt_kill16`): 16 stations on worker w0, a standby w1, w0 killed with SIGKILL 120 s into the broadcast. All 16 streams moved to w1 (16 leases expired, 32 grants in all); each lost 5.2 s of audio (the lease ran out 6 s after w0's last renewal, shortly before the kill, and w1 took the stream at its next heartbeat); the new holder's first event came 21 to 59 s after the kill (when its first song decision fell due). No sequence gaps; 2 songs were reported twice (the continuation rule did not join them; to investigate). Songs found 137/143 (95.8%), precision 99.3%, window lag p99 1.3 s.
+
+## B10: adding songs while serving (D42)
+
+`bench.scripts.live_writes`: a clone of the fma_medium pair index (P=1) served by two replicas following its manifests, behind a coordinator, under 200 qps of test queries (open loop, 450 s measured). Ten batches of 100 never-indexed fma_medium tracks were added with `ingest -add` (4 workers) every 30 s, then merged with `ingest -merge`. Commit 61f245e, AC power, battery "100%; charged". Raw: `bench/results/livewrites_r200`.
+
+| Phase | Queries | p50 | p99 | Errors |
+|---|---|---|---|---|
+| Baseline | 7,908 | 12.3 ms | 20.8 ms | 0 |
+| During adds | 15,965 | 14.2 ms | 28.4 ms | 0 |
+| Between adds | 59,859 | 13.7 ms | 22.5 ms | 0 |
+| During the merge | 8,268 | 15.1 ms | 23.7 ms | 0 |
+
+- **A batch of 100 songs is searchable about 3 s after the add starts**: published (fingerprinted, delta segment written, manifest published) in 2.5 to 2.7 s, and identified through the coordinator 0.3 to 0.5 s later (the shards poll every 0.5 s, then swap).
+- **Adding costs queries little**: p99 28.4 ms while a batch is fingerprinted on 4 of the same 12 cores, against 20.8 ms at baseline; no errors in any phase, including both replicas swapping versions under load.
+- **The merge** rewrote the partition's whole base (108.1M postings, `shard0.log`) in 36 s, with p99 23.7 ms meanwhile. Its cost grows with the partition, not the deltas; merging deltas with each other first, as LSM trees do, would keep it small.
+- **Accuracy**: 10 s excerpts of the 1,000 added songs identified at 99.8%, against 99.6% for 1,000 songs indexed from the start (after the merge).
+- **Stop-list drift** (D42 W3, frozen counts): postings scanned per search rose 2.4% (555k to 568k, and 553k to 566k on the two replicas) as the catalog grew 4%.
+
+## B11: head-to-head cost (D41)
+
+`python -m eval.h2h cost`: every system indexes the same first 2,000 references (`data/h2h/refs.tsv`), and answers 200 clean 10 s test queries on one core against its full index (24,287 tracks), each query decoded by the tool's own ffmpeg call. Build cost is compared in CPU seconds per track, since Panako runs on 4 threads (its native transform crashed under 12); query time is per clip, with each tool's database load or JVM start subtracted (measured as a one-query run). Settings as chosen on val (EVAL, head-to-head). AC power, battery "100%; charged". Raw: `eval/results/h2h/costs.json`.
+
+| System | Build CPU per track | Index bytes per track | Query time per clip, one core |
+|---|---|---|---|
+| Landmark, pairs | 150 ms | 28.6 KB | 75 ms |
+| Landmark, triplets | 188 ms | 64.1 KB | 179 ms |
+| audfprint, density 80 | 169 ms | 9.5 KB | 84 ms |
+| Panako, time filter 15 | 344 ms | 239 KB | 235 ms |
+
+- Landmark's pair index is 3x audfprint's per track (it keeps every landmark; audfprint's fixed-size hash table dropped 25.7% of its hashes at density 80, `eval/results/h2h/index_sizes.txt`) and answers in about the same time; its triplet index is a quarter of Panako's per track and answers a query in three quarters of the time.
+- Full-index sizes (`index_sizes.txt`, `index_costs.json`): Landmark pairs 393 MB, triplets 1.03 GB, audfprint (density 80) 161 MB, Panako 0.84 GB at its default and 3.05 GB at time filter 15.
+- Landmark's query times include its coordinator and shard on the same host (gRPC on localhost), one matcher per shard.
