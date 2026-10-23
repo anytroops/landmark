@@ -80,7 +80,11 @@
         <h3 id="tl-title"></h3>
         <div class="tl-status" id="tl-status"></div>
       </div>
-      <div class="timeline" id="tl-timeline"></div>
+      <div class="player" id="tl-player" hidden>
+        <audio id="tl-audio" controls preload="metadata"></audio>
+        <div class="now-playing" id="tl-now"></div>
+      </div>
+      <div class="timeline" id="tl-timeline" title="Click to play from there"></div>
       <div class="legend" id="tl-legend"></div>
       <table class="entries" id="tl-table">
         <thead><tr><th>#</th><th>Time</th><th>Song</th><th>Tempo</th><th>Mixed in</th><th>Fades</th><th></th></tr></thead>

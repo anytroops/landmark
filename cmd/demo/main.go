@@ -209,6 +209,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/identify", s.identify)
 	mux.HandleFunc("POST /api/tracklist", s.tracklist)
 	mux.HandleFunc("GET /api/live", s.live)
+	mux.HandleFunc("GET /api/mixes/{i}/audio", s.mixAudio)
+	mux.HandleFunc("GET /api/songs/{track}/audio", s.songAudio)
 	return mux
 }
 

@@ -145,6 +145,9 @@ func TestIdentifyUpload(t *testing.T) {
 	if res.Seconds != clipSeconds {
 		t.Errorf("searched %v s, want %v", res.Seconds, clipSeconds)
 	}
+	if !strings.HasPrefix(res.Clip, "data:audio/wav;base64,") || len(res.Clip) < 4*clipSeconds*11025*2/3 {
+		t.Errorf("clip %.40q... (%d bytes): want the searched 10 s as a WAV data URL", res.Clip, len(res.Clip))
+	}
 }
 
 func TestIdentifyNeedsAudio(t *testing.T) {
@@ -228,5 +231,47 @@ func TestLiveWithoutRegistry(t *testing.T) {
 	s.routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/live", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status %d, want 404", rec.Code)
+	}
+}
+
+func TestWav16(t *testing.T) {
+	b := wav16([]float32{0, 0.5, -1, 2}, 11025)
+	if len(b) != 44+8 || string(b[:4]) != "RIFF" || string(b[8:16]) != "WAVEfmt " || string(b[36:40]) != "data" {
+		t.Fatalf("bad header: % x", b[:44])
+	}
+	want := []int16{0, 16384, -32767, 32767} // clipped to [-1, 1]
+	for i, w := range want {
+		if got := int16(uint16(b[44+2*i]) | uint16(b[45+2*i])<<8); got != w {
+			t.Errorf("sample %d = %d, want %d", i, got, w)
+		}
+	}
+}
+
+func TestAudioRoutes(t *testing.T) {
+	s := testServer(t, -1, -1)
+	wav := noise(t, 1)
+	s.mixes = []mix{{File: wav, Name: "m"}}
+	tests := []struct {
+		path string
+		code int
+	}{
+		{"/api/mixes/0/audio", http.StatusOK},
+		{"/api/mixes/1/audio", http.StatusNotFound},
+		{"/api/mixes/x/audio", http.StatusNotFound},
+		{"/api/songs/3/audio", http.StatusNotFound}, // FMA track, no -fma-dir
+		{"/api/songs/99/audio", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+		req.Header.Set("Range", "bytes=0-99")
+		s.routes().ServeHTTP(rec, req)
+		got := rec.Code
+		if got == http.StatusPartialContent { // the range was served
+			got = http.StatusOK
+		}
+		if got != tt.code {
+			t.Errorf("%s: status %d, want %d", tt.path, rec.Code, tt.code)
+		}
 	}
 }

@@ -209,6 +209,14 @@ function renderIdentify(res) {
       el("div", { class: "bar" }, el("span", { style: `width:${(100 * v.score / total).toFixed(0)}%` })),
     );
   };
+  const listen = el("div", { class: "listen" },
+    el("label", {}, "What Landmark heard: the 10 s it searched, at 11,025 Hz", el("audio", { controls: "", src: res.clip })));
+  if (a && a.has_audio) {
+    const song = el("audio", { controls: "", preload: "metadata", src: `/api/songs/${a.track}/audio` });
+    song.addEventListener("loadedmetadata", () => { song.currentTime = Math.max(0, a.offset_s); }, { once: true });
+    listen.append(el("label", {}, `The song it found, from ${clock(a.offset_s)}`, song));
+  }
+  card.append(listen);
   out.replaceChildren(card, el("div", { class: "compare" },
     fam("Pair hashes", "classic fingerprinting: two peaks, their time gap", res.pairs),
     fam("Triplet hashes", "three peaks, time and pitch ratios: tempo-invariant", res.triplets),
@@ -239,6 +247,7 @@ let tl = null;
 $("#tl-run").addEventListener("click", () => {
   const f = new FormData();
   f.set("example", $("#tl-mix").value);
+  setPlayer(`/api/mixes/${$("#tl-mix").value}/audio`);
   runTracklist(f);
 });
 const tlFile = $("#tl-file");
@@ -246,6 +255,7 @@ tlFile.addEventListener("change", () => {
   if (!tlFile.files[0]) return;
   const f = new FormData();
   f.set("audio", tlFile.files[0], tlFile.files[0].name);
+  setPlayer(URL.createObjectURL(tlFile.files[0]));
   runTracklist(f, tlFile.files[0].name);
 });
 
@@ -402,7 +412,16 @@ function drawTracklist() {
     }
   }
   if (!s.done) root.append(svg("line", { x1: x(cursor), x2: x(cursor), y1: 16, y2: H, stroke: "var(--accent)", "stroke-width": 2 }));
+  const ph = svg("line", { id: "playhead", y1: 16, y2: H, stroke: "var(--text)", "stroke-width": 1.5, "stroke-dasharray": "3 2", visibility: "hidden" });
+  root.append(ph);
+  root.addEventListener("click", (ev) => {
+    const r = root.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    seek(((px - gut) / (W - gut - pad)) * dur);
+  });
+  s.map = { gut, pad, W, dur };
   box.replaceChildren(root);
+  updatePlayhead();
 
   $("#tl-legend").replaceChildren(...kids(
     el("span", { text: "Bars rise and fall with each song's fade in and out (estimated from the audio once tracklisting is done)." }),
@@ -421,7 +440,7 @@ function drawTracklist() {
     }
     const fades = an ? [an.fade_in && `in ${clock(an.fade_in[0])}-${clock(an.fade_in[1])}`,
       an.fade_out && `out ${clock(an.fade_out[0])}-${clock(an.fade_out[1])}`].filter(Boolean).join(" · ") : "";
-    return el("tr", {},
+    const row = el("tr", { "data-i": i, title: "Play from here" },
       el("td", { text: i + 1 }),
       el("td", { text: `${clock(e.start_s)}-${e.open ? "" : clock(e.end_s)}` }),
       el("td", { class: "song" }, el("span", { class: "swatch", style: `background:${color(e.track)}` }), e.name),
@@ -430,8 +449,53 @@ function drawTracklist() {
       el("td", { text: fades }),
       el("td", { text: e.correct === undefined ? "" : e.correct ? "✓" : "✗", title: e.correct === false ? "not playing at that time" : "" }),
     );
+    row.addEventListener("click", () => seek(e.start_s));
+    return row;
   }));
+  updatePlayhead();
 }
+
+/* The mix player: the playhead follows it, the timeline and the table seek it. */
+const audioEl = $("#tl-audio");
+function setPlayer(src) {
+  audioEl.pause();
+  audioEl.src = src;
+  $("#tl-player").hidden = false;
+}
+function seek(t) {
+  if (!audioEl.src) return;
+  audioEl.currentTime = Math.max(0, t);
+  audioEl.play().catch(() => {});
+}
+function updatePlayhead() {
+  if (!tl || !tl.map) return;
+  const ph = document.getElementById("playhead");
+  const t = audioEl.currentTime || 0;
+  const { gut, pad, W, dur } = tl.map;
+  const shown = audioEl.src && (t > 0 || !audioEl.paused);
+  if (ph) {
+    const px = gut + (Math.min(t, dur) / dur) * (W - gut - pad);
+    ph.setAttribute("x1", px);
+    ph.setAttribute("x2", px);
+    ph.setAttribute("visibility", shown ? "visible" : "hidden");
+  }
+  const now = tl.entries.map((e, i) => [e, i]).filter(([e]) => e && t >= e.start_s && t < (e.open ? Infinity : e.end_s));
+  for (const tr of document.querySelectorAll("#tl-table tbody tr")) {
+    tr.classList.toggle("current", shown && now.some(([, i]) => String(i) === tr.dataset.i));
+  }
+  const label = $("#tl-now");
+  if (!shown) label.textContent = "Play the mix: the dashed line follows it. Click the timeline or a row to jump.";
+  else if (!now.length) label.textContent = `${clock(t)}: no song listed here`;
+  else label.replaceChildren(`${clock(t)}: `, ...now.flatMap(([e], k) => [k ? " into " : "", el("b", { text: e.name })]));
+}
+let playing = false;
+function tick() {
+  updatePlayhead();
+  if (playing) requestAnimationFrame(tick);
+}
+audioEl.addEventListener("play", () => { playing = true; tick(); });
+audioEl.addEventListener("pause", () => { playing = false; updatePlayhead(); });
+audioEl.addEventListener("seeked", updatePlayhead);
 
 /* ---------- live ---------- */
 

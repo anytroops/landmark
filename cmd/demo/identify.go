@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -29,6 +31,7 @@ type verdict struct {
 	RunnerUp float64 `json:"runner_up"` // best score outside the answer's duplicate cluster
 	TempoPct float64 `json:"tempo_pct"` // the clip plays the song this much faster
 	OffsetS  float64 `json:"offset_s"`  // where in the song the clip starts
+	HasAudio bool    `json:"has_audio"` // /api/songs/{track}/audio can play the song
 }
 
 // identifyResponse is POST /api/identify's answer.
@@ -37,6 +40,7 @@ type identifyResponse struct {
 	Pairs    verdict  `json:"pairs"`    // the pair fingerprint alone, as a classic system would
 	Triplets verdict  `json:"triplets"` // the tempo-invariant fingerprint, the clip as is
 	Seconds  float64  `json:"seconds"`  // clip length
+	Clip     string   `json:"clip"`     // what was searched, as a WAV data URL (mono, 11,025 Hz)
 	Ms       struct {
 		Decode float64 `json:"decode"`
 		Search float64 `json:"search"`
@@ -118,6 +122,7 @@ func (s *server) identify(w http.ResponseWriter, r *http.Request) {
 	}
 	x = x[:min(len(x), int(clipSeconds*audio.SampleRate))]
 	resp.Seconds = float64(len(x)) / audio.SampleRate
+	resp.Clip = "data:audio/wav;base64," + base64.StdEncoding.EncodeToString(wav16(x, audio.SampleRate))
 	if resp.Seconds < 3 {
 		httpError(w, http.StatusBadRequest, "only %.1f s of audio: send at least 3 s", resp.Seconds)
 		return
@@ -136,6 +141,10 @@ func (s *server) identify(w http.ResponseWriter, r *http.Request) {
 	resp.Triplets = s.verdict(best(rows, func(r tracklist.Row) bool { return r.Mode == "b2" }))
 	if b := best(rows, accepted); b != nil {
 		v := s.verdict(b)
+		if p, ok := s.cat.Audio(v.Track, s.cfg.fmaDir); ok {
+			_, err := os.Stat(p)
+			v.HasAudio = err == nil
+		}
 		resp.Answer = &v
 	}
 	if resp.Truth != nil && resp.Answer != nil {
@@ -232,3 +241,52 @@ func searchName(mode string, factor float64) string {
 }
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
+
+// wav16 encodes samples as a 16-bit mono WAV file.
+func wav16(x []float32, rate int) []byte {
+	le := binary.LittleEndian
+	data := 2 * len(x)
+	b := make([]byte, 0, 44+data)
+	b = append(b, "RIFF"...)
+	b = le.AppendUint32(b, uint32(36+data))
+	b = append(b, "WAVEfmt "...)
+	b = le.AppendUint32(b, 16)
+	b = le.AppendUint16(b, 1) // PCM
+	b = le.AppendUint16(b, 1) // mono
+	b = le.AppendUint32(b, uint32(rate))
+	b = le.AppendUint32(b, uint32(2*rate))
+	b = le.AppendUint16(b, 2)
+	b = le.AppendUint16(b, 16)
+	b = append(b, "data"...)
+	b = le.AppendUint32(b, uint32(data))
+	for _, v := range x {
+		b = le.AppendUint16(b, uint16(int16(math.Round(float64(max(-1, min(1, v)))*32767))))
+	}
+	return b
+}
+
+// mixAudio serves an example mix's audio file (with range requests, so the
+// page can seek).
+func (s *server) mixAudio(w http.ResponseWriter, r *http.Request) {
+	i, err := strconv.Atoi(r.PathValue("i"))
+	if err != nil || i < 0 || i >= len(s.mixes) {
+		httpError(w, http.StatusNotFound, "no such mix")
+		return
+	}
+	http.ServeFile(w, r, s.mixes[i].File)
+}
+
+// songAudio serves a catalog track's reference audio, when it is on disk.
+func (s *server) songAudio(w http.ResponseWriter, r *http.Request) {
+	dense, err := strconv.Atoi(r.PathValue("track"))
+	path, ok := s.cat.Audio(dense, s.cfg.fmaDir)
+	if err != nil || !ok {
+		httpError(w, http.StatusNotFound, "no audio for that track")
+		return
+	}
+	if _, err := os.Stat(path); err != nil {
+		httpError(w, http.StatusNotFound, "no audio for that track")
+		return
+	}
+	http.ServeFile(w, r, path)
+}
