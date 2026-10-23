@@ -319,3 +319,17 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 - Landmark's pair index is 3x audfprint's per track (it keeps every landmark; audfprint's fixed-size hash table dropped 25.7% of its hashes at density 80, `eval/results/h2h/index_sizes.txt`) and answers in about the same time; its triplet index is a quarter of Panako's per track and answers a query in three quarters of the time.
 - Full-index sizes (`index_sizes.txt`, `index_costs.json`): Landmark pairs 393 MB, triplets 1.03 GB, audfprint (density 80) 161 MB, Panako 0.84 GB at its default and 3.05 GB at time filter 15.
 - Landmark's query times include its coordinator and shard on the same host (gRPC on localhost), one matcher per shard.
+
+## B12: the hybrid's fingerprinting per window (D36)
+
+`bench/querycost` (B6's method: 100 fma_medium test positives, one 10 s window each, 4 sub-hop shifts, one core, each figure the median over windows of the fastest of 3 passes), now also timing the windows resampled for the hybrid's double- and half-time triplet searches (resampling included) and its whole per-window fingerprinting. Commit 27d2fe2, AC power, battery "100%; charged". Raw: `bench/results/b12_querycost_hybrid.json`.
+
+| Per 10 s window, one core | Median |
+|---|---|
+| Triplets, the window as is (dual filterbank) | 124.0 ms |
+| Triplets, resampled to double time (20 s of audio) | 260.5 ms |
+| Triplets, resampled to half time (5 s) | 62.5 ms |
+| Pairs | 31.2 ms |
+| The hybrid's whole fingerprinting (all of the above, plus the keylock rescales) | 486.8 ms |
+
+- With about 145 ms of search per window (B8's rates), fingerprinting is about three quarters of a live window's CPU; the double-time triplet fingerprint alone is over half. This is what limits a laptop to about 32 live stations (B9), and what `docs/design/throughput.md` proposes to cut.

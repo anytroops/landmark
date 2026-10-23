@@ -6,10 +6,10 @@ Status: draft, 2026-10-22. Decisions marked **DECIDE** need Sean's pick.
 
 One laptop keeps up with 32 live stations, not 48 (BENCHMARKS B9). Per 10 s window of one stream, from committed measurements:
 
-- Fingerprinting, about 470 ms of CPU (an estimate): the triplet query fingerprint of the window (126 ms, B6), of the window resampled to double time (20 s of audio; not timed, estimated at 2x by length) and to half time (estimated at half), and the pair fingerprint (32 ms, B6).
+- Fingerprinting, 487 ms of CPU (BENCHMARKS B12, one core): the triplet query fingerprint of the window (124 ms), of the window resampled to double time (20 s of audio, 261 ms) and to half time (63 ms), and the pair fingerprint (31 ms).
 - Searches, about 145 ms of CPU: 3 triplet searches at about 32 ms each and 3 pair searches at about 16 ms (12 cores divided by B8's 378 and 734 qps).
 
-On these estimates fingerprinting is three quarters of the work (a CPU profile of the worker at 32 stations would confirm it before building anything), and windows overlap by 75% (10 s every 2.5 s), so every second of audio is fingerprinted four times, each time on a grid that starts somewhere else: 2.5 s is 27,562.5 samples, not a whole number of 256-sample frames, so no two windows share a spectrogram frame.
+Fingerprinting is about three quarters of the work, and windows overlap by 75% (10 s every 2.5 s), so every second of audio is fingerprinted four times, each time on a grid that starts somewhere else: 2.5 s is 27,562.5 samples, not a whole number of 256-sample frames, so no two windows share a spectrogram frame.
 
 ## T1. Cutting the fingerprinting
 
@@ -18,7 +18,7 @@ On these estimates fingerprinting is three quarters of the work (a CPU profile o
 | | (a) Shared front end, frame-aligned hop | (b) Fewer hypotheses live | (c) Fewer sub-hop shifts live | (d) Change nothing; add machines |
 |---|---|---|---|---|
 | Idea | Make the hop a whole number of frames (2.5077 s = 108 frames of 256 samples), compute each stream's spectrograms once as audio arrives, and cut each window's spectrogram out of them; peak picking and hashing stay per window | Drop the double- and half-time searches in live monitoring (the "two-search hybrid") | Fingerprint each window on 2 sub-hop grids instead of 4 (D15) | Leases already spread streams over workers; run workers on more machines |
-| Fingerprinting saved | About 3/4 of the spectrogram work (each frame computed once instead of four times) | About 2/3 (the resampled windows) | About half | None |
+| Fingerprinting saved | Up to about 3/4 of the spectrogram work (each frame computed once instead of four times; peak picking and hashing stay per window) | About 2/3 (the resampled windows: 323 of 487 ms) | About half | None |
 | Accuracy | Unchanged once recalibrated for the new hop (to check); live still equals offline when both use the new hop | Measured: 93.7% of UnmixDB songs against 95.2% (D37) | To measure (D15 measured the gain of 4 shifts on clips) | Unchanged |
 | Effort | Medium: a streaming spectrogram in Go, the hop change through tracklist, monitor, and eval, a recalibration | Small (a flag) | Small | None in code; needs machines |
 
