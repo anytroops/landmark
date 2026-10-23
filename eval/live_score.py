@@ -205,7 +205,8 @@ def main() -> None:
     ap.add_argument("--equiv", type=Path)
     args = ap.parse_args()
     if args.equiv:
-        r = stream_delays(args.equiv)
+        run = json.loads((args.equiv / "result.json").read_text())
+        r = stream_delays(args.equiv, hop=run.get("hop_s", 2.5))
         (args.equiv / "delay.json").write_text(json.dumps(r, indent=1) + "\n")
         print(json.dumps(r, indent=1))
         return
