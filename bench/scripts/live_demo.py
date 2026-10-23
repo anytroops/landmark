@@ -61,16 +61,17 @@ def main() -> None:
             start("registry", [str(BIN / "registry"), "-dir", str(tmp / "registry"), "-streams",
                                str(tmp / "streams.json"), "-listen", "127.0.0.1:7900",
                                "-admin", "127.0.0.1:7901", "-ttl", "6s"])  # fmt: skip
-            start("streamserver", [str(BIN / "streamserver"), "-stations", str(tmp / "stations.json"),
-                                   "-listen", "127.0.0.1:7950",
-                                   "-start", f"{time.time() + 10:.6f}"], "broadcasting")  # fmt: skip
+            on_air = f"{time.time() + 10:.6f}"
+            start("streamserver", [str(BIN / "streamserver"), "-stations",
+                                   str(tmp / "stations.json"), "-listen", "127.0.0.1:7950",
+                                   "-start", on_air], "broadcasting")  # fmt: skip
             start("monitor", [str(BIN / "monitor"), "-registry", "127.0.0.1:7900", "-id", "w1",
                               "-capacity", str(args.stations), "-coordinator", b2,
                               "-index", str(B2_INDEX), "-pairs-coordinator", pairs,
                               "-pairs-index", str(PAIR_INDEX), "-admin", "127.0.0.1:7910"],
                   None)  # fmt: skip
-            print("stations on the air; songs appear about 12 s after they start (Ctrl-C to stop)\n",
-                  flush=True)  # fmt: skip
+            print("stations on the air; songs appear about 12 s after they start"
+                  " (Ctrl-C to stop)\n", flush=True)  # fmt: skip
             events = subprocess.Popen([str(BIN / "events"), "-registry", "127.0.0.1:7900"])
             procs.append(events)
             events.wait()
