@@ -70,6 +70,36 @@ func TestDecode(t *testing.T) {
 	}
 }
 
+func TestDecodeExcerpt(t *testing.T) {
+	requireFFmpeg(t)
+	sine := writeSine(t, t.TempDir())
+	tests := []struct {
+		name           string
+		start, seconds float64
+		filter         string
+		want           float64 // seconds of output
+	}{
+		{"whole file", 0, 0, "", 1},
+		{"excerpt", 0.25, 0.5, "", 0.5},
+		{"keylock twice as fast", 0, 1, "atempo=2", 0.5},
+		{"turntable twice as fast", 0, 1, "asetrate=88200,aresample=44100", 0.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pcm, err := DecodeExcerpt(context.Background(), sine, SampleRate, tt.start, tt.seconds, tt.filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := float64(len(pcm)) / SampleRate; math.Abs(got-tt.want) > 0.06 {
+				t.Errorf("%.3f s of audio, want about %.3f", got, tt.want)
+			}
+		})
+	}
+	if _, err := DecodeExcerpt(context.Background(), sine, SampleRate, 0, 0, "nosuchfilter"); !errors.Is(err, ErrDecode) {
+		t.Errorf("bad filter: %v, want ErrDecode", err)
+	}
+}
+
 func TestDecodeHonorsCancellation(t *testing.T) {
 	requireFFmpeg(t)
 	sine := writeSine(t, t.TempDir())

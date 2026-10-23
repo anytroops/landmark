@@ -24,11 +24,37 @@ var ErrDecode = errors.New("audio: decode failed")
 // Decode returns the file at path as mono float32 samples at sampleRate.
 // The ffmpeg process is killed if ctx is cancelled.
 func Decode(ctx context.Context, path string, sampleRate int) ([]float32, error) {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-nostdin", "-v", "error",
+	return ffmpeg(ctx, path, "-nostdin", "-v", "error",
 		"-i", path,
 		"-ac", "1", "-ar", strconv.Itoa(sampleRate), "-f", "f32le", "-",
 	)
+}
+
+// DecodeExcerpt returns seconds of the file at path from start (0: to the
+// end) as mono float32 samples at sampleRate, through the ffmpeg audio
+// filter graph filter if it is not empty (for example "atempo=1.06", a
+// tempo change that keeps the pitch). Seconds count input time. Unlike
+// Decode it seeks before decoding, which is fast but not sample-exact, so
+// it is for interactive use, not for anything compared with the eval.
+func DecodeExcerpt(ctx context.Context, path string, sampleRate int, start, seconds float64, filter string) ([]float32, error) {
+	args := []string{"-nostdin", "-v", "error"}
+	if start > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(start, 'f', 3, 64))
+	}
+	if seconds > 0 {
+		args = append(args, "-t", strconv.FormatFloat(seconds, 'f', 3, 64))
+	}
+	args = append(args, "-i", path)
+	if filter != "" {
+		args = append(args, "-af", filter)
+	}
+	return ffmpeg(ctx, path, append(args, "-ac", "1", "-ar", strconv.Itoa(sampleRate), "-f", "f32le", "-")...)
+}
+
+// ffmpeg runs ffmpeg with args, which must write f32le samples to stdout,
+// and returns the samples.
+func ffmpeg(ctx context.Context, path string, args ...string) ([]float32, error) {
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
