@@ -131,9 +131,9 @@ func TestWriteRows(t *testing.T) {
 
 func TestPlaceStarts(t *testing.T) {
 	tests := []struct {
-		starts             []int
-		offset, grid, last int
-		want               []int
+		starts                     []int
+		offset, grid, dither, last int
+		want                       []int
 	}{
 		{starts: []int{0, 27562, 55124}, grid: 128, last: 1 << 20, want: []int{0, 27648, 55168}},
 		{starts: []int{0, 100, 200}, grid: 128, last: 200, want: []int{0, 128}},
@@ -141,10 +141,11 @@ func TestPlaceStarts(t *testing.T) {
 		{starts: []int{0, 27562}, offset: 64, last: 1 << 20, want: []int{64, 27626}},
 		{starts: []int{0, 27562}, offset: 64, grid: 128, last: 1 << 20, want: []int{128, 27648}},
 		{starts: []int{0, 100}, offset: 50, last: 120, want: []int{50}},
+		{starts: []int{0, 27562, 55124}, grid: 128, dither: 32, last: 1 << 20, want: []int{0, 27680, 55168}},
 	}
 	for _, tt := range tests {
-		if got := placeStarts(tt.starts, tt.offset, tt.grid, tt.last); !slices.Equal(got, tt.want) {
-			t.Errorf("placeStarts(%v, %d, %d, %d) = %v, want %v", tt.starts, tt.offset, tt.grid, tt.last, got, tt.want)
+		if got := placeStarts(tt.starts, tt.offset, tt.grid, tt.dither, tt.last); !slices.Equal(got, tt.want) {
+			t.Errorf("placeStarts(%v, %d, %d, %d, %d) = %v, want %v", tt.starts, tt.offset, tt.grid, tt.dither, tt.last, got, tt.want)
 		}
 	}
 }
