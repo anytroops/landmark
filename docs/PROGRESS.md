@@ -1,7 +1,7 @@
 # Progress
 
-## Current phase: live stream monitoring (D38, D39, D40)
-DJ-set tracklisting is done (hybrid matcher D36, pruned B2 D37). Sean's roadmap (2026-10-21): (1) live stream monitoring, (2) head-to-head against audfprint and Panako, (3) adding songs while serving, (4) DJ analysis features (overlaps, transition points, tempo curves). The demo UI waits for Sean's go. Design: docs/design/live-monitoring.md.
+## Current phase: roadmap complete; next direction open
+Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to-head against audfprint and Panako (D41), adding songs while serving (D42), and DJ mix analysis (D43), each built, measured, and written up. The demo UI waits for Sean's go; product direction to be discussed.
 
 ## Done
 - 2026-10-14, Phase 0: repo, toolchain, CI, compose stack, FMA data verified and extracted.
@@ -18,15 +18,12 @@ DJ-set tracklisting is done (hybrid matcher D36, pruned B2 D37). Sean's roadmap 
 
 - 2026-10-21 to 22: head-to-head harness (D41; audfprint and Panako installed, indexed, clip queries answered by all four systems); adding songs while serving built (D42: segment sets, manifests, shard version swaps, version-pinned coordinator, ingest -add/-merge, catalog per version, load harness); D43 picked.
 
+- 2026-10-22: timing runs (live capacity 32 stations, failover, songs added under load, head-to-head cost); head-to-head written up and its tools removed; DJ analysis finished (BPM within 4% for 95.1% of test songs; Go port `tracklist -analyze` matches the prototype on all 1,058 test songs).
+
 ## Next
-- See docs/handoffs/2026-10-22.md for exact commands.
-- Head-to-head: tuning done (audfprint 80, Panako 15 on val; Panako 10 optional), test passes and DJ windows done; score DJ mixes with the merged calibrations, cost on AC power, write-up in EVAL; then remove the tools (D41).
-- Adding songs under load (AC power, idle machine): `python -m bench.scripts.live_writes --batches 10 --batch-size 100 --rate 200`.
-- DJ analysis (D43): gain curves, tempo and BPM, `tracklist -analyze`.
-- Live monitoring measurements that need AC power: `bench.scripts.live realtime`: real-time stations per machine (window lag p99 under the 2.5 s hop, no unanswered windows), real-time detection delay, and a worker `kill -9` (audio lost, time to the new holder's first event, repeats, stale appends refused).
-- Roadmap items 2 to 4: design drafts written (`docs/design/head-to-head.md`, `live-writes.md`, `dj-analysis.md`); waiting for Sean's picks. Item 2 also needs approval to install audfprint and Panako (Java).
-- When the DJ work is finished: delete fma_medium, UnmixDB, the medium indexes, data/queries.
-- Sean: multi-machine run for real throughput scaling (optional, later).
+- Demo UI (on Sean's go): on top of live monitoring and `tracklist -analyze`.
+- Candidate improvements, each needing a decision first: live monitoring capacity (consecutive windows overlap 75%, so a stream's spectrogram and peaks could be computed once rather than per window, at the cost of exact equality with offline decoding); tiered merging for added songs (merge deltas together, rewrite the base rarely); the converted UnmixDB labels' missing first and last fades for DJ analysis scoring.
+- When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers
 - None. Long runs need AC power and the lid open.
