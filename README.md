@@ -19,9 +19,10 @@ Every component has a Python reference and a Go implementation tested for parity
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
 | DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
-| Adding songs while serving (D42) | Built: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`. Measurement under load: in progress |
-| Head-to-head against audfprint and Panako (D41) | Running: clip identification done for every system at default settings; tuning, DJ mixes, and cost in progress |
-| Live stream monitoring (D38-D40) | Built: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes. Real-time capacity and failover: in progress |
+| Adding songs while serving (D42) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load |
+| Head-to-head against audfprint and Panako (D41) | Done: same tracks, queries, and accept rule, each tool's density tuned on val; accuracy, DJ mixes, and cost |
+| DJ mix analysis (D43) | Python prototype: gain curves (how each song was faded in and out), turntable vs keylock; BPM and the Go command next |
+| Live stream monitoring (D38-D40) | Done: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes; real-time capacity and worker failover measured |
 
 ## Architecture
 
@@ -58,6 +59,15 @@ Accuracy: [docs/EVAL.md](docs/EVAL.md). Performance: [docs/BENCHMARKS.md](docs/B
 | Replica killed under load | 100% complete answers; p99 back to about 9 ms the next second |
 | Radix vote sort + packed requests (D27, D28) | p99 3.0x lower, capacity 2.3x |
 
+Against open-source systems (same tracks, queries, and accept rule; each tool's main setting tuned on val):
+
+| | Landmark | audfprint | Panako |
+|---|---|---|---|
+| 10 s clip, white noise at 0 dB SNR | 98.1% (pairs) | 54.0% | 52.0% |
+| 10 s clip, turntable or keylock -8% to +8% | 99.7-99.9% (triplets) | 0-99.8% | 72.5-89.6% |
+| Songs found in UnmixDB DJ mixes | 95.2% | 80.1% | 78.6% |
+| Query time per clip, one core | 75 ms (pairs), 179 ms (triplets) | 84 ms | 235 ms |
+
 DJ tracklisting:
 
 | | |
@@ -66,6 +76,8 @@ DJ tracklisting:
 | Synthetic DJ mixes, songs found (clean / with EQ, noise, MP3) | 99.4% / 98.2-98.8%, one search per window |
 | UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.2%**, precision 98.9%; speed grid (37 searches) 95.2%, precision 98.8% |
 | Live monitoring, UnmixDB set044 played as streams | same entries as offline tracklisting on all 96 mixes (94.0% of songs, precision 97.8%); a song is reported a median 12.5 s (stream time) after its transition |
+| Live monitoring in real time, one laptop | keeps up with 24 stations (window lag p99 1.7 s, 95.3% of songs found), not 48; a killed worker's 16 streams resume on a standby, 5.2 s of audio lost each |
+| Adding songs while serving, under 200 qps | 100 songs searchable about 3 s after the add starts; p99 20.8 ms at baseline, 28.4 ms during adds; no errors |
 | Search cost, one partition | triplet search 378 qps under p99 <= 100 ms after pruning (D37; 118 qps before), pair search 734 qps: the hybrid tracklists 3.5-4.2x as many windows per second as the speed grid (10-13x with its 2-search variant) |
 
 ## Usage
