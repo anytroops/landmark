@@ -33,6 +33,8 @@ def main() -> None:
     ap.add_argument("--mixes", default="unmixdb_s8")
     ap.add_argument("--sets", nargs="+", required=True)
     ap.add_argument("--hop", type=float, default=2.5)
+    ap.add_argument("--front", default="window", choices=["shared", "window"],
+                    help="window (placement experiments need it) or shared (D48)")  # fmt: skip
     ap.add_argument("--snap", type=int, default=0, help="cmd/tracklist -snap (throughput T1)")
     ap.add_argument("--offset", type=int, default=0, help="cmd/tracklist -offset, samples")
     ap.add_argument("--dither", type=int, default=0, help="cmd/tracklist -dither, samples")
@@ -58,7 +60,8 @@ def main() -> None:
             subprocess.run(
                 [str(BIN / "tracklist"), "-coordinator", b2, "-index", str(B2_INDEX),
                  "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX),
-                 "-timeout", args.timeout, "-hop", repr(args.hop), "-snap", str(args.snap),
+                 "-timeout", args.timeout, "-front", args.front, "-hop", repr(args.hop),
+                 "-snap", str(args.snap),
                  "-offset", str(args.offset), "-dither", str(args.dither),
                  "-alpha", "1",
                  "-rows", str(out), "-json", str(ROOT / f)],
@@ -88,7 +91,7 @@ def main() -> None:
                 counts[kind] += 1
     for kind, path in files.items():
         meta = {"mixes": args.mixes, "source": "cmd/tracklist -rows -alpha 1", "window_s": 10.0,
-                "hop_s": args.hop, "snap_samples": args.snap,
+                "hop_s": args.hop, "front": args.front, "snap_samples": args.snap,
                 "offset_samples": args.offset, "dither_samples": args.dither, "sets": args.sets,
                 "stop_fraction": 0.04, "rows": counts[kind], "mixes_searched": len(todo),
                 **head}  # fmt: skip

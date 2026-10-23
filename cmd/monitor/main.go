@@ -40,7 +40,7 @@ import (
 func main() {
 	host, _ := os.Hostname()
 	var (
-		registryAddr, admin, windowLog, extra      string
+		registryAddr, admin, windowLog, extra, fr  string
 		coordinator, index, pairsCoord, pairsIndex string
 		cfg                                        monitor.Config
 		search                                     hybrid.Searcher
@@ -54,7 +54,8 @@ func main() {
 	flag.StringVar(&pairsCoord, "pairs-coordinator", "", "coordinator of the pair index (hybrid, D36)")
 	flag.StringVar(&pairsIndex, "pairs-index", "", "pair index directory (with -pairs-coordinator)")
 	flag.Float64Var(&cfg.Window, "window", 10, "window length, seconds")
-	flag.Float64Var(&cfg.Hop, "hop", 2.5, "window hop, seconds")
+	flag.Float64Var(&cfg.Hop, "hop", 0, "window hop, seconds (0: 27,520 samples with the shared front end, 2.5 s with -front window)")
+	flag.StringVar(&fr, "front", "shared", "shared: compute each stream's spectrogram frames once for all windows (D48); window: fingerprint every window")
 	flag.IntVar(&search.Shifts, "shifts", 4, "sub-hop query grids (D15)")
 	flag.StringVar(&extra, "extra", "2,0.5", "extra tempo factors searched per window (empty: none)")
 	flag.Float64Var(&search.Alpha, "alpha", 3, "weight of pair scores against triplet scores")
@@ -74,6 +75,17 @@ func main() {
 		fmt.Fprintln(os.Stderr, "monitor:", err)
 		os.Exit(2)
 	}
+	switch {
+	case fr != "shared" && fr != "window":
+		fmt.Fprintln(os.Stderr, "monitor: -front is shared or window")
+		os.Exit(2)
+	case cfg.Hop > 0:
+	case fr == "shared":
+		cfg.HopSamples = 27520 // a multiple of the 128 the three speeds need
+	default:
+		cfg.Hop = 2.5
+	}
+	cfg.Front = fr == "shared"
 	if registryAddr == "" || coordinator == "" || index == "" || (pairsCoord == "") != (pairsIndex == "") {
 		fmt.Fprintln(os.Stderr, "usage: monitor -registry addr -coordinator addr -index dir [-pairs-coordinator addr -pairs-index dir] [flags]")
 		os.Exit(2)
@@ -141,6 +153,6 @@ func run(registryAddr, admin, windowLog, coordinator, index, pairsCoord, pairsIn
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	slog.Info("monitoring", "id", cfg.WorkerID, "registry", registryAddr, "capacity", cfg.Capacity,
-		"hybrid", search.Pairs != nil, "read_rate", cfg.ReadRate)
+		"hybrid", search.Pairs != nil, "read_rate", cfg.ReadRate, "shared_front_end", cfg.Front)
 	return w.Run(ctx)
 }

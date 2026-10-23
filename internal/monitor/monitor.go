@@ -37,6 +37,7 @@ import (
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/hybrid"
 	"github.com/anytroops/landmark/internal/tracklist"
+	"github.com/anytroops/landmark/internal/triplet"
 )
 
 // StartHeader is the HTTP response header in which a source may give the
@@ -53,7 +54,14 @@ type Config struct {
 	Capacity  int
 	Heartbeat time.Duration // D39: 2 s
 	Window    float64       // seconds
-	Hop       float64
+	Hop       float64       // seconds (HopSamples, if set, wins)
+	// HopSamples: the hop in samples, for a hop that seconds cannot carry
+	// exactly (the shared front end's 27,520).
+	HopSamples int
+	// Front: cut windows' triplet landmarks from a shared front end per
+	// stream (D48) instead of fingerprinting each window; the hop must be a
+	// multiple of its alignment.
+	Front bool
 	// Decoder: Smooth's parameters and the merge gap (D38).
 	TAbs, TRatio float64
 	K            int
@@ -95,7 +103,7 @@ type job struct {
 
 // New returns a worker that talks to the registry through reg.
 func New(cfg Config, reg landmarkv1.RegistryServiceClient, promReg prometheus.Registerer) (*Worker, error) {
-	if cfg.WorkerID == "" || cfg.Searcher == nil || cfg.Heartbeat <= 0 || cfg.Window <= 0 || cfg.Hop <= 0 {
+	if cfg.WorkerID == "" || cfg.Searcher == nil || cfg.Heartbeat <= 0 || cfg.Window <= 0 || (cfg.Hop <= 0 && cfg.HopSamples <= 0) {
 		return nil, errors.New("monitor: WorkerID, Searcher, Heartbeat, Window, and Hop are required")
 	}
 	if cfg.Names == nil {
@@ -241,11 +249,21 @@ func (w *Worker) stopAll() {
 
 var errFenced = errors.New("lease epoch refused")
 
-// window is one window's audio and when its last sample arrived.
+// window is one window's audio, its triplet landmarks when a shared front
+// end cut them (nil: fingerprint x), and when its last sample arrived.
 type window struct {
 	t0    float64
 	x     []float32
+	trips [][]triplet.Landmark
 	ready time.Time
+}
+
+// hopSamples is the window hop in samples.
+func (c Config) hopSamples() int {
+	if c.HopSamples > 0 {
+		return c.HopSamples
+	}
+	return int(c.Hop * audio.SampleRate)
 }
 
 // runStream runs one leased stream until ctx ends, the stream is fenced,
@@ -405,22 +423,59 @@ func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base 
 }
 
 // readWindows cuts the source into windows and sends them in order; it
-// closes out when the source ends.
+// closes out when the source ends. With a shared front end, a window waits
+// until the front end can cut its landmarks (the resamplers look a few
+// samples ahead); its ready time stays when its last sample arrived.
 func (w *Worker) readWindows(ctx context.Context, src *audio.Stream, out chan<- window) error {
 	defer close(out)
-	size, hop := int(w.cfg.Window*audio.SampleRate), int(w.cfg.Hop*audio.SampleRate)
+	size, hop := int(w.cfg.Window*audio.SampleRate), w.cfg.hopSamples()
 	cut := windower{size: size, hop: hop}
+	var fe *hybrid.Front
+	if w.cfg.Front {
+		var err error
+		if fe, err = w.cfg.Searcher.NewFront(size); err != nil {
+			return err
+		}
+		if hop%fe.Align() != 0 {
+			return fmt.Errorf("monitor: a %d-sample hop is not a multiple of the front end's %d", hop, fe.Align())
+		}
+	}
+	type cutAt struct {
+		cutWindow
+		at time.Time
+	}
+	var pending []cutAt
 	buf := make([]float32, audio.SampleRate/4)
 	for {
 		n, err := src.Read(buf)
+		eof := errors.Is(err, io.EOF)
+		now := time.Now()
 		for _, win := range cut.add(buf[:n]) {
+			pending = append(pending, cutAt{win, now})
+		}
+		if fe != nil {
+			fe.Push(buf[:n])
+			if eof {
+				fe.Close()
+			}
+		}
+		for len(pending) > 0 && (fe == nil || fe.Ready(pending[0].start)) {
+			win := pending[0]
+			pending = pending[1:]
+			msg := window{t0: hybrid.WindowT0(win.start), x: win.x, ready: win.at}
+			if fe != nil {
+				if msg.trips, err = fe.Landmarks(win.start); err != nil {
+					return err
+				}
+				fe.Forget(win.start + hop)
+			}
 			select {
-			case out <- window{t0: hybrid.WindowT0(win.start), x: win.x, ready: time.Now()}:
+			case out <- msg:
 			case <-ctx.Done():
 				return nil
 			}
 		}
-		if errors.Is(err, io.EOF) {
+		if eof {
 			return nil
 		}
 		if err != nil {
@@ -439,7 +494,12 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 	partial := 0
 	var err error
 	for range w.cfg.SearchRetries {
-		if rows, partial, err = w.cfg.Searcher.Window(ctx, win.x, win.t0, fp); err == nil || ctx.Err() != nil {
+		if win.trips != nil {
+			rows, partial, err = w.cfg.Searcher.WindowFrom(ctx, win.x, win.t0, win.trips, fp)
+		} else {
+			rows, partial, err = w.cfg.Searcher.Window(ctx, win.x, win.t0, fp)
+		}
+		if err == nil || ctx.Err() != nil {
 			break
 		}
 	}

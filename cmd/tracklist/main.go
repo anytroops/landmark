@@ -44,7 +44,8 @@ import (
 type config struct {
 	coordinator, index           string
 	pairsCoordinator, pairsIndex string
-	window, hop                  float64
+	window, hop                  float64 // seconds; hop 0: the front end's default (hopSamples)
+	front                        string  // "shared" (D48) or "window"
 	shifts, workers              int
 	extra                        []float64
 	alpha                        float64
@@ -71,7 +72,8 @@ func main() {
 	flag.StringVar(&cfg.pairsCoordinator, "pairs-coordinator", "", "coordinator of the pair index (hybrid, D36)")
 	flag.StringVar(&cfg.pairsIndex, "pairs-index", "", "pair index directory (with -pairs-coordinator)")
 	flag.Float64Var(&cfg.window, "window", 10, "window length, seconds")
-	flag.Float64Var(&cfg.hop, "hop", 2.5, "window hop, seconds")
+	flag.Float64Var(&cfg.hop, "hop", 0, "window hop, seconds (0: 27,520 samples, 2.4961 s, with the shared front end; 2.5 s with -front window)")
+	flag.StringVar(&cfg.front, "front", "shared", "shared: compute each spectrogram frame once for all windows (D48); window: fingerprint every window on its own")
 	flag.IntVar(&cfg.shifts, "shifts", 4, "sub-hop query grids (D15)")
 	flag.IntVar(&cfg.workers, "workers", 4, "windows fingerprinted and searched at once")
 	flag.StringVar(&extra, "extra", "2,0.5", "extra tempo factors searched per window (empty: none)")
@@ -99,7 +101,7 @@ func main() {
 	}
 	if flag.NArg() != 1 || cfg.coordinator == "" || cfg.index == "" ||
 		(cfg.pairsCoordinator == "") != (cfg.pairsIndex == "") ||
-		(cfg.decoder != "align" && cfg.decoder != "smooth") {
+		(cfg.decoder != "align" && cfg.decoder != "smooth") || (cfg.front != "shared" && cfg.front != "window") {
 		fmt.Fprintln(os.Stderr, "usage: tracklist -coordinator addr -index dir [-pairs-coordinator addr -pairs-index dir] [flags] mix-file")
 		os.Exit(2)
 	}
@@ -168,7 +170,7 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	if cfg.jsonOut {
 		return json.NewEncoder(w).Encode(jsonEntries(entries, cat.Name, an))
 	}
-	windows := len(windowStarts(len(pcm), int(cfg.window*audio.SampleRate), int(cfg.hop*audio.SampleRate)))
+	windows := len(windowStarts(len(pcm), int(cfg.window*audio.SampleRate), cfg.hopSamples()))
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %.0f s, %d windows, %d searches in %v", filepath.Base(file),
 		float64(len(pcm))/audio.SampleRate, windows, len(rows), time.Since(start).Round(time.Millisecond))
@@ -222,6 +224,19 @@ func windowStarts(n, window, hop int) []int {
 	return out
 }
 
+// hopSamples is the window hop in samples: -hop if set, else the shared
+// front end's 27,520 (a multiple of the 128 its three speeds need) or the
+// per-window default of 2.5 s.
+func (c config) hopSamples() int {
+	switch {
+	case c.hop > 0:
+		return int(c.hop * audio.SampleRate)
+	case c.front == "shared":
+		return 27520
+	}
+	return audio.SampleRate * 5 / 2 // 27,562: 2.5 s, truncated as before
+}
+
 // searcher searches every window of a mix.
 type searcher struct {
 	cfg    config
@@ -231,7 +246,23 @@ type searcher struct {
 // searchWindows searches every window on cfg.workers goroutines and returns
 // all rows, plus how many answers were partial (a partition down).
 func (s searcher) searchWindows(ctx context.Context, pcm []float32) ([]tracklist.Row, int, error) {
-	w, hop := int(s.cfg.window*audio.SampleRate), int(s.cfg.hop*audio.SampleRate)
+	w, hop := int(s.cfg.window*audio.SampleRate), s.cfg.hopSamples()
+	if s.cfg.front == "shared" {
+		if s.cfg.snap > 0 || s.cfg.offset > 0 || s.cfg.dither > 0 {
+			return nil, 0, errors.New("-snap, -offset, and -dither move windows one by one: use -front window")
+		}
+		var rows []tracklist.Row
+		partial := 0
+		err := s.hybrid.SearchMix(ctx, pcm, w, hop, s.cfg.workers, true,
+			func(_, start int, r []tracklist.Row, p int, err error) error {
+				if err != nil {
+					return fmt.Errorf("window at %.1f s: %w", hybrid.WindowT0(start), err)
+				}
+				rows, partial = append(rows, r...), partial+p
+				return nil
+			})
+		return rows, partial, err
+	}
 	starts := windowStarts(len(pcm), w, hop)
 	if s.cfg.snap > 0 || s.cfg.offset > 0 || s.cfg.dither > 0 {
 		starts = placeStarts(starts, s.cfg.offset, s.cfg.snap, s.cfg.dither, len(pcm)-w)

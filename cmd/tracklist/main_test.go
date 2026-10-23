@@ -39,49 +39,89 @@ func TestSearchWindowsRunsEveryHybridSearch(t *testing.T) {
 		state = state*1664525 + 1013904223
 		pcm[i] = float32(state)/(1<<32) - 0.5
 	}
-	var mu sync.Mutex
-	kinds := map[string]int{}
-	b2 := func(_ context.Context, req *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
-		n := len(req.GetHashes())
-		if n == 0 || len(req.GetTimes()) != n || len(req.GetSpans()) != n || len(req.GetBands()) != n {
-			t.Errorf("triplet request arrays: %d hashes, %d times, %d spans, %d bands",
-				n, len(req.GetTimes()), len(req.GetSpans()), len(req.GetBands()))
+	tests := []struct {
+		name    string
+		cfg     config
+		shifts  int
+		windows int
+	}{
+		{"per window, 5 s hop", config{window: 10, hop: 5, workers: 2, front: "window"}, 1, 4},       // 0, 5, 10, 15 s
+		{"shared front end, its default hop", config{window: 10, workers: 2, front: "shared"}, 4, 7}, // every 27,520 samples
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
+			kinds := map[string]int{}
+			b2 := func(_ context.Context, req *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
+				n := len(req.GetHashes())
+				if n == 0 || len(req.GetTimes()) != n || len(req.GetSpans()) != n || len(req.GetBands()) != n {
+					t.Errorf("triplet request arrays: %d hashes, %d times, %d spans, %d bands",
+						n, len(req.GetTimes()), len(req.GetSpans()), len(req.GetBands()))
+				}
+				mu.Lock()
+				kinds["b2"]++
+				mu.Unlock()
+				return &landmarkv1.IdentifyResponse{Partial: true,
+					Candidates: []*landmarkv1.Candidate{{TrackId: 2, Score: 50, Scale: 1}}}, nil
+			}
+			pairs := func(_ context.Context, req *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
+				if len(req.GetSpans()) != 0 || len(req.GetHashes()) != len(req.GetTimes()) {
+					t.Errorf("pair request with %d spans", len(req.GetSpans()))
+				}
+				mu.Lock()
+				kinds["pairs"]++
+				mu.Unlock()
+				return &landmarkv1.IdentifyResponse{Candidates: []*landmarkv1.Candidate{{TrackId: 2, Score: 40}}}, nil
+			}
+			s := searcher{cfg: tt.cfg,
+				hybrid: &hybrid.Searcher{B2: b2, Pairs: pairs, Cluster: func(d uint32) uint32 { return d }, Shifts: tt.shifts,
+					Extra: []float64{2, 0.5}, Alpha: 2, Timeout: time.Second}}
+			rows, partial, err := s.searchWindows(context.Background(), pcm)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Each window: 3 triplet and 3 pair searches.
+			n := tt.windows
+			if len(rows) != 6*n || kinds["b2"] != 3*n || kinds["pairs"] != 3*n || partial != 3*n {
+				t.Fatalf("%d rows, %v searches, %d partial; want %d windows", len(rows), kinds, partial, n)
+			}
+			modes := map[string]int{}
+			for i, r := range rows {
+				modes[r.Mode]++
+				if r.Mode == "none" && r.Score != 80 {
+					t.Errorf("pair row not weighted: %+v", r)
+				}
+				if i > 0 && r.T0 < rows[i-1].T0 {
+					t.Errorf("row %d at %v after one at %v", i, r.T0, rows[i-1].T0)
+				}
+			}
+			if modes["b2"] != n || modes["b2_speed"] != 2*n || modes["none"] != n || modes["keylock"] != 2*n {
+				t.Errorf("rows per mode = %v", modes)
+			}
+		})
+	}
+}
+
+func TestHopSamples(t *testing.T) {
+	tests := []struct {
+		cfg  config
+		want int
+	}{
+		{config{front: "shared"}, 27520},
+		{config{front: "window"}, 27562},
+		{config{front: "shared", hop: 5}, 55125},
+	}
+	for _, tt := range tests {
+		if got := tt.cfg.hopSamples(); got != tt.want {
+			t.Errorf("hopSamples(%+v) = %d, want %d", tt.cfg, got, tt.want)
 		}
-		mu.Lock()
-		kinds["b2"]++
-		mu.Unlock()
-		return &landmarkv1.IdentifyResponse{Partial: true,
-			Candidates: []*landmarkv1.Candidate{{TrackId: 2, Score: 50, Scale: 1}}}, nil
 	}
-	pairs := func(_ context.Context, req *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
-		if len(req.GetSpans()) != 0 || len(req.GetHashes()) != len(req.GetTimes()) {
-			t.Errorf("pair request with %d spans", len(req.GetSpans()))
-		}
-		mu.Lock()
-		kinds["pairs"]++
-		mu.Unlock()
-		return &landmarkv1.IdentifyResponse{Candidates: []*landmarkv1.Candidate{{TrackId: 2, Score: 40}}}, nil
-	}
-	s := searcher{cfg: config{window: 10, hop: 5, workers: 2},
-		hybrid: &hybrid.Searcher{B2: b2, Pairs: pairs, Cluster: func(d uint32) uint32 { return d }, Shifts: 1,
-			Extra: []float64{2, 0.5}, Alpha: 2, Timeout: time.Second}}
-	rows, partial, err := s.searchWindows(context.Background(), pcm)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 4 windows (0, 5, 10, 15 s) x (3 triplet + 3 pair searches).
-	if len(rows) != 24 || kinds["b2"] != 12 || kinds["pairs"] != 12 || partial != 12 {
-		t.Fatalf("%d rows, %v searches, %d partial", len(rows), kinds, partial)
-	}
-	modes := map[string]int{}
-	for _, r := range rows {
-		modes[r.Mode]++
-		if r.Mode == "none" && r.Score != 80 {
-			t.Errorf("pair row not weighted: %+v", r)
-		}
-	}
-	if modes["b2"] != 4 || modes["b2_speed"] != 8 || modes["none"] != 4 || modes["keylock"] != 8 {
-		t.Errorf("rows per mode = %v", modes)
+}
+
+func TestSharedFrontRefusesPlacementExperiments(t *testing.T) {
+	s := searcher{cfg: config{window: 10, front: "shared", snap: 128}, hybrid: &hybrid.Searcher{Shifts: 4}}
+	if _, _, err := s.searchWindows(context.Background(), make([]float32, 12*audio.SampleRate)); err == nil {
+		t.Error("-snap accepted with the shared front end")
 	}
 }
 

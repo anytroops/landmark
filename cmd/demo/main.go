@@ -38,6 +38,7 @@ import (
 
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
 	"github.com/anytroops/landmark/internal/analysis"
+	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/catalog"
 	"github.com/anytroops/landmark/internal/hybrid"
 )
@@ -197,7 +198,9 @@ const (
 	smoothK  = 1
 	mergeGap = 2.5
 	window   = 10.0
-	hop      = 2.5
+	// hopSamples is the shared front end's hop (D48): 27,520 samples, a
+	// multiple of the 128 its three speeds need.
+	hopSamples = 27520
 )
 
 func (s *server) routes() http.Handler {
@@ -298,7 +301,7 @@ func capitalize(s string) string {
 
 func (s *server) info(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"tracks": len(s.cat.Tracks), "live": s.reg != nil,
-		"mixes": len(s.mixes), "songs": len(s.songs), "window_s": window, "hop_s": hop})
+		"mixes": len(s.mixes), "songs": len(s.songs), "window_s": window, "hop_s": float64(hopSamples) / audio.SampleRate})
 }
 
 func (s *server) examples(w http.ResponseWriter, _ *http.Request) {

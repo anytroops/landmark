@@ -189,12 +189,28 @@ func logged(t *testing.T, client landmarkv1.RegistryServiceClient, n int) []*lan
 }
 
 // TestWorkerLogsTheOfflineTracklist: a file source decoded to its end logs
-// the entries offline decoding gives for the same window answers.
+// the entries offline decoding gives for the same window answers, with
+// each window fingerprinted on its own and with the shared front end
+// (D48).
 func TestWorkerLogsTheOfflineTracklist(t *testing.T) {
-	_, _, client := setup(t, 6*time.Second, 40) // 13 windows
+	for _, front := range []bool{false, true} {
+		t.Run(map[bool]string{false: "per window", true: "shared front end"}[front], func(t *testing.T) {
+			testWorkerLogsTheOfflineTracklist(t, front)
+		})
+	}
+}
+
+func testWorkerLogsTheOfflineTracklist(t *testing.T, front bool) {
+	_, _, client := setup(t, 6*time.Second, 40) // 13 windows either way
 	tracks := []int{5, 5, 5, 5, -1, -1, 9, 9, 9, 9, 9, 5, 5}
 	s := &scripted{tracks: tracks}
-	w, err := New(config(s, 50*time.Millisecond), client, nil)
+	cfg := config(s, 50*time.Millisecond)
+	hop := 27562
+	if front {
+		hop = 27520
+		cfg.Front, cfg.HopSamples, cfg.Searcher.Shifts = true, hop, 4
+	}
+	w, err := New(cfg, client, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +220,7 @@ func TestWorkerLogsTheOfflineTracklist(t *testing.T) {
 
 	var rows []tracklist.Row
 	for i, tr := range tracks {
-		r := tracklist.Row{T0: hybrid.WindowT0(i * 27562), Mode: "b2", Factor: 1, Track: tr}
+		r := tracklist.Row{T0: hybrid.WindowT0(i * hop), Mode: "b2", Factor: 1, Track: tr}
 		if tr >= 0 {
 			r.Score = 50
 		}

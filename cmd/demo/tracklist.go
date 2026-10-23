@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"slices"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/anytroops/landmark/internal/analysis"
@@ -134,22 +132,12 @@ func (l *lineWriter) send(v any) {
 	l.err = err
 }
 
-// windowResult is one window's searches.
-type windowResult struct {
-	rows []tracklist.Row
-	err  error
-}
-
 func (s *server) runTracklist(ctx context.Context, pcm []float32, ex *mix, out *lineWriter) {
 	began := time.Now()
 	size := int(window * audio.SampleRate)
-	step := int(math.Floor(hop * audio.SampleRate)) // 27,562 samples: cmd/tracklist's window starts
-	var starts []int
-	for a := 0; a+size <= len(pcm); a += step {
-		starts = append(starts, a)
-	}
+	starts := hybrid.WindowStarts(len(pcm), size, hopSamples)
 	start := map[string]any{"type": "start", "seconds": float64(len(pcm)) / audio.SampleRate,
-		"windows": len(starts), "window_s": window, "hop_s": hop}
+		"windows": len(starts), "window_s": window, "hop_s": float64(hopSamples) / audio.SampleRate}
 	var truth []truthOut
 	if ex != nil {
 		truth = s.truth(ex)
@@ -157,36 +145,6 @@ func (s *server) runTracklist(ctx context.Context, pcm []float32, ex *mix, out *
 		start["timescale"], start["effect"] = ex.Timescale, ex.Effect
 	}
 	out.send(start)
-
-	// Search windows in parallel, report them in order.
-	results := make([]chan windowResult, len(starts))
-	for i := range results {
-		results[i] = make(chan windowResult, 1)
-	}
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	for range max(s.cfg.workers, 1) {
-		wg.Go(func() {
-			fp := s.fps.Get().(*hybrid.Fingerprinters)
-			defer s.fps.Put(fp)
-			for i := range jobs {
-				t0 := hybrid.WindowT0(starts[i])
-				rows, _, err := s.search.Window(ctx, pcm[starts[i]:starts[i]+size], t0, fp)
-				results[i] <- windowResult{rows: rows, err: err}
-			}
-		})
-	}
-	go func() {
-		defer close(jobs)
-		for i := range starts {
-			select {
-			case jobs <- i:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	defer wg.Wait()
 
 	dec := tracklist.NewOnline(window, tAbs, tRatio, smoothK, mergeGap)
 	var all []tracklist.Row
@@ -204,37 +162,38 @@ func (s *server) runTracklist(ctx context.Context, pcm []float32, ex *mix, out *
 			out.send(map[string]any{"type": "song", "kind": "end", "index": open, "entry": s.entry(e.Entry, e.Resumed, truth)})
 		}
 	}
-	for i := range starts {
-		var res windowResult
-		select {
-		case res = <-results[i]:
-		case <-ctx.Done():
-			return
-		}
-		t0 := hybrid.WindowT0(starts[i])
-		rows := res.rows
-		if res.err != nil || len(rows) == 0 {
-			rows = []tracklist.Row{{T0: t0, Mode: "b2", Factor: 1, Track: -1}}
-		}
-		all = append(all, rows...)
-		msg := map[string]any{"type": "window", "i": i, "t0": t0}
-		if res.err != nil {
-			msg["error"] = res.err.Error()
-		}
-		if b := best(rows, func(tracklist.Row) bool { return true }); b != nil {
-			msg["track"], msg["score"], msg["accepted"] = b.Track, b.Score, accepted(*b)
-			msg["tempo_pct"], msg["search"] = 100*(b.Factor-1), searchName(b.Mode, b.Factor)
-			if accepted(*b) {
-				msg["song"] = s.song(b.Track)
+	// The shared front end (D48), as cmd/tracklist and cmd/monitor run.
+	err := s.search.SearchMix(ctx, pcm, size, hopSamples, s.cfg.workers, true,
+		func(i, startSample int, rows []tracklist.Row, _ int, werr error) error {
+			t0 := hybrid.WindowT0(startSample)
+			if werr != nil || len(rows) == 0 {
+				rows = []tracklist.Row{{T0: t0, Mode: "b2", Factor: 1, Track: -1}}
 			}
-		}
-		out.send(msg)
-		ev, err := dec.Push(rows)
-		if err != nil {
+			all = append(all, rows...)
+			msg := map[string]any{"type": "window", "i": i, "t0": t0}
+			if werr != nil {
+				msg["error"] = werr.Error()
+			}
+			if b := best(rows, func(tracklist.Row) bool { return true }); b != nil {
+				msg["track"], msg["score"], msg["accepted"] = b.Track, b.Score, accepted(*b)
+				msg["tempo_pct"], msg["search"] = 100*(b.Factor-1), searchName(b.Mode, b.Factor)
+				if accepted(*b) {
+					msg["song"] = s.song(b.Track)
+				}
+			}
+			out.send(msg)
+			ev, err := dec.Push(rows)
+			if err != nil {
+				return err
+			}
+			emit(ev)
+			return out.err
+		})
+	if err != nil {
+		if ctx.Err() == nil {
 			out.send(map[string]any{"type": "error", "error": err.Error()})
-			return
 		}
-		emit(ev)
+		return
 	}
 	emit(dec.Close())
 	if out.err != nil {

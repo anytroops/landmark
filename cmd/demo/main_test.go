@@ -76,7 +76,7 @@ func testServer(t *testing.T, b2Track, pairTrack int) *server {
 	s := &server{cat: cat, titles: map[int]title{1005: {Artist: "Artist", Title: "Five"}}, jobs: make(chan struct{}, 2),
 		fps: sync.Pool{New: func() any { return hybrid.NewFingerprinters() }}, cfg: config{workers: 2}}
 	s.search = &hybrid.Searcher{B2: answer(b2Track, 400, 1.02), Pairs: answer(pairTrack, 50, 0), Cluster: cat.Cluster,
-		Shifts: 1, Alpha: alpha, Timeout: 5 * time.Second}
+		Shifts: 4, Alpha: alpha, Timeout: 5 * time.Second}
 	return s
 }
 
@@ -193,16 +193,16 @@ func TestTracklistStreams(t *testing.T) {
 			kinds = append(kinds, m.Type)
 		}
 	}
-	if windows != 13 { // 40 s: windows at 0, 2.5, ..., 30
+	if windows != 13 { // 40 s: windows every 27,520 samples, 0 to 29.954 s (D48)
 		t.Errorf("%d windows, want 13", windows)
 	}
 	if want := []string{"start", "start", "end", "analyzing", "analysis", "done"}; !slices.Equal(kinds, want) {
 		t.Errorf("messages %v, want %v", kinds, want)
 	}
-	// The last window starts at 12 x 27,562 samples (29.999 s).
-	if len(ends) != 1 || ends[0].Track != 7 || ends[0].StartS != 0 || math.Abs(ends[0].EndS-39.999) > 1e-9 ||
+	// The last window starts at 12 x 27,520 samples (29.954 s).
+	if len(ends) != 1 || ends[0].Track != 7 || ends[0].StartS != 0 || math.Abs(ends[0].EndS-39.954) > 1e-9 ||
 		math.Abs(ends[0].TempoPct-2) > 1e-4 {
-		t.Errorf("entries %+v, want track 7 from 0 to 39.999 s at +2%%", ends)
+		t.Errorf("entries %+v, want track 7 from 0 to 39.954 s at +2%%", ends)
 	}
 }
 
