@@ -115,60 +115,6 @@ func addSongs(ctx context.Context, cfg config, dir, listPath string) error {
 	return nil
 }
 
-// mergeDeltas folds every partition's base and deltas into one new base
-// segment and publishes them as the next version (D42). Ids and postings
-// are unchanged, so searches answer exactly as before (segment.Set).
-func mergeDeltas(dir string, enc segment.Encoding) error {
-	start := time.Now()
-	cur, err := versioned.Latest(dir)
-	if err != nil {
-		return err
-	}
-	catalog, extras, err := readCatalog(dir, cur)
-	if err != nil {
-		return err
-	}
-	next := cur
-	next.Version = cur.Version + 1
-	next.Partitions = make([][]versioned.Member, cur.NPartitions)
-	next.Catalog = fmt.Sprintf("catalog-%08d.json", next.Version)
-	next.Extras = fmt.Sprintf("extras-%08d.json", next.Version)
-	merged := 0
-	for p := range cur.NPartitions {
-		if len(cur.Partitions[p]) == 1 {
-			next.Partitions[p] = cur.Partitions[p]
-			continue
-		}
-		set, err := versioned.Open(dir, cur, p)
-		if err != nil {
-			return err
-		}
-		entries, err := allEntries(set)
-		if err != nil {
-			_ = set.Close()
-			return err
-		}
-		meta := segment.Meta{Partition: p, NPartitions: cur.NPartitions, NTracks: set.NTracks(), Encoding: enc, Aux: set.HasAux()}
-		_ = set.Close()
-		mem, err := writeMember(dir, fmt.Sprintf("part-%03d.v%08d.lmrk", p, next.Version), meta, entries)
-		if err != nil {
-			return err
-		}
-		next.Partitions[p] = []versioned.Member{mem}
-		merged++
-	}
-	if merged == 0 {
-		slog.Info("nothing to merge", "dir", dir, "version", cur.Version)
-		return nil
-	}
-	if err := publish(dir, next, catalog, extras); err != nil {
-		return err
-	}
-	slog.Info("merged deltas", "dir", dir, "version", next.Version, "partitions", merged,
-		"wall_s", fmt.Sprintf("%.1f", time.Since(start).Seconds()))
-	return nil
-}
-
 // allEntries reads every posting of a set back as segment entries.
 func allEntries(set *segment.Set) ([]segment.Entry, error) {
 	var out []segment.Entry

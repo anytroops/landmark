@@ -1,6 +1,6 @@
 # Design: more live streams per machine
 
-Status: draft, 2026-10-22 (numbers updated after D44; option (a) measured in B14). Decisions marked **DECIDE** need Sean's pick.
+Status: both decided 2026-10-23 (D47, D48); numbers updated after D44, option T1 (a) measured in B14.
 
 ## Where the time goes
 
@@ -13,7 +13,7 @@ Fingerprinting is about two thirds of the work, three quarters of it the triplet
 
 ## T1. Cutting the fingerprinting
 
-**DECIDE: pick one.**
+**Decided: (a), D48 (Sean's pick, 2026-10-23).**
 
 | | (a) Shared front end, frame-aligned hop | (b) Fewer hypotheses live | (c) Fewer sub-hop shifts live | (d) Change nothing; add machines |
 |---|---|---|---|---|
@@ -28,7 +28,7 @@ Recommendation: (a). It removes the duplicated work without giving up any of the
 
 ## T2. Merging added songs
 
-**DECIDE: pick one.** (Adding songs, D42: today `ingest -merge` rewrites the partition's whole base, 108M postings in 36 s, B10; the cost grows with the catalog, not with what was added.)
+**Decided: (a), D47 (Sean's pick, 2026-10-23); built in `cmd/ingest` (`-add` merges by it, `-compact`).** (Adding songs, D42: today `ingest -merge` rewrites the partition's whole base, 108M postings in 36 s, B10; the cost grows with the catalog, not with what was added.)
 
 | | (a) Size-tiered merges | (b) Leveled merges | (c) Keep merging everything into the base |
 |---|---|---|---|

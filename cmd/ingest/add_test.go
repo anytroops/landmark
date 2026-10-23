@@ -113,7 +113,7 @@ func TestAddSongsThenMerge(t *testing.T) {
 		t.Error("version 1 must not know the added song")
 	}
 
-	if err := mergeDeltas(dir, segment.EncodingVarint); err != nil {
+	if err := compact(dir, segment.EncodingVarint, mergeAll); err != nil {
 		t.Fatal(err)
 	}
 	v3, err := versioned.Latest(dir)

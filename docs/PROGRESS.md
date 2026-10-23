@@ -27,7 +27,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-10-23: demo web page (D46, Sean's go): `make demo`; identify (file, microphone, test songs with turntable or keylock changes, pairs against triplets), tracklisting with a live timeline, analysis, and the true tracklist, live stations.
 
 ## Next
-- Sean's picks on `docs/design/throughput.md`: T1 (more live streams per machine; recommended a shared, frame-aligned front end, now measured: B14) and T2 (merging added songs; recommended size-tiered merges).
+- T1 (D48, Sean's pick): build the shared, frame-aligned front end; measure capacity on AC. T2 (D47) is built; its under-load timing waits for AC.
 - Sean to review D44 and D45, made while he was away: D44 is output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 

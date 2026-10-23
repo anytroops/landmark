@@ -19,7 +19,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
 | DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
-| Adding songs while serving (D42) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load |
+| Adding songs while serving (D42, D47) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load. Size-tiered merging (D47) keeps a few deltas and rewrites the base once per 10% of growth |
 | Head-to-head against audfprint and Panako (D41) | Done: same tracks, queries, and accept rule, each tool's density tuned on val; accuracy, DJ mixes, and cost |
 | DJ mix analysis (D43) | Done: `tracklist -analyze` reports each song's fades, turntable or keylock, and BPM in the set; the Go port matches the Python prototype on all 1,058 test songs |
 | Demo web page (D46) | Done: `make demo`. Identify a clip (a file, the microphone, or a test song sped up like a turntable or with keylock, pair and triplet answers side by side), tracklist a mix while its windows are searched (fades, turntable or keylock, BPM, the true tracklist beside it), watch live stations |
@@ -125,7 +125,7 @@ bin/monitor -registry 127.0.0.1:7700 -capacity 8 \
 To add songs to a serving index, run its shards with `-index <dir> -partition <p>` (they follow its newest version) and:
 
 ```bash
-bin/ingest -out data/segments/medium -add new_songs.tsv   # name<TAB>path per line; publishes the next version
+bin/ingest -out data/segments/medium -add new_songs.tsv   # name<TAB>path per line; publishes the next version, then merges size-tiered (D47)
 bin/ingest -out data/segments/medium -merge               # fold delta segments into new bases
 ```
 

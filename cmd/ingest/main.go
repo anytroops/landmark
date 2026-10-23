@@ -7,8 +7,10 @@
 //
 // -add list.tsv adds songs to the index in -out while it serves, as the
 // next index version (D42): one delta segment per partition that receives
-// songs, then the version's catalog and its manifest. -merge folds every
-// partition's deltas into a new base segment as the next version.
+// songs, then the version's catalog and its manifest; then it merges
+// segments by the size-tiered policy (D47; -compact does only that). -merge
+// folds every partition's deltas into a new base segment as the next
+// version.
 //
 // -extra adds audio files that are not FMA tracks (e.g. a DJ-mix benchmark's
 // reference songs), listed one per line as name<TAB>path. They follow the
@@ -80,7 +82,16 @@ func main() {
 	flag.IntVar(&cfg.workers, "workers", runtime.NumCPU(), "decode+fingerprint goroutines")
 	add := flag.String("add", "", "add these songs (name<TAB>path lines) to the index in -out as its next version (D42)")
 	merge := flag.Bool("merge", false, "merge the index in -out's delta segments into new bases (D42)")
+	compactOnly := flag.Bool("compact", false, "merge the index in -out's segments by the size-tiered policy (D47)")
+	compactAfterAdd := flag.Bool("compact-after-add", true, "with -add, then merge by the size-tiered policy")
+	var pol tierPolicy
+	flag.IntVar(&pol.FanIn, "tier-fanin", 4, "size-tiered merging: deltas per tier, and the size ratio between tiers")
+	flag.Float64Var(&pol.BaseFraction, "base-fraction", 0.1, "size-tiered merging: fold the deltas into the base once they hold this fraction of its postings")
+	flag.IntVar(&pol.MaxDeltas, "max-deltas", 12, "size-tiered merging: most deltas a partition keeps")
 	flag.Parse()
+	if pol.FanIn < 2 || pol.BaseFraction <= 0 || pol.MaxDeltas < 1 {
+		fatal("bad size-tiered policy", "fanin", pol.FanIn, "base_fraction", pol.BaseFraction, "max_deltas", pol.MaxDeltas)
+	}
 	for _, f := range strings.Split(*parts, ",") {
 		p, err := strconv.Atoi(strings.TrimSpace(f))
 		if err != nil || p < 1 {
@@ -114,8 +125,13 @@ func main() {
 	switch {
 	case *add != "":
 		err = addSongs(ctx, cfg, cfg.out, *add)
+		if err == nil && *compactAfterAdd {
+			err = compact(cfg.out, cfg.encoding, pol.plan)
+		}
+	case *compactOnly:
+		err = compact(cfg.out, cfg.encoding, pol.plan)
 	case *merge:
-		err = mergeDeltas(cfg.out, cfg.encoding)
+		err = compact(cfg.out, cfg.encoding, mergeAll)
 	default:
 		err = run(ctx, cfg)
 	}
