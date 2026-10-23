@@ -15,6 +15,9 @@
 // Tracks are fma_medium test positives, decoded up front; excerpts start at
 // the same seeded offsets as cmd/loadgen queries.
 //
+// With -cpuprofile, one more pass of the hybrid's per-window fingerprinting,
+// untimed, runs under the CPU profiler.
+//
 //	go run ./bench/querycost -n 100 -out bench/results/b5_querycost.json
 package main
 
@@ -27,6 +30,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"slices"
 	"sort"
 	"time"
@@ -75,6 +79,7 @@ func main() {
 	shifts := flag.Int("shifts", 4, "sub-hop query grids (D15)")
 	seed := flag.Uint64("seed", 0, "excerpt offset seed (as cmd/loadgen)")
 	out := flag.String("out", "", "output JSON path (required)")
+	cpuprofile := flag.String("cpuprofile", "", "profile one pass of the hybrid's fingerprinting into this file")
 	flag.Parse()
 	if *out == "" {
 		log.Fatal("-out is required")
@@ -109,14 +114,20 @@ func main() {
 	res.GridQueryLowerBound = summarize(grid)
 	res.B2DoubleTime = summarize(best(*reps, windows, func(x []float32) { trips.FingerprintQuery(audio.ResamplePoly(x, 2, 1), *shifts) }))
 	res.B2HalfTime = summarize(best(*reps, windows, func(x []float32) { trips.FingerprintQuery(audio.ResamplePoly(x, 1, 2), *shifts) }))
-	res.HybridWindow = summarize(best(*reps, windows, func(x []float32) {
+	hybrid := func(x []float32) {
 		trips.FingerprintQuery(x, *shifts)
 		trips.FingerprintQuery(audio.ResamplePoly(x, 2, 1), *shifts)
 		trips.FingerprintQuery(audio.ResamplePoly(x, 1, 2), *shifts)
 		lms := pairs.FingerprintQuery(x, *shifts)
 		fingerprint.RescaleTempo(lms, 2)
 		fingerprint.RescaleTempo(lms, 0.5)
-	}))
+	}
+	res.HybridWindow = summarize(best(*reps, windows, hybrid))
+	if *cpuprofile != "" {
+		if err := profile(*cpuprofile, windows, hybrid); err != nil {
+			log.Fatal(err)
+		}
+	}
 	res.PairQueryLandmarks, res.B2QueryLandmarks = median(pairN), median(tripN)
 	res.PairIndex = summarize(best(*reps, tracks, func(x []float32) { pairs.Fingerprint(x) }))
 	res.B2Index = summarize(best(*reps, tracks, func(x []float32) { trips.Fingerprint(x) }))
@@ -131,6 +142,23 @@ func main() {
 	log.Printf("per window: pairs %.1f ms (grid >= %.0f ms), B2 dual %.1f ms, double time %.1f ms, half time %.1f ms, hybrid %.1f ms; per track: pairs %.1f ms, B2 %.1f ms",
 		res.PairQuery.MedianMs, res.GridQueryLowerBound.MedianMs, res.B2DualQuery.MedianMs, res.B2DoubleTime.MedianMs,
 		res.B2HalfTime.MedianMs, res.HybridWindow.MedianMs, res.PairIndex.MedianMs, res.B2Index.MedianMs)
+}
+
+// profile runs f over every input once under the CPU profiler.
+func profile(path string, inputs [][]float32, f func([]float32)) error {
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := pprof.StartCPUProfile(out); err != nil {
+		_ = out.Close()
+		return err
+	}
+	for _, x := range inputs {
+		f(x)
+	}
+	pprof.StopCPUProfile()
+	return out.Close()
 }
 
 // best runs f over every input reps times and returns each input's fastest
