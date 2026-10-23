@@ -20,9 +20,11 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 
 - 2026-10-22: timing runs (live capacity 32 stations, failover, songs added under load, head-to-head cost); head-to-head written up and its tools removed; DJ analysis finished (BPM within 4% for 95.1% of test songs; Go port `tracklist -analyze` matches the prototype on all 1,058 test songs).
 
+- 2026-10-22 evening: hybrid fingerprinting measured at 487 ms of CPU per window, about three quarters of live monitoring's work (B12); options drafted for more streams per machine and cheaper merges (`docs/design/throughput.md`, T1 and T2); DJ analysis rescored against every fade UnmixDB labels (median fade-edge errors 0.30-1.83 s); `cmd/events` (follow live monitoring as it happens) and `bench/scripts/live_demo.py` (one command: clusters, registry, stations, worker, events).
+
 ## Next
 - Demo UI (on Sean's go): on top of live monitoring and `tracklist -analyze`.
-- Candidate improvements, each needing a decision first: live monitoring capacity (consecutive windows overlap 75%, so a stream's spectrogram and peaks could be computed once rather than per window, at the cost of exact equality with offline decoding); tiered merging for added songs (merge deltas together, rewrite the base rarely); the converted UnmixDB labels' missing first and last fades for DJ analysis scoring.
+- Sean's picks on `docs/design/throughput.md`: T1 (more live streams per machine; recommended a shared, frame-aligned front end) and T2 (merging added songs; recommended size-tiered merges).
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers
