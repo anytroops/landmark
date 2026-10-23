@@ -274,8 +274,9 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *a
 		return err
 	}
 	fp := hybrid.NewFingerprinters()
+	quick := 0 // live connections in a row that ended before their first window
 	for src != nil {
-		err := w.decode(ctx, id, src, base, dec, a, fp)
+		n, err := w.decode(ctx, id, src, base, dec, a, fp)
 		_ = src.Close()
 		if ctx.Err() != nil {
 			return nil
@@ -286,7 +287,17 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *a
 			}
 			break
 		}
-		slog.Warn("live source dropped, joining again", "stream", id, "err", err)
+		slog.Warn("live source dropped, joining again", "stream", id, "err", err, "windows", n)
+		if n > 0 {
+			quick = 0
+		} else { // a server that accepts and drops at once must not be hammered
+			quick++
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(backoff(quick)):
+			}
+		}
 		next, nextBase, err := w.connect(ctx, id, url, false)
 		if errors.Is(err, errGone) {
 			break // the broadcast is over: dec ends the last song at its last audio
@@ -312,22 +323,33 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *a
 }
 
 // Joining a live source again after it dropped: first at once, then with
-// this backoff between failures.
+// this backoff between failures (and between connections that end before
+// their first window).
 const (
 	reconnectMin = 500 * time.Millisecond
 	reconnectMax = 10 * time.Second
 )
+
+// backoff is the wait after the n-th failure in a row (from 1).
+func backoff(n int) time.Duration {
+	d := reconnectMin
+	for i := 1; i < n && d < reconnectMax; i++ {
+		d *= 2
+	}
+	return min(d, reconnectMax)
+}
 
 // connect opens the source. The first open of a lease returns any failure
 // (the stream fails and is started again on the next heartbeat); joining
 // again after a drop retries until it works, the broadcast is over
 // (errGone), or ctx ends.
 func (w *Worker) connect(ctx context.Context, id, url string, first bool) (*audio.Stream, float64, error) {
-	for delay := reconnectMin; ; delay = min(2*delay, reconnectMax) {
+	for failures := 1; ; failures++ {
 		src, base, err := openSource(ctx, url, w.cfg.ReadRate)
 		if err == nil || first || errors.Is(err, errGone) {
 			return src, base, err
 		}
+		delay := backoff(failures)
 		slog.Warn("joining the live source failed", "stream", id, "err", err, "retry_in", delay)
 		select {
 		case <-ctx.Done():
@@ -352,14 +374,16 @@ func (w *Worker) decoder(open *landmarkv1.Event, base float64) (*tracklist.Onlin
 }
 
 // decode searches the source's windows and feeds them to dec, appending
-// its events, until the source ends (nil) or fails.
+// its events, until the source ends (nil) or fails. It returns how many
+// windows it decoded.
 func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base float64, dec *tracklist.Online,
-	a *appender, fp *hybrid.Fingerprinters) error {
+	a *appender, fp *hybrid.Fingerprinters) (int, error) {
 	ctx, cancel := context.WithCancel(ctx) // ends the reader on an early return
 	defer cancel()
 	windows := make(chan window, 64)
 	readErr := make(chan error, 1)
 	go func() { readErr <- w.readWindows(ctx, src, windows) }()
+	n := 0
 	for win := range windows {
 		rows := w.search(ctx, id, win, fp)
 		if ctx.Err() != nil {
@@ -367,13 +391,14 @@ func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base 
 		}
 		ev, err := dec.Push(rows)
 		if err != nil {
-			return err
+			return n, err
 		}
+		n++
 		if err := a.send(ctx, w.events(ev, base)); err != nil {
-			return err
+			return n, err
 		}
 	}
-	return <-readErr
+	return n, <-readErr
 }
 
 // readWindows cuts the source into windows and sends them in order; it

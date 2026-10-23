@@ -398,6 +398,7 @@ type station struct {
 	mu      sync.Mutex
 	replies []reply
 	n       int
+	times   []time.Time // when each request came
 }
 
 type reply struct {
@@ -413,6 +414,7 @@ func (st *station) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		r = st.replies[st.n]
 	}
 	st.n++
+	st.times = append(st.times, time.Now())
 	st.mu.Unlock()
 	if r.status != 0 {
 		http.Error(w, http.StatusText(r.status), r.status)
@@ -521,6 +523,62 @@ func TestLiveSourceRejoinsAfterADrop(t *testing.T) {
 				t.Errorf("%d requests, want %d", n, len(tt.replies)+1)
 			}
 		})
+	}
+}
+
+// TestLiveSourceThatDropsAtOnceIsNotHammered: connections that end before
+// a full window are joined again only after a backoff.
+func TestLiveSourceThatDropsAtOnceIsNotHammered(t *testing.T) {
+	pcm, err := audio.Decode(context.Background(), noiseWAV(t, 2), audio.SampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &station{replies: []reply{{start: 1000, pcm: pcm}, {start: 1010, pcm: pcm}, {start: 1020, pcm: pcm}}}
+	srv := httptest.NewServer(st)
+	defer srv.Close()
+	r, _, client := setupURL(t, 6*time.Second, srv.URL+"/stream/s1")
+	w, err := New(config(&scripted{}, 50*time.Millisecond), client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	deadline := time.Now().Add(time.Minute)
+	for testutil.ToFloat64(w.m.finished) < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("stream never ended")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	st.mu.Lock()
+	times := slices.Clone(st.times)
+	st.mu.Unlock()
+	if len(times) != 4 { // three short connections, then 410
+		t.Fatalf("%d requests, want 4", len(times))
+	}
+	for i, want := range []time.Duration{backoff(1), backoff(2), backoff(3)} {
+		if gap := times[i+1].Sub(times[i]); gap < want {
+			t.Errorf("request %d came %v after the one before, want at least %v", i+2, gap, want)
+		}
+	}
+	list, err := r.ListStreams(context.Background(), &landmarkv1.ListStreamsRequest{})
+	if err != nil || list.GetStreams()[0].GetNextSeq() != 1 {
+		t.Errorf("log %v, %v; want it empty", list, err)
+	}
+}
+
+func TestBackoff(t *testing.T) {
+	for _, tt := range []struct {
+		n    int
+		want time.Duration
+	}{{1, 500 * time.Millisecond}, {2, time.Second}, {3, 2 * time.Second}, {5, 8 * time.Second},
+		{6, 10 * time.Second}, {100, 10 * time.Second}} {
+		if got := backoff(tt.n); got != tt.want {
+			t.Errorf("backoff(%d) = %v, want %v", tt.n, got, tt.want)
+		}
 	}
 }
 
