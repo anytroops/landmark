@@ -85,8 +85,9 @@ def main() -> None:
                 counts[kind] += 1
     for kind, path in files.items():
         meta = {"mixes": args.mixes, "source": "cmd/tracklist -rows -alpha 1", "window_s": 10.0,
-                "hop_s": args.hop, "snap_samples": args.snap, "sets": args.sets, "stop_fraction": 0.04, "rows": counts[kind],
-                "mixes_searched": len(todo), **head}  # fmt: skip
+                "hop_s": args.hop, "snap_samples": args.snap, "sets": args.sets,
+                "stop_fraction": 0.04, "rows": counts[kind], "mixes_searched": len(todo),
+                **head}  # fmt: skip
         path.with_name(path.name.replace(".csv.gz", ".meta.json")).write_text(
             json.dumps(meta, indent=1) + "\n"
         )
