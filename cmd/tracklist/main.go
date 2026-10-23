@@ -57,6 +57,7 @@ type config struct {
 	analyze                      bool   // D43: fades, turntable or keylock, BPM
 	fmaDir                       string // FMA references' audio, for -analyze
 	rowsPath                     string // also write every search's row here (CSV)
+	snap                         int    // start each window's audio on a multiple of this many samples (0: off)
 }
 
 func main() {
@@ -82,6 +83,7 @@ func main() {
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
 	flag.BoolVar(&cfg.jsonOut, "json", false, "print entries as JSON")
 	flag.BoolVar(&cfg.analyze, "analyze", false, "also estimate each song's fades, turntable or keylock, and BPM in the set (needs the references' audio)")
+	flag.IntVar(&cfg.snap, "snap", 0, "experiment (docs/design/throughput.md T1): start each window's audio at the next multiple of this many samples, keeping the hop (128 puts every speed's frames on one shared grid)")
 	flag.StringVar(&cfg.rowsPath, "rows", "", "also write every window search's answer here, as CSV (eval.tracklist's columns), e.g. to calibrate the decoder")
 	flag.StringVar(&cfg.fmaDir, "fma-dir", "data/fma_medium", "with -analyze: FMA tracks' audio (non-FMA references use the paths in extras.json)")
 	flag.Parse()
@@ -188,6 +190,18 @@ func writeRows(path string, rows []tracklist.Row) error {
 
 func fmtFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 
+// snapStarts moves each window start up to the next multiple of grid,
+// dropping any that would then run past last.
+func snapStarts(starts []int, grid, last int) []int {
+	var out []int
+	for _, a := range starts {
+		if a = (a + grid - 1) / grid * grid; a <= last {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // windowStarts returns the start sample of each full window.
 func windowStarts(n, window, hop int) []int {
 	var out []int
@@ -208,6 +222,9 @@ type searcher struct {
 func (s searcher) searchWindows(ctx context.Context, pcm []float32) ([]tracklist.Row, int, error) {
 	w, hop := int(s.cfg.window*audio.SampleRate), int(s.cfg.hop*audio.SampleRate)
 	starts := windowStarts(len(pcm), w, hop)
+	if s.cfg.snap > 0 {
+		starts = snapStarts(starts, s.cfg.snap, len(pcm)-w)
+	}
 	rows := make([][]tracklist.Row, len(starts))
 	partial := make([]int, len(starts))
 	errs := make([]error, len(starts))

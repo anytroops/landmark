@@ -33,6 +33,7 @@ def main() -> None:
     ap.add_argument("--mixes", default="unmixdb_s8")
     ap.add_argument("--sets", nargs="+", required=True)
     ap.add_argument("--hop", type=float, default=2.5)
+    ap.add_argument("--snap", type=int, default=0, help="cmd/tracklist -snap (throughput T1)")
     ap.add_argument("--tag", required=True)
     ap.add_argument("--parallel", type=int, default=3, help="tracklist processes at once")
     ap.add_argument("--timeout", default="10s", help="per-search deadline")
@@ -55,7 +56,8 @@ def main() -> None:
             subprocess.run(
                 [str(BIN / "tracklist"), "-coordinator", b2, "-index", str(B2_INDEX),
                  "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX),
-                 "-timeout", args.timeout, "-hop", repr(args.hop), "-alpha", "1",
+                 "-timeout", args.timeout, "-hop", repr(args.hop), "-snap", str(args.snap),
+                 "-alpha", "1",
                  "-rows", str(out), "-json", str(ROOT / f)],
                 capture_output=True, text=True, check=True,
             )  # fmt: skip
@@ -83,7 +85,7 @@ def main() -> None:
                 counts[kind] += 1
     for kind, path in files.items():
         meta = {"mixes": args.mixes, "source": "cmd/tracklist -rows -alpha 1", "window_s": 10.0,
-                "hop_s": args.hop, "sets": args.sets, "stop_fraction": 0.04, "rows": counts[kind],
+                "hop_s": args.hop, "snap_samples": args.snap, "sets": args.sets, "stop_fraction": 0.04, "rows": counts[kind],
                 "mixes_searched": len(todo), **head}  # fmt: skip
         path.with_name(path.name.replace(".csv.gz", ".meta.json")).write_text(
             json.dumps(meta, indent=1) + "\n"

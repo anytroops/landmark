@@ -128,3 +128,20 @@ func TestWriteRows(t *testing.T) {
 		t.Errorf("wrote\n%s\nwant\n%s", b, want)
 	}
 }
+
+func TestSnapStarts(t *testing.T) {
+	tests := []struct {
+		starts    []int
+		grid, end int
+		want      []int
+	}{
+		{starts: []int{0, 27562, 55124}, grid: 128, end: 1 << 20, want: []int{0, 27648, 55168}},
+		{starts: []int{0, 100, 200}, grid: 128, end: 200, want: []int{0, 128}},
+		{starts: []int{0, 128}, grid: 128, end: 1000, want: []int{0, 128}},
+	}
+	for _, tt := range tests {
+		if got := snapStarts(tt.starts, tt.grid, tt.end); !slices.Equal(got, tt.want) {
+			t.Errorf("snapStarts(%v, %d, %d) = %v, want %v", tt.starts, tt.grid, tt.end, got, tt.want)
+		}
+	}
+}
