@@ -289,6 +289,12 @@ func (fp *Fingerprinter) FingerprintQuery(pcm []float32, nShifts int) []Landmark
 			all = append(all, Triplets(fingerprint.FindPeaks(s, fp.p.PeakParams()), fp.p)...)
 		}
 	}
+	return union(all)
+}
+
+// union sorts landmarks by (Hash, T, Span, Band) and drops exact
+// duplicates: a query's landmarks from all its grids and filterbanks.
+func union(all []Landmark) []Landmark {
 	key := func(l Landmark) uint64 {
 		return uint64(l.Hash)<<32 | uint64(l.T)<<16 | uint64(l.Span)<<8 | uint64(l.Band)
 	}
