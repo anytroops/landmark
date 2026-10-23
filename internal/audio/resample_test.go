@@ -2,6 +2,8 @@ package audio
 
 import (
 	"math"
+	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -36,4 +38,38 @@ func TestResamplePolyMatchesScipy(t *testing.T) {
 	if y := ResamplePoly(x, 3, 3); len(y) != len(x) || y[5] != x[5] {
 		t.Error("equal rates should copy")
 	}
+}
+
+// TestResamplerEqualsResamplePoly feeds a signal in uneven pieces and
+// checks that the pieces it returns make up ResamplePoly of the whole.
+func TestResamplerEqualsResamplePoly(t *testing.T) {
+	rng := rand.New(rand.NewPCG(3, 4))
+	x := make([]float32, 20000)
+	for i := range x {
+		x[i] = float32(rng.NormFloat64())
+	}
+	for _, ratio := range [][2]int{{2, 1}, {1, 2}, {50, 53}, {3, 3}} {
+		r := NewResampler(ratio[0], ratio[1])
+		var got []float32
+		for pushed := 0; pushed < len(x); {
+			n := min(1+rng.IntN(700), len(x)-pushed)
+			got = append(got, r.Push(x[pushed:pushed+n])...)
+			pushed += n
+		}
+		got = append(got, r.Close()...)
+		want := ResamplePoly(x, ratio[0], ratio[1])
+		if !slices.Equal(got, want) {
+			t.Errorf("%d/%d: %d samples, ResamplePoly %d; first difference at %d",
+				ratio[0], ratio[1], len(got), len(want), firstDiff(got, want))
+		}
+	}
+}
+
+func firstDiff(a, b []float32) int {
+	for i := range min(len(a), len(b)) {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return min(len(a), len(b))
 }

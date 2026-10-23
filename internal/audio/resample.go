@@ -35,6 +35,79 @@ func ResamplePoly(x []float32, up, down int) []float32 {
 	return y
 }
 
+// Resampler is ResamplePoly for a signal that arrives in pieces (D48): the
+// pieces it returns, concatenated, equal ResamplePoly of the whole signal
+// sample for sample. An output sample comes out once every input sample
+// under its filter has arrived; Close produces the rest, with zeros past the
+// end, as ResamplePoly pads.
+type Resampler struct {
+	up, down, half int
+	h              []float64
+	in             []float32 // input from inStart on
+	inStart, n     int       // n: input samples pushed
+	m              int       // next output sample
+}
+
+// NewResampler returns a Resampler by up/down.
+func NewResampler(up, down int) *Resampler {
+	g := gcd(up, down)
+	r := &Resampler{up: up / g, down: down / g}
+	if r.up != r.down {
+		maxRate := max(r.up, r.down)
+		r.half = 10 * maxRate
+		r.h = lowpass(2*r.half+1, 1/float64(maxRate), float64(r.up))
+	}
+	return r
+}
+
+// Push adds input and returns the output samples it completes.
+func (r *Resampler) Push(x []float32) []float32 {
+	if r.up == r.down {
+		r.n += len(x)
+		return append([]float32(nil), x...)
+	}
+	r.in = append(r.in, x...)
+	r.n += len(x)
+	return r.produce(false)
+}
+
+// Close ends the input and returns the remaining output.
+func (r *Resampler) Close() []float32 {
+	if r.up == r.down {
+		return nil
+	}
+	return r.produce(true)
+}
+
+func (r *Resampler) produce(end bool) []float32 {
+	var out []float32
+	total := (r.n*r.up + r.down - 1) / r.down
+	for {
+		c := r.m*r.down + r.half // upsampled-input index under tap 0, as ResamplePoly
+		if (end && r.m >= total) || (!end && c/r.up >= r.n) {
+			break
+		}
+		acc := 0.0
+		for j := c % r.up; j < len(r.h); j += r.up {
+			i := (c - j) / r.up
+			if i < 0 {
+				break
+			}
+			if i < r.n {
+				acc += r.h[j] * float64(r.in[i-r.inStart])
+			}
+		}
+		out = append(out, float32(acc))
+		r.m++
+	}
+	// The next output's filter reaches back to (c - (len(h) - 1)) / up.
+	if keep := (r.m*r.down+r.half-len(r.h)+1)/r.up - 1; keep > r.inStart {
+		r.in = append(r.in[:0], r.in[keep-r.inStart:]...)
+		r.inStart = keep
+	}
+	return out
+}
+
 // lowpass is scipy.signal.firwin(n, cutoff, window=("kaiser", 5.0)) times gain.
 func lowpass(n int, cutoff, gain float64) []float64 {
 	const beta = 5.0
