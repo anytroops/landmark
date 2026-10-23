@@ -58,3 +58,13 @@ After each core component: 3 interview-style questions and Sean's answers.
 1. Two replicas of a partition swap to version 7 a second apart, and a query arrives in that second. Walk through how the coordinator keeps the answer from mixing versions, and what happens if the replica it picked swaps again before the search runs.
 2. A shard swaps versions while 30 searches are reading the old segment files through mmap. Why can't it just close the old files, and how does it know when it can?
 3. The merge rewrites a partition's whole base to fold in a few small deltas. What does that cost as the catalog grows, and how would an LSM tree's tiered or leveled compaction change it?
+
+### Head-to-head against audfprint and Panako (D41)
+1. Landmark's pair fingerprint and audfprint are the same family of algorithm, yet at 0 dB Landmark keeps 98% and audfprint 54%. Name the design differences that could explain that, and how you would test which one matters.
+2. Why calibrate every system to the same false-accept rate before comparing accuracy, and what would a comparison at each tool's default threshold have shown instead?
+3. audfprint's accuracy kept rising with density while its hash table dropped more and more hashes. What is that trade-off, and why did Landmark not face it?
+
+### DJ mix analysis (D43)
+1. How do you get a song's gain curve out of a mix when you only know which songs play and how they are aligned? Why do it in power, and why non-negative?
+2. A turntable change and a keylock change at the same tempo look identical to the triplet matcher. How does the analysis tell them apart, and what bug once made it always answer keylock?
+3. BPM came out 95% right only after a prior centered on 125 BPM. Is that cheating? When would that prior hurt?

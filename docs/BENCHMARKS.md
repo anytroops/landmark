@@ -274,15 +274,17 @@ Same harness and configuration as B7 (P=1, RF=1, stop list 4%, same indexes and 
 
 ## B9: live monitoring in real time (D38-D40)
 
-One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mixes back to back in real time from `cmd/streamserver`, against the triplet and pair clusters (P=1, stop list 4%) on the same laptop. Every window gets the hybrid's 6 searches. Lag is the time from a window's last sample arriving to its searches finishing; it must stay under the 2.5 s hop, or windows queue up. Detection delay runs from each song's true transition (middle of its crossfade) to its start event. Commit 61f245e, AC power, battery "100%; charged". Raw: `bench/results/live/` (its README lists the runs invalidated by power changes).
+One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mixes back to back in real time from `cmd/streamserver`, against the triplet and pair clusters (P=1, stop list 4%) on the same laptop. Every window gets the hybrid's 6 searches. Lag is the time from a window's last sample arriving to its searches finishing; it must stay under the 2.5 s hop, or windows queue up. Detection delay runs from each song's true transition (middle of its crossfade) to its start event. Commit 61f245e (16 and 32 stations: 0436f83, rerun after power changes invalidated the first runs; the monitoring code is the same), AC power, battery "100%; charged". Raw: `bench/results/live/` (its README lists the runs invalidated by power changes).
 
 | Stations | Window lag p50 / p99 | Songs found | Precision | Detection delay p50 / p90 |
 |---|---|---|---|---|
+| 16 | 0.9 / 1.0 s | 137/143 (95.8%) | 99.3% | 12.0 / 17.8 s |
 | 24 | 1.4 / 1.7 s | 205/215 (95.3%) | 98.6% | 12.6 / 21.1 s |
+| 32 | 2.0 / 2.2 s | 273/286 (95.5%) | 98.9% | 12.9 / 19.4 s |
 | 48 | 53 / 109 s | 406/428 (94.9%) | 99.0% | 61.1 / 107.2 s |
 | 64 | did not finish: 6 of 64 streams reached their end in the time limit | | | |
 
-- **One laptop keeps up with somewhere between 24 and 48 stations** in real time. At 48 the worker falls behind steadily: every window is still answered (none unanswered), so accuracy holds, but songs are reported a minute or more late. The 16- and 32-station points were invalidated by power changes and are to be rerun.
+- **One laptop keeps up with 32 stations** in real time, just: window lag p99 2.2 s against the 2.5 s hop. At 48 the worker falls behind steadily: every window is still answered (none unanswered), so accuracy holds, but songs are reported a minute or more late; at 64 it never caught up. Lag grows about linearly with stations (p50 0.9, 1.4, 2.0 s at 16, 24, 32): each window's fingerprinting and 6 searches share the same 12 cores.
 - **Detection delay at real time** is the 12.5 s the decoder needs (D38) plus search time: median 12.6 s at 24 stations.
 - **Failover** (`rt_kill16`): 16 stations on worker w0, a standby w1, w0 killed with SIGKILL 120 s into the broadcast. All 16 streams moved to w1 (16 leases expired, 32 grants in all); each lost 5.2 s of audio (the lease ran out 6 s after w0's last renewal, shortly before the kill, and w1 took the stream at its next heartbeat); the new holder's first event came 21 to 59 s after the kill (when its first song decision fell due). No sequence gaps. The handoff itself duplicated nothing: 15 of the 16 streams carried their song in progress across it (one entry, flagged resumed), and the 16th closed it as interrupted because another song was playing by then. The 2 repeats in the score are songs the decoder split into two entries within the new holder's run (gaps of 5 and 7.5 s, beyond the 2.5 s merge gap), as offline decoding also does. Songs found 137/143 (95.8%), precision 99.3%, window lag p99 1.3 s.
 
