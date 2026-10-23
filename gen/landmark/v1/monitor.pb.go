@@ -394,10 +394,11 @@ type Event struct {
 	// Tempo factor: reference time per stream time (1.02: played 2% fast).
 	Tempo    float64 `protobuf:"fixed64,9,opt,name=tempo,proto3" json:"tempo,omitempty"`
 	Evidence float64 `protobuf:"fixed64,10,opt,name=evidence,proto3" json:"evidence,omitempty"`
-	// The entry began before a failover and this holder continued it.
+	// The entry began before a failover (or before the holder's live source
+	// dropped and was joined again) and continued after it.
 	Resumed bool `protobuf:"varint,11,opt,name=resumed,proto3" json:"resumed,omitempty"`
-	// The entry began before a failover and did not continue: its end is the
-	// new holder's first audio.
+	// The entry began before a failover (or a rejoined source) and did not
+	// continue: its end is the first audio after it.
 	Interrupted bool   `protobuf:"varint,12,opt,name=interrupted,proto3" json:"interrupted,omitempty"`
 	WorkerId    string `protobuf:"bytes,13,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
 	// Worker clock when the event was decided.

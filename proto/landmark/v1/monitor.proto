@@ -74,10 +74,11 @@ message Event {
   // Tempo factor: reference time per stream time (1.02: played 2% fast).
   double tempo = 9;
   double evidence = 10;
-  // The entry began before a failover and this holder continued it.
+  // The entry began before a failover (or before the holder's live source
+  // dropped and was joined again) and continued after it.
   bool resumed = 11;
-  // The entry began before a failover and did not continue: its end is the
-  // new holder's first audio.
+  // The entry began before a failover (or a rejoined source) and did not
+  // continue: its end is the first audio after it.
   bool interrupted = 12;
   string worker_id = 13;
   // Worker clock when the event was decided.

@@ -74,6 +74,8 @@ Events (D40). Two kinds, times in Unix seconds of broadcast audio:
 
 After failover. The new holder starts from the live position (the gap's audio is lost). If the log has an open entry, the new holder takes it as the previous entry: if the same track's entry begins within the merge gap of the new holder's first audio, it continues it (no second start; the end keeps the original start, flagged `resumed`); otherwise the new holder closes it with an `end` flagged `interrupted`, ending at its first audio (the song ended somewhere in the gap).
 
+Sources that drop (D45). A file source ends when it is read to the end. A live (http) source never ends by itself: when its connection drops (end of data or a read error), the holder joins it again at once, then with backoff from 0.5 s to 10 s while that fails, keeping its lease. The song in progress continues as after a failover, from the new connection's first audio (the gap is lost). The stream ends only when the server answers 410 Gone (the broadcast is over); the last decoder then closes its last song at its last audio, so a station that finishes its playlist logs exactly what it did before rejoining existed.
+
 Stream time. A source's first sample gets a broadcast time: the stream server's `X-Landmark-Start` header when present, otherwise the time the first bytes arrived. Window starts are seconds since then, rounded to ms as offline.
 
 ## Test streams and metrics

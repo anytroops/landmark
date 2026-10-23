@@ -117,10 +117,10 @@ func printEvent(w io.Writer, e *landmarkv1.Event, asJSON bool) error {
 		fmt.Fprintf(&b, " (%+.1f%%)", 100*(t-1))
 	}
 	if e.GetResumed() {
-		b.WriteString(" [continued after failover]")
+		b.WriteString(" [continued after a failover or reconnect]")
 	}
 	if e.GetInterrupted() {
-		b.WriteString(" [ended during failover]")
+		b.WriteString(" [ended during a failover or reconnect]")
 	}
 	_, err := fmt.Fprintln(w, b.String())
 	return err

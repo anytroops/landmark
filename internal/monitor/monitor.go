@@ -47,8 +47,9 @@ const StartHeader = "X-Landmark-Start"
 // Config configures a Worker.
 type Config struct {
 	WorkerID string
-	// Capacity: streams run at once. A file source that has ended keeps its
-	// lease (so it is not played again) but does not count.
+	// Capacity: streams run at once. A source that has ended (a file read
+	// to its end, a broadcast gone off the air) keeps its lease (so it is
+	// not played again) but does not count.
 	Capacity  int
 	Heartbeat time.Duration // D39: 2 s
 	Window    float64       // seconds
@@ -57,8 +58,9 @@ type Config struct {
 	TAbs, TRatio float64
 	K            int
 	MergeGap     float64
-	// ResumeWithin: after a failover, a run of the open entry's track that
-	// begins this many seconds into the new holder's audio continues it.
+	// ResumeWithin: after a failover (or a live source joined again after
+	// it dropped), a run of the open entry's track that begins this many
+	// seconds into the new audio continues it.
 	ResumeWithin float64
 	// ReadRate: playback speed of file sources (1: real time; 0: as fast
 	// as possible).
@@ -247,31 +249,119 @@ type window struct {
 }
 
 // runStream runs one leased stream until ctx ends, the stream is fenced,
-// or the source fails. A source that ends (a file) is decoded to the end
-// and the stream then idles, holding its lease.
+// or the source fails. A file source is decoded to its end and the stream
+// then idles, holding its lease. A live (http) source never ends by itself,
+// so when it drops it is joined again (with backoff while that fails), and
+// the song in progress continues as after a failover (Resume); it ends when
+// the server says the broadcast is over (410 Gone).
 func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *atomic.Bool) error {
 	ctx, cancel := context.WithCancel(ctx) // also ends the reader on an early return
 	defer cancel()
-	src, base, err := openSource(ctx, l.GetUrl(), w.cfg.ReadRate)
-	if err != nil {
+	id, url := l.GetStreamId(), l.GetUrl()
+	a := &appender{reg: w.reg, stream: id, epoch: l.GetEpoch(), next: l.GetNextSeq(), m: w.m, open: l.GetOpen()}
+	src, base, err := w.connect(ctx, id, url, true)
+	switch {
+	case errors.Is(err, errGone):
+		src, base = nil, unix(time.Now()) // over before we joined: at most an open entry to end
+	case err != nil:
 		return err
 	}
-	defer func() { _ = src.Close() }()
-	dec := tracklist.NewOnline(w.cfg.Window, w.cfg.TAbs, w.cfg.TRatio, w.cfg.K, w.cfg.MergeGap)
-	if o := l.GetOpen(); o != nil {
-		e := tracklist.Entry{Track: int(o.GetTrackId()), Start: o.GetStartUnix() - base, Factor: o.GetTempo()}
-		if err := dec.Resume(e, w.cfg.ResumeWithin); err != nil {
+	dec, err := w.decoder(a.open, base)
+	if err != nil {
+		if src != nil {
+			_ = src.Close()
+		}
+		return err
+	}
+	fp := hybrid.NewFingerprinters()
+	for src != nil {
+		err := w.decode(ctx, id, src, base, dec, a, fp)
+		_ = src.Close()
+		if ctx.Err() != nil {
+			return nil
+		}
+		if !isLive(url) {
+			if err != nil {
+				return err
+			}
+			break
+		}
+		slog.Warn("live source dropped, joining again", "stream", id, "err", err)
+		next, nextBase, err := w.connect(ctx, id, url, false)
+		if errors.Is(err, errGone) {
+			break // the broadcast is over: dec ends the last song at its last audio
+		}
+		if err != nil {
+			return nil // ctx ended
+		}
+		w.m.reconnects.Inc()
+		if dec, err = w.decoder(a.open, nextBase); err != nil {
+			_ = next.Close()
 			return err
 		}
+		src, base = next, nextBase
 	}
-	a := &appender{reg: w.reg, stream: l.GetStreamId(), epoch: l.GetEpoch(), next: l.GetNextSeq(), m: w.m}
+	if err := a.send(ctx, w.events(dec.Close(), base)); err != nil {
+		return err
+	}
+	finished.Store(true)
+	w.m.finished.Inc()
+	slog.Info("stream source ended", "stream", id)
+	<-ctx.Done()
+	return nil
+}
 
+// Joining a live source again after it dropped: first at once, then with
+// this backoff between failures.
+const (
+	reconnectMin = 500 * time.Millisecond
+	reconnectMax = 10 * time.Second
+)
+
+// connect opens the source. The first open of a lease returns any failure
+// (the stream fails and is started again on the next heartbeat); joining
+// again after a drop retries until it works, the broadcast is over
+// (errGone), or ctx ends.
+func (w *Worker) connect(ctx context.Context, id, url string, first bool) (*audio.Stream, float64, error) {
+	for delay := reconnectMin; ; delay = min(2*delay, reconnectMax) {
+		src, base, err := openSource(ctx, url, w.cfg.ReadRate)
+		if err == nil || first || errors.Is(err, errGone) {
+			return src, base, err
+		}
+		slog.Warn("joining the live source failed", "stream", id, "err", err, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
+// decoder returns an online decoder for a source whose first sample is at
+// base. An entry still open (its start logged by an earlier holder, or
+// before the source dropped) continues as after a failover.
+func (w *Worker) decoder(open *landmarkv1.Event, base float64) (*tracklist.Online, error) {
+	dec := tracklist.NewOnline(w.cfg.Window, w.cfg.TAbs, w.cfg.TRatio, w.cfg.K, w.cfg.MergeGap)
+	if open != nil {
+		e := tracklist.Entry{Track: int(open.GetTrackId()), Start: open.GetStartUnix() - base, Factor: open.GetTempo()}
+		if err := dec.Resume(e, w.cfg.ResumeWithin); err != nil {
+			return nil, err
+		}
+	}
+	return dec, nil
+}
+
+// decode searches the source's windows and feeds them to dec, appending
+// its events, until the source ends (nil) or fails.
+func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base float64, dec *tracklist.Online,
+	a *appender, fp *hybrid.Fingerprinters) error {
+	ctx, cancel := context.WithCancel(ctx) // ends the reader on an early return
+	defer cancel()
 	windows := make(chan window, 64)
 	readErr := make(chan error, 1)
 	go func() { readErr <- w.readWindows(ctx, src, windows) }()
-	fp := hybrid.NewFingerprinters()
 	for win := range windows {
-		rows := w.search(ctx, l.GetStreamId(), win, fp)
+		rows := w.search(ctx, id, win, fp)
 		if ctx.Err() != nil {
 			break
 		}
@@ -283,20 +373,7 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *a
 			return err
 		}
 	}
-	if err := <-readErr; err != nil {
-		return err
-	}
-	if ctx.Err() != nil {
-		return nil
-	}
-	if err := a.send(ctx, w.events(dec.Close(), base)); err != nil {
-		return err
-	}
-	finished.Store(true)
-	w.m.finished.Inc()
-	slog.Info("stream source ended", "stream", l.GetStreamId())
-	<-ctx.Done()
-	return nil
+	return <-readErr
 }
 
 // readWindows cuts the source into windows and sends them in order; it
@@ -376,12 +453,13 @@ func (w *Worker) events(ev []tracklist.Event, base float64) []*landmarkv1.Event 
 
 // appender numbers events and appends them, retrying transient failures
 // (a retry re-sends the same numbered events, which the log acknowledges
-// once).
+// once). It tracks the entry whose start is logged and end is not.
 type appender struct {
 	reg    landmarkv1.RegistryServiceClient
 	stream string
 	epoch  uint64
 	next   uint64
+	open   *landmarkv1.Event
 	m      *metrics
 }
 
@@ -402,6 +480,13 @@ func (a *appender) send(ctx context.Context, events []*landmarkv1.Event) error {
 		case codes.OK:
 			a.next = resp.GetNextSeq()
 			a.m.appended.Add(float64(len(events)))
+			for _, e := range events { // a decoder has one open entry: an end always closes it
+				if e.GetKind() == landmarkv1.EventKind_EVENT_KIND_START {
+					a.open = e
+				} else {
+					a.open = nil
+				}
+			}
 			return nil
 		case codes.FailedPrecondition:
 			return fmt.Errorf("%w: %w", errFenced, err)
@@ -422,11 +507,19 @@ func (a *appender) send(ctx context.Context, events []*landmarkv1.Event) error {
 	}
 }
 
+// errGone: a live source answered 410 Gone, its broadcast is over.
+var errGone = errors.New("source off the air")
+
+// isLive reports whether url is a live (http) source rather than a file.
+func isLive(url string) bool {
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+}
+
 // openSource opens a stream URL: http(s) is fetched and decoded as it
 // arrives; anything else is a local file read at readRate. It returns the
 // broadcast Unix time of the first sample.
 func openSource(ctx context.Context, url string, readRate float64) (*audio.Stream, float64, error) {
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+	if !isLive(url) {
 		if _, err := os.Stat(url); err != nil {
 			return nil, 0, fmt.Errorf("source: %w", err)
 		}
@@ -444,6 +537,9 @@ func openSource(ctx context.Context, url string, readRate float64) (*audio.Strea
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusGone {
+			return nil, 0, fmt.Errorf("source %s: %w", url, errGone)
+		}
 		return nil, 0, fmt.Errorf("source %s: %s", url, resp.Status)
 	}
 	base := unix(time.Now())
@@ -487,9 +583,9 @@ func (c *windower) add(x []float32) []cutWindow {
 func unix(t time.Time) float64 { return float64(t.UnixNano()) / 1e9 }
 
 type metrics struct {
-	windows, searchFailures, appended, fenced, heartbeatFailures, finished prometheus.Counter
-	running                                                                prometheus.Gauge
-	lag                                                                    prometheus.Histogram
+	windows, searchFailures, appended, fenced, heartbeatFailures, finished, reconnects prometheus.Counter
+	running                                                                            prometheus.Gauge
+	lag                                                                                prometheus.Histogram
 }
 
 func newMetrics(reg prometheus.Registerer) (*metrics, error) {
@@ -505,7 +601,9 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 		heartbeatFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "landmark_monitor_heartbeat_failures_total", Help: "Failed heartbeats."}),
 		finished: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "landmark_monitor_sources_ended_total", Help: "File sources decoded to their end."}),
+			Name: "landmark_monitor_sources_ended_total", Help: "Sources decoded to their end (files, and broadcasts that went off the air)."}),
+		reconnects: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "landmark_monitor_source_reconnects_total", Help: "Live sources joined again after they dropped."}),
 		running: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "landmark_monitor_streams_running", Help: "Streams this worker runs."}),
 		lag: prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -514,7 +612,7 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 	}
 	if reg != nil {
 		for _, c := range []prometheus.Collector{m.windows, m.searchFailures, m.appended, m.fenced,
-			m.heartbeatFailures, m.finished, m.running, m.lag} {
+			m.heartbeatFailures, m.finished, m.reconnects, m.running, m.lag} {
 			if err := reg.Register(c); err != nil {
 				return nil, fmt.Errorf("monitor: metrics: %w", err)
 			}

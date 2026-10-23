@@ -2,10 +2,16 @@ package monitor
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"math"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +22,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
+	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/hybrid"
 	"github.com/anytroops/landmark/internal/registry"
 	"github.com/anytroops/landmark/internal/tracklist"
@@ -78,6 +85,12 @@ func (c *clock) advance(d time.Duration) {
 // in-memory connection.
 func setup(t *testing.T, ttl time.Duration, seconds int) (*registry.Registry, *clock, landmarkv1.RegistryServiceClient) {
 	t.Helper()
+	return setupURL(t, ttl, noiseWAV(t, seconds))
+}
+
+// noiseWAV writes a noise WAV of seconds and returns its path.
+func noiseWAV(t *testing.T, seconds int) string {
+	t.Helper()
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not installed")
 	}
@@ -86,6 +99,13 @@ func setup(t *testing.T, ttl time.Duration, seconds int) (*registry.Registry, *c
 		"anoisesrc=seed=3:sample_rate=11025:duration="+itoa(seconds), wav).CombinedOutput(); err != nil {
 		t.Fatalf("make fixture: %v: %s", err, out)
 	}
+	return wav
+}
+
+// setupURL runs a registry with one stream, s1 at url, over an in-memory
+// connection.
+func setupURL(t *testing.T, ttl time.Duration, url string) (*registry.Registry, *clock, landmarkv1.RegistryServiceClient) {
+	t.Helper()
 	c := &clock{t: time.Unix(1000, 0)}
 	r, err := registry.Open(registry.Options{Dir: t.TempDir(), TTL: ttl, Now: c.now}, nil)
 	if err != nil {
@@ -94,7 +114,7 @@ func setup(t *testing.T, ttl time.Duration, seconds int) (*registry.Registry, *c
 	t.Cleanup(func() { _ = r.Close() })
 	c.advance(ttl) // past the startup grace
 	if _, err := r.AddStream(context.Background(), &landmarkv1.AddStreamRequest{
-		Stream: &landmarkv1.Stream{Id: "s1", Url: wav}}); err != nil {
+		Stream: &landmarkv1.Stream{Id: "s1", Url: url}}); err != nil {
 		t.Fatal(err)
 	}
 	lis := bufconn.Listen(1 << 20)
@@ -368,5 +388,170 @@ func TestEndedSourcesFreeCapacity(t *testing.T) {
 	<-done
 	if streams["s1"] != 2 || streams["s2"] != 2 {
 		t.Errorf("events per stream %v, want 2 each", streams)
+	}
+}
+
+// station serves a live stream as cmd/streamserver does (float WAV with
+// X-Landmark-Start), answering the n-th request with replies[n]: audio
+// that then drops, a bare status, or (past the end) 410 Gone.
+type station struct {
+	mu      sync.Mutex
+	replies []reply
+	n       int
+}
+
+type reply struct {
+	status int       // 0: 200 with pcm
+	start  float64   // broadcast time of pcm's first sample
+	pcm    []float32 // sent at once, then the connection closes
+}
+
+func (st *station) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	st.mu.Lock()
+	r := reply{status: http.StatusGone}
+	if st.n < len(st.replies) {
+		r = st.replies[st.n]
+	}
+	st.n++
+	st.mu.Unlock()
+	if r.status != 0 {
+		http.Error(w, http.StatusText(r.status), r.status)
+		return
+	}
+	w.Header().Set(StartHeader, strconv.FormatFloat(r.start, 'f', 6, 64))
+	le := binary.LittleEndian
+	b := append([]byte("RIFF"), le.AppendUint32(nil, 0xFFFFFFFF)...)
+	b = append(b, "WAVEfmt "...)
+	for _, v := range []uint32{16, 3 | 1<<16, audio.SampleRate, 4 * audio.SampleRate, 4 | 32<<16} {
+		b = le.AppendUint32(b, v) // chunk size, float + mono, rate, byte rate, block align + bits
+	}
+	b = append(b, "data"...)
+	b = le.AppendUint32(b, 0xFFFFFFFF)
+	for _, v := range r.pcm {
+		b = le.AppendUint32(b, math.Float32bits(v))
+	}
+	_, _ = w.Write(b)
+}
+
+func (st *station) requests() int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.n
+}
+
+// TestLiveSourceRejoinsAfterADrop: a live stream that drops is joined
+// again (retrying a failed try), and the song in progress continues as one
+// entry that ends when the station goes off the air, not when the
+// connection dropped; a song that had already ended is not continued.
+func TestLiveSourceRejoinsAfterADrop(t *testing.T) {
+	pcm, err := audio.Decode(context.Background(), noiseWAV(t, 60), audio.SampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := func(a, b int) []float32 { return pcm[a*audio.SampleRate : b*audio.SampleRate] }
+	// end of the last window of 20 s of audio (at 10 s, on the
+	// 27,562-sample window grid)
+	last := hybrid.WindowT0(4*27562) + 10
+	type ev struct {
+		kind       landmarkv1.EventKind
+		start, end float64
+		resumed    bool
+	}
+	start, end := landmarkv1.EventKind_EVENT_KIND_START, landmarkv1.EventKind_EVENT_KIND_END
+	tests := []struct {
+		name    string
+		replies []reply
+		tracks  []int // per window, both connections in order
+		want    []ev  // start events: only the kind is checked
+	}{
+		{
+			name: "song in progress continues",
+			replies: []reply{{start: 1000, pcm: sec(0, 20)}, {status: http.StatusServiceUnavailable},
+				{start: 1023, pcm: sec(20, 40)}}, // 3 s of broadcast missed
+			tracks: slices.Repeat([]int{5}, 10),
+			want:   []ev{{kind: start}, {kind: end, start: 1000, end: 1023 + last, resumed: true}},
+		},
+		{
+			name:    "song that ended is not continued",
+			replies: []reply{{start: 1000, pcm: sec(0, 40)}, {start: 1043, pcm: sec(40, 60)}},
+			tracks:  slices.Concat([]int{5, 5}, slices.Repeat([]int{-1}, 11), slices.Repeat([]int{5}, 5)),
+			want: []ev{{kind: start}, {kind: end, start: 1000, end: 1000 + hybrid.WindowT0(27562) + 10},
+				{kind: start}, {kind: end, start: 1043, end: 1043 + last}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &station{replies: tt.replies}
+			srv := httptest.NewServer(st)
+			defer srv.Close()
+			_, _, client := setupURL(t, 6*time.Second, srv.URL+"/stream/s1")
+			w, err := New(config(&scripted{tracks: tt.tracks}, 50*time.Millisecond), client, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- w.Run(ctx) }()
+			events := logged(t, client, len(tt.want))
+			deadline := time.Now().Add(2 * time.Minute)
+			for testutil.ToFloat64(w.m.finished) < 1 {
+				if time.Now().After(deadline) {
+					t.Fatal("stream never ended")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			cancel()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			for i, e := range events {
+				x := tt.want[i]
+				if e.GetKind() != x.kind || e.GetTrackId() != 5 {
+					t.Fatalf("event %d: %v of track %d, want %v of track 5", i, e.GetKind(), e.GetTrackId(), x.kind)
+				}
+				if x.kind == end && (e.GetResumed() != x.resumed || e.GetInterrupted() ||
+					abs(e.GetStartUnix()-x.start) > 0.01 || abs(e.GetEndUnix()-x.end) > 0.01) {
+					t.Errorf("event %d %+v; want %.3f to %.3f, resumed %v", i, e, x.start, x.end, x.resumed)
+				}
+			}
+			if got := testutil.ToFloat64(w.m.reconnects); got != 1 {
+				t.Errorf("joined again %v times, want 1", got)
+			}
+			if n := st.requests(); n != len(tt.replies)+1 { // then 410
+				t.Errorf("%d requests, want %d", n, len(tt.replies)+1)
+			}
+		})
+	}
+}
+
+// TestLiveSourceOffTheAir: a stream whose station is already gone ends
+// at once, with nothing to log.
+func TestLiveSourceOffTheAir(t *testing.T) {
+	st := &station{}
+	srv := httptest.NewServer(st)
+	defer srv.Close()
+	r, _, client := setupURL(t, 6*time.Second, srv.URL+"/stream/s1")
+	w, err := New(config(&scripted{}, 50*time.Millisecond), client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	deadline := time.Now().Add(time.Minute)
+	for testutil.ToFloat64(w.m.finished) < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("stream never ended")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	list, err := r.ListStreams(context.Background(), &landmarkv1.ListStreamsRequest{})
+	if err != nil || list.GetStreams()[0].GetNextSeq() != 1 {
+		t.Errorf("log %v, %v; want it empty", list, err)
+	}
+	if n := st.requests(); n != 1 {
+		t.Errorf("%d requests, want 1", n)
 	}
 }

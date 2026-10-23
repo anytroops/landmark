@@ -89,7 +89,7 @@ func TestFollowPrintsLoggedThenLiveEvents(t *testing.T) {
 	}
 	wait("playing  Song A")
 	appendEvent(&landmarkv1.Event{Seq: 2, Kind: landmarkv1.EventKind_EVENT_KIND_END, Name: "Song A", StartUnix: 100, EndUnix: 160, Tempo: 1.04, Resumed: true})
-	wait("played   Song A for 60 s (+4.0%) [continued after failover]")
+	wait("played   Song A for 60 s (+4.0%) [continued after a failover or reconnect]")
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
