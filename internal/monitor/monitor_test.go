@@ -272,22 +272,24 @@ func TestWorkerStopsWhenFenced(t *testing.T) {
 	<-done
 }
 
-// failingRegistry answers the first heartbeat and fails every later one.
+// failingRegistry answers heartbeats until one has succeeded, then fails
+// every later one. (Counting calls instead failed on a slow CI runner: the
+// first call timed out at its 100 ms deadline and used up the only answer.)
 type failingRegistry struct {
 	landmarkv1.RegistryServiceClient
-	mu    sync.Mutex
-	calls int
+	mu        sync.Mutex
+	succeeded bool
 }
 
 func (f *failingRegistry) Heartbeat(ctx context.Context, req *landmarkv1.HeartbeatRequest, opts ...grpc.CallOption) (*landmarkv1.HeartbeatResponse, error) {
 	f.mu.Lock()
-	f.calls++
-	n := f.calls
-	f.mu.Unlock()
-	if n > 1 {
+	defer f.mu.Unlock()
+	if f.succeeded {
 		return nil, errors.New("registry unreachable")
 	}
-	return f.RegistryServiceClient.Heartbeat(ctx, req, opts...)
+	resp, err := f.RegistryServiceClient.Heartbeat(ctx, req, opts...)
+	f.succeeded = err == nil
+	return resp, err
 }
 
 // TestWorkerStopsWithoutHeartbeats: a worker cut off from the registry
