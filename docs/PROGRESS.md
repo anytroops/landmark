@@ -43,7 +43,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - Benchmarks: AC power only. One decode measured 3x slower on battery at 43% charge; a full B5 run on battery at 100% charge was within a few percent of AC, so the size of the effect varies. Run metadata records `power`, and the bench scripts refuse battery.
 - Never commit while a benchmark runs: each point records HEAD when it finishes. Bench scripts refuse uncommitted code.
 - `caffeinate -i` does not stop a closed MacBook on battery from sleeping; long runs need the lid open. A sleep mid-run freezes processes and inflates wall-clock timings (the fma_medium ingest timings are unusable).
-- Never gate a commit on a pipe (`make test | tail`): the pipe hides the failure (5744ed0 pushed a failing test).
+- Never gate a commit on a pipe (`make test | tail`) or chain it after a `;`: either hides the failure (5744ed0 pushed a failing test; cba5800 a ruff error). Use `&&` from the checks to the commit.
 - zsh: no word splitting of `$var` commands; an unmatched glob aborts an `&&` chain (that is how a debug run got committed); `pgrep -f` matches its own wait loop.
 - Doc edits by script: replacing "from X to end of file" deletes later sections (it removed B3/B5 from BENCHMARKS.md once). Replace bounded spans only.
 - A `kill -9`'d container's address disappears, so requests to it hang instead of failing fast; per-attempt timeouts (D24) bound the damage.
