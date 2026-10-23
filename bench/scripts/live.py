@@ -60,12 +60,13 @@ def mixes(name: str, sets: list[str]) -> list[str]:
     return [m["file"] for m in gt["mixes"] if m["set"] in sets]
 
 
-def offline(files: list[str], b2: str, pairs: str, parallel: int, timeout: str) -> dict[str, list]:
+def offline(files: list[str], b2: str, pairs: str, parallel: int, timeout: str,
+            hop: float) -> dict[str, list]:  # fmt: skip
     def one(f: str) -> tuple[str, list]:
         out = subprocess.run(
             [str(BIN / "tracklist"), "-coordinator", b2, "-index", str(B2_INDEX),
              "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX), "-timeout", timeout,
-             "-json", str(ROOT / f)],
+             "-hop", repr(hop), "-json", str(ROOT / f)],
             capture_output=True, text=True, check=True,
         ).stdout  # fmt: skip
         return f, json.loads(out)
@@ -75,7 +76,7 @@ def offline(files: list[str], b2: str, pairs: str, parallel: int, timeout: str) 
 
 
 def live(files: list[str], b2: str, pairs: str, out: Path, capacity: int, timeout: str,
-         timeout_s: float) -> dict[str, list]:  # fmt: skip
+         timeout_s: float, hop: float) -> dict[str, list]:  # fmt: skip
     tmp = Path(tempfile.mkdtemp(prefix="live-"))
     streams = [{"id": Path(f).stem, "url": str(ROOT / f)} for f in files]
     (tmp / "streams.json").write_text(json.dumps(streams))
@@ -91,7 +92,7 @@ def live(files: list[str], b2: str, pairs: str, out: Path, capacity: int, timeou
         mlog = tmp / "monitor.log"
         procs.append(subprocess.Popen(
             [str(BIN / "monitor"), "-registry", "127.0.0.1:7900", "-id", "w1",
-             "-capacity", str(capacity), "-read-rate", "0", "-timeout", timeout,
+             "-capacity", str(capacity), "-read-rate", "0", "-timeout", timeout, "-hop", repr(hop),
              "-coordinator", b2, "-index", str(B2_INDEX),
              "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX),
              "-window-log", str(out / "windows.jsonl"), "-admin", "127.0.0.1:7902"],
@@ -159,10 +160,10 @@ def equiv(args: argparse.Namespace) -> None:
         ) as (pairs, _),
     ):
         t0 = time.monotonic()
-        off = offline(files, b2, pairs, args.parallel, args.timeout)
+        off = offline(files, b2, pairs, args.parallel, args.timeout, args.hop)
         t_off = time.monotonic() - t0
         t0 = time.monotonic()
-        on = live(files, b2, pairs, out, args.capacity, args.timeout, args.live_timeout_s)
+        on = live(files, b2, pairs, out, args.capacity, args.timeout, args.live_timeout_s, args.hop)
         t_on = time.monotonic() - t0
     for name, runs in (("offline_runs.jsonl", off), ("live_runs.jsonl", on)):
         with (out / name).open("w") as fh:
@@ -177,7 +178,7 @@ def equiv(args: argparse.Namespace) -> None:
         "entries_live": sum(len(v) for v in on.values()),
         "windows_live": len(windows), "windows_unanswered": sum(w["failed"] for w in windows),
         "offline_wall_s": round(t_off, 1), "live_wall_s": round(t_on, 1),
-        "capacity": args.capacity, "parallel_offline": args.parallel,
+        "capacity": args.capacity, "parallel_offline": args.parallel, "hop_s": args.hop,
         "stop_fraction": args.stop_fraction, **head,
         "power": run_out("pmset", "-g", "batt").splitlines()[:1],
     }  # fmt: skip
@@ -363,6 +364,12 @@ def main() -> None:
     eq.add_argument("--timeout", default="10s", help="per-search deadline, both runs")
     eq.add_argument("--live-timeout-s", type=float, default=3600)
     eq.add_argument("--limit", type=int, default=0, help="first N mixes only (smoke test)")
+    eq.add_argument(
+        "--hop",
+        type=float,
+        default=2.5,
+        help="window hop, s, both runs (2.4961452: 27,520 samples, throughput T1 (a))",
+    )
     eq.add_argument(
         "--stop-fraction",
         type=float,
