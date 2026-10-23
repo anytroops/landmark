@@ -46,25 +46,25 @@ type timing struct {
 }
 
 type result struct {
-	Tracks              int               `json:"tracks"`
-	WindowSeconds       float64           `json:"window_seconds"`
-	Shifts              int               `json:"shifts"`
-	Reps                int               `json:"reps"`
-	PairQuery           timing            `json:"pair_query_per_window"`
-	GridQueryLowerBound timing            `json:"grid_query_per_window_lower_bound"`
-	B2DualQuery         timing            `json:"b2_dual_query_per_window"`
+	Tracks              int     `json:"tracks"`
+	WindowSeconds       float64 `json:"window_seconds"`
+	Shifts              int     `json:"shifts"`
+	Reps                int     `json:"reps"`
+	PairQuery           timing  `json:"pair_query_per_window"`
+	GridQueryLowerBound timing  `json:"grid_query_per_window_lower_bound"`
+	B2DualQuery         timing  `json:"b2_dual_query_per_window"`
 	// The hybrid's other per-window fingerprints (D36): the window resampled
 	// to double and half time (resampling included) for the triplet
 	// searches, and its whole client-side work per window.
-	B2DoubleTime timing `json:"b2_double_time_per_window"`
-	B2HalfTime   timing `json:"b2_half_time_per_window"`
-	HybridWindow timing `json:"hybrid_fingerprints_per_window"`
-	PairIndex           timing            `json:"pair_index_per_track"`
-	B2Index             timing            `json:"b2_index_per_track"`
-	PairQueryLandmarks  float64           `json:"pair_query_landmarks_median"`
-	B2QueryLandmarks    float64           `json:"b2_query_landmarks_median"`
-	GridAudioHyps       int               `json:"grid_audio_hypotheses"`
-	Machine             map[string]string `json:"machine"`
+	B2DoubleTime       timing            `json:"b2_double_time_per_window"`
+	B2HalfTime         timing            `json:"b2_half_time_per_window"`
+	HybridWindow       timing            `json:"hybrid_fingerprints_per_window"`
+	PairIndex          timing            `json:"pair_index_per_track"`
+	B2Index            timing            `json:"b2_index_per_track"`
+	PairQueryLandmarks float64           `json:"pair_query_landmarks_median"`
+	B2QueryLandmarks   float64           `json:"b2_query_landmarks_median"`
+	GridAudioHyps      int               `json:"grid_audio_hypotheses"`
+	Machine            map[string]string `json:"machine"`
 }
 
 func main() {
