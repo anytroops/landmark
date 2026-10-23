@@ -1,4 +1,4 @@
-.PHONY: all build test test-go test-py lint lint-go lint-py fmt proto proto-check fuzz cluster-up cluster-down py-sync clean
+.PHONY: all build test test-go test-py lint lint-go lint-py fmt proto proto-check fuzz cluster-up cluster-down py-sync clean demo
 
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
@@ -7,6 +7,11 @@ all: lint test build
 build:
 	go build ./...
 	@if [ -d cmd ]; then go build -o bin/ ./cmd/...; fi
+
+# The demo web page on http://127.0.0.1:8080 (cmd/demo): STATIONS=0 skips live monitoring.
+STATIONS ?= 3
+demo: build py-sync
+	uv run python -m bench.scripts.demo --stations $(STATIONS)
 
 test: test-go test-py
 

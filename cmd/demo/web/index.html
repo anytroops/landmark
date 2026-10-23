@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landmark demo</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <h1>Landmark</h1>
+      <p class="sub">Identify songs, tracklist DJ mixes, monitor live streams</p>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" class="tab" data-tab="identify" aria-selected="true">Identify a clip</button>
+  <button role="tab" class="tab" data-tab="tracklist" aria-selected="false">Tracklist a mix</button>
+  <button role="tab" class="tab" data-tab="live" aria-selected="false">Live stations</button>
+</nav>
+
+<main>
+  <!-- Identify -->
+  <section class="panel" id="panel-identify">
+    <div class="grid2">
+      <div class="card">
+        <h2>Ask about 10 seconds of audio</h2>
+        <label class="drop" id="id-drop">
+          <input type="file" id="id-file" accept="audio/*,video/*" hidden>
+          <span class="drop-main">Drop an audio file here, or click to choose one</span>
+          <span class="drop-hint">Any format ffmpeg reads. 10 s are used, from the start set below.</span>
+        </label>
+        <div class="row">
+          <label class="field">Start at <input type="number" id="id-start" min="0" step="1" value="0"> s</label>
+          <button class="btn" id="id-record"><span class="dot"></span> Record 10 s from the microphone</button>
+        </div>
+        <div class="divider"><span>or try a song from the test set</span></div>
+        <div class="field-col">
+          <label class="field wide">Song
+            <select id="id-song"><option value="random">A random test song</option></select>
+          </label>
+          <label class="field wide">Tempo change <output id="id-tempo-out">+6%</output>
+            <input type="range" id="id-tempo" min="-8" max="8" step="1" value="6">
+          </label>
+          <div class="seg" role="group" aria-label="Kind of tempo change">
+            <button class="seg-btn" data-kind="turntable" aria-pressed="true">Turntable<small>pitch moves too</small></button>
+            <button class="seg-btn" data-kind="keylock" aria-pressed="false">Keylock<small>pitch kept</small></button>
+          </div>
+          <button class="btn primary" id="id-example">Identify it</button>
+        </div>
+      </div>
+      <div class="results" id="id-results">
+        <div class="placeholder">
+          <p>Landmark searches every clip two ways: with <b>pair</b> hashes, as classic fingerprinting does, and with <b>triplet</b> hashes built from ratios a tempo change cannot move. Try a test song at +6% to see the difference.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tracklist -->
+  <section class="panel" id="panel-tracklist" hidden>
+    <div class="card">
+      <h2>Name every song in a DJ mix, and how it was mixed in</h2>
+      <div class="row wrap">
+        <label class="field wide">Test mix (UnmixDB, with its true tracklist)
+          <select id="tl-mix"></select>
+        </label>
+        <button class="btn primary" id="tl-run">Tracklist it</button>
+        <label class="btn" for="tl-file">Or upload a mix<input type="file" id="tl-file" accept="audio/*,video/*" hidden></label>
+      </div>
+      <p class="muted small">Every 10 s window, 2.5 s apart, gets six searches. The decoder reports a song once its first window is certain, as live monitoring does; then each song's fades, tempo change, and BPM are read from the audio.</p>
+    </div>
+    <div class="card" id="tl-out" hidden>
+      <div class="tl-head">
+        <h3 id="tl-title"></h3>
+        <div class="tl-status" id="tl-status"></div>
+      </div>
+      <div class="timeline" id="tl-timeline"></div>
+      <div class="legend" id="tl-legend"></div>
+      <table class="entries" id="tl-table">
+        <thead><tr><th>#</th><th>Time</th><th>Song</th><th>Tempo</th><th>Mixed in</th><th>Fades</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Live -->
+  <section class="panel" id="panel-live" hidden>
+    <div class="card" id="live-off" hidden>
+      <h2>Live monitoring is not running</h2>
+      <p class="muted"><code>make demo</code> starts three test stations and a worker by default; with <code>STATIONS=0</code> it starts none.</p>
+    </div>
+    <div class="live-grid" id="live-grid"></div>
+    <div class="card">
+      <h3>Events, as the workers log them</h3>
+      <ol class="feed" id="live-feed"></ol>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Catalog: fma_medium plus the UnmixDB references. Everything here is answered live on this machine; measured accuracy is in docs/EVAL.md.</span>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

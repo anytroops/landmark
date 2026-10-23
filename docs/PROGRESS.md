@@ -24,8 +24,9 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 
 - 2026-10-22 night: profiled the per-window fingerprinting (83% in the triplet spectrogram, its FFT done twice by the dual filterbank); D44 computes each FFT once for both filterbanks, output identical: fingerprinting 481.5 to 310.3 ms per window (B13), real-time capacity 32 to 48 stations, saturated at 56 (B9). D45: a live source that drops is joined again and the song in progress continues (before, the worker idled on the stream for good); 16 real-time stations log the same events as before. Measured throughput option T1 (a) before building it (B14): 2.5x less triplet fingerprinting per window with every window's landmarks unchanged; its hop (a multiple of 128 samples) finds the same songs on the test sets with about half a point less precision (98.2-98.4% against 98.9%; F1 0.967 against 0.970), and recalibrating did not win it back (`cmd/tracklist -rows` feeds the eval's calibration). Live equals offline on all 384 test mixes, and `cmd/tracklist` reproduces the eval's test result on every one. Worker-kill failover repeated on the current code with the same outcome. B15 (for T2): each delta segment costs a search 0.2 to 0.5 ms of shard CPU (12.3 ms merged; 10 deltas +21%, 40 deltas +67% and a saturated shard at 400 qps), whatever its size.
 
+- 2026-10-23: demo web page (D46, Sean's go): `make demo`; identify (file, microphone, test songs with turntable or keylock changes, pairs against triplets), tracklisting with a live timeline, analysis, and the true tracklist, live stations.
+
 ## Next
-- Demo UI (on Sean's go): on top of live monitoring and `tracklist -analyze`.
 - Sean's picks on `docs/design/throughput.md`: T1 (more live streams per machine; recommended a shared, frame-aligned front end, now measured: B14) and T2 (merging added songs; recommended size-tiered merges).
 - Sean to review D44 and D45, made while he was away: D44 is output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.

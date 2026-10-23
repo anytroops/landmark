@@ -22,6 +22,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | Adding songs while serving (D42) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load |
 | Head-to-head against audfprint and Panako (D41) | Done: same tracks, queries, and accept rule, each tool's density tuned on val; accuracy, DJ mixes, and cost |
 | DJ mix analysis (D43) | Done: `tracklist -analyze` reports each song's fades, turntable or keylock, and BPM in the set; the Go port matches the Python prototype on all 1,058 test songs |
+| Demo web page (D46) | Done: `make demo`. Identify a clip (a file, the microphone, or a test song sped up like a turntable or with keylock, pair and triplet answers side by side), tracklist a mix while its windows are searched (fades, turntable or keylock, BPM, the true tracklist beside it), watch live stations |
 | Live stream monitoring (D38-D40) | Done: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes; real-time capacity and worker failover measured |
 
 ## Architecture
@@ -128,13 +129,19 @@ bin/ingest -out data/segments/medium -add new_songs.tsv   # name<TAB>path per li
 bin/ingest -out data/segments/medium -merge               # fold delta segments into new bases
 ```
 
-To watch live monitoring on this machine (both clusters, a registry, a stream server playing test mixes as stations, a worker, and `events` printing songs as they are recognized):
+The demo web page on http://127.0.0.1:8080 (both clusters, three looping test stations with a worker, and `cmd/demo`; `STATIONS=0` skips live monitoring):
+
+```bash
+make demo
+```
+
+To watch live monitoring in the terminal instead (both clusters, a registry, a stream server playing test mixes as stations, a worker, and `events` printing songs as they are recognized):
 
 ```bash
 python -m bench.scripts.live_demo --stations 3
 ```
 
-Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list; add songs; merge), `events` (follow live monitoring), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
+Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list; add songs; merge), `demo` (the web page), `events` (follow live monitoring), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
 
 ## Data
 
