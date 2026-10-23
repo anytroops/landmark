@@ -22,6 +22,8 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 
 - 2026-10-22 evening: hybrid fingerprinting measured at 487 ms of CPU per window, about three quarters of live monitoring's work (B12); options drafted for more streams per machine and cheaper merges (`docs/design/throughput.md`, T1 and T2); DJ analysis rescored against every fade UnmixDB labels (median fade-edge errors 0.30-1.83 s); `cmd/events` (follow live monitoring as it happens) and `bench/scripts/live_demo.py` (one command: clusters, registry, stations, worker, events).
 
+- 2026-10-22 night: profiled the per-window fingerprinting (83% in the triplet spectrogram, its FFT done twice by the dual filterbank); D44 computes each FFT once for both filterbanks, output identical: fingerprinting 481.5 to 310.3 ms per window (B13), real-time capacity 32 to 48 stations, saturated at 56 (B9).
+
 ## Next
 - Demo UI (on Sean's go): on top of live monitoring and `tracklist -analyze`.
 - Sean's picks on `docs/design/throughput.md`: T1 (more live streams per machine; recommended a shared, frame-aligned front end) and T2 (merging added songs; recommended size-tiered merges).

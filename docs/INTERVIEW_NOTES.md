@@ -64,6 +64,11 @@ After each core component: 3 interview-style questions and Sean's answers.
 2. Why calibrate every system to the same false-accept rate before comparing accuracy, and what would a comparison at each tool's default threshold have shown instead?
 3. audfprint's accuracy kept rising with density while its hash table dropped more and more hashes. What is that trade-off, and why did Landmark not face it?
 
+### Query FFT sharing (D44)
+1. Sharing each frame's FFT between the two query filterbanks halved the FFT work, yet fingerprinting got 1.55x faster, not 2x, and live capacity went from 32 to 48 stations. Account for both numbers.
+2. `math.Hypot` is a sixth of the remaining time and a plain square root would be faster. Why keep it, and what could a one-ulp change in a magnitude do downstream?
+3. How does the test show the optimization changed nothing, and what kind of bug could still get past it?
+
 ### DJ mix analysis (D43)
 1. How do you get a song's gain curve out of a mix when you only know which songs play and how they are aligned? Why do it in power, and why non-negative?
 2. A turntable change and a keylock change at the same tempo look identical to the triplet matcher. How does the analysis tell them apart, and what bug once made it always answer keylock?

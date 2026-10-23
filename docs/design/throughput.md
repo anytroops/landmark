@@ -4,7 +4,7 @@ Status: draft, 2026-10-22 (numbers updated after D44). Decisions marked **DECIDE
 
 ## Where the time goes
 
-One laptop keeps up with 32 live stations, not 48 (BENCHMARKS B9). Per 10 s window of one stream, from committed measurements (after D44, which computes each FFT once for both query filterbanks and cut fingerprinting 1.55x with identical output, B13):
+One laptop keeps up with 48 live stations and is saturated at 56 (BENCHMARKS B9, after D44; 32 before it). Per 10 s window of one stream, from committed measurements (after D44, which computes each FFT once for both query filterbanks and cut fingerprinting 1.55x with identical output, B13):
 
 - Fingerprinting, 310 ms of CPU (B13, one core): the triplet query fingerprint of the window (77 ms), of the window resampled to double time (20 s of audio, 161 ms) and to half time (39 ms), and the pair fingerprint (32 ms). Before D44 it was 482 ms.
 - Searches, about 145 ms of CPU: 3 triplet searches at about 32 ms each and 3 pair searches at about 16 ms (12 cores divided by B8's 378 and 734 qps).

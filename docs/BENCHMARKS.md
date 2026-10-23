@@ -285,6 +285,14 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 | 64 | did not finish: 6 of 64 streams reached their end in the time limit | | | |
 
 - **One laptop keeps up with 32 stations** in real time, just: window lag p99 2.2 s against the 2.5 s hop. At 48 the worker falls behind steadily: every window is still answered (none unanswered), so accuracy holds, but songs are reported a minute or more late; at 64 it never caught up. Lag grows about linearly with stations (p50 0.9, 1.4, 2.0 s at 16, 24, 32): each window's fingerprinting and 6 searches share the same 12 cores.
+- **After D44** (one FFT per frame for both query filterbanks, B13; commit 12e1cae, same harness and settings, AC power, battery "100%; charged"; `rt_cap48_d44`, `rt_cap56_d44`):
+
+| Stations | Window lag p50 / p99 | Windows later than the hop | Songs found | Precision | Detection delay p50 / p90 |
+|---|---|---|---|---|---|
+| 48 | 1.9 / 2.3 s | 1 of 5,942 | 406/428 (94.9%) | 99.0% | 12.8 / 17.1 s |
+| 56 | 2.3 / 5.8 s | 2,092 of 6,892 | 473/499 (94.8%) | 98.8% | 13.4 / 17.9 s |
+
+  **One laptop now keeps up with 48 stations** (lag p99 2.3 s, as 32 did before), where it previously fell a minute or more behind. At 56 it is saturated: the median lag stays under the hop for the whole run and does not grow, but 30% of windows finish later than the hop (p99 5.8 s), so there is no headroom. Accuracy is unchanged, as D44 changes no landmark: at 48 stations every stream's event log has the same songs, starts, and ends (relative to the stream's first event) as `rt_cap48` before D44, now reported on time.
 - **Detection delay at real time** is the 12.5 s the decoder needs (D38) plus search time: median 12.6 s at 24 stations.
 - **Failover** (`rt_kill16`): 16 stations on worker w0, a standby w1, w0 killed with SIGKILL 120 s into the broadcast. All 16 streams moved to w1 (16 leases expired, 32 grants in all); each lost 5.2 s of audio (the lease ran out 6 s after w0's last renewal, shortly before the kill, and w1 took the stream at its next heartbeat); the new holder's first event came 21 to 59 s after the kill (when its first song decision fell due). No sequence gaps. The handoff itself duplicated nothing: 15 of the 16 streams carried their song in progress across it (one entry, flagged resumed), and the 16th closed it as interrupted because another song was playing by then. The 2 repeats in the score are songs the decoder split into two entries within the new holder's run (gaps of 5 and 7.5 s, beyond the 2.5 s merge gap), as offline decoding also does. Songs found 137/143 (95.8%), precision 99.3%, window lag p99 1.3 s.
 
@@ -332,7 +340,7 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 | Pairs | 31.2 ms |
 | The hybrid's whole fingerprinting (all of the above, plus the keylock rescales) | 486.8 ms |
 
-- With about 145 ms of search per window (B8's rates), fingerprinting is about three quarters of a live window's CPU; the double-time triplet fingerprint alone is over half. This is what limits a laptop to about 32 live stations (B9), and what `docs/design/throughput.md` proposes to cut.
+- With about 145 ms of search per window (B8's rates), fingerprinting is about three quarters of a live window's CPU; the double-time triplet fingerprint alone is over half. This is what limited a laptop to about 32 live stations (B9), and what `docs/design/throughput.md` proposes to cut; D44 (B13) took the first, output-identical step.
 
 ## B13: one FFT per frame for both query filterbanks (D44)
 
@@ -347,4 +355,4 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 | The hybrid's whole fingerprinting | 481.5 ms | 310.3 ms |
 
 - 1.55x less fingerprinting per window for the same landmarks (median 13,977.5 per triplet query in both runs; D44's test checks identity landmark for landmark). The index side is unchanged (48.0 and 48.1 ms per track). The before run is within 1% of B12 (486.8 ms); the unchanged pair code moved 5% between runs, a guide to run-to-run spread.
-- Before, the triplet spectrogram was 83% of the profile (the FFT 46% with its call overhead, magnitudes 21%), computed twice per frame. After, the triplet spectrograms are 74% (FFT 36%, magnitudes 16%) and peak picking 10%. With about 145 ms of search per window (B12), fingerprinting drops from about three quarters of a live window's CPU to about two thirds.
+- Before, the triplet spectrogram was 83% of the profile (the FFT 46% with its call overhead, magnitudes 21%), computed twice per frame. After, the triplet spectrograms are 74% (FFT 36%, magnitudes 16%) and peak picking 10%. With about 145 ms of search per window (B12), fingerprinting drops from about three quarters of a live window's CPU to about two thirds. In real time, one laptop now keeps up with 48 stations instead of 32 (B9).

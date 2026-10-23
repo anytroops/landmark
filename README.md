@@ -76,7 +76,7 @@ DJ tracklisting:
 | Synthetic DJ mixes, songs found (clean / with EQ, noise, MP3) | 99.4% / 98.2-98.8%, one search per window |
 | UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.2%**, precision 98.9%; speed grid (37 searches) 95.2%, precision 98.8% |
 | Live monitoring, UnmixDB set044 played as streams | same entries as offline tracklisting on all 96 mixes (94.0% of songs, precision 97.8%); a song is reported a median 12.5 s (stream time) after its transition |
-| Live monitoring in real time, one laptop | keeps up with 32 stations (window lag p99 2.2 s against a 2.5 s hop, 95.5% of songs found), not 48; a killed worker's 16 streams resume on a standby, 5.2 s of audio lost each |
+| Live monitoring in real time, one laptop | keeps up with 48 stations (window lag p99 2.3 s against a 2.5 s hop, 94.9% of songs found; 32 before D44 computed each query FFT once for both filterbanks), saturated at 56; a killed worker's 16 streams resume on a standby, 5.2 s of audio lost each |
 | Adding songs while serving, under 200 qps | 100 songs searchable about 3 s after the add starts; p99 20.8 ms at baseline, 28.4 ms during adds; no errors |
 | Search cost, one partition | triplet search 378 qps under p99 <= 100 ms after pruning (D37; 118 qps before), pair search 734 qps: the hybrid tracklists 3.5-4.2x as many windows per second as the speed grid (10-13x with its 2-search variant) |
 
