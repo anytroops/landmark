@@ -1,6 +1,6 @@
 # Design: DJ mix analysis
 
-Status: decided 2026-10-22 (D43: A1 (c), A2 (b), A3 (a)); not started. Roadmap item 4.
+Status: decided 2026-10-22 (D43: A1 (c), A2 (b), A3 (a)); built: Python prototype, Go port in `cmd/tracklist -analyze`; results in EVAL, "DJ mix analysis". Roadmap item 4.
 
 ## Goal
 

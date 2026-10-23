@@ -2,6 +2,11 @@
 
   python -m eval.dj_bpm --songs eval/results/dj_analysis/test/songs.json \\
       --out eval/results/dj_analysis/test
+  python -m eval.dj_bpm --index data/segments/medium_unmixdb_b2   # write bpm.json
+
+With --index, it writes <index>/bpm.json (dense id -> reference BPM) for the
+index's non-FMA references, which `cmd/tracklist -analyze` multiplies by
+each song's fitted playback rate.
 
 Each reference excerpt's tempo is estimated once, as ingest would, with
 librosa's global tempo estimate (onset strength, then an autocorrelation
@@ -65,12 +70,30 @@ def accuracy(est: float, true: float) -> tuple[bool, bool]:
     return close, octave
 
 
+def write_index(index: Path, workers: int) -> None:
+    cat = json.loads((index / "catalog.json").read_text())
+    by_fma = {e["fma_id"]: e for e in json.loads((index / "extras.json").read_text())}
+    dense = [t["dense"] for t in cat if t["fma_id"] in by_fma]
+    paths = [by_fma[t["fma_id"]]["path"] for t in cat if t["fma_id"] in by_fma]
+    with multiprocessing.get_context("spawn").Pool(workers) as pool:
+        bpm = pool.map(estimate, paths)
+    out = {str(d): round(b, 3) for d, b in zip(dense, bpm, strict=True)}
+    (index / "bpm.json").write_text(json.dumps(out, indent=1) + "\n")
+    print(f"{len(out)} references -> {index / 'bpm.json'}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--songs", type=Path, required=True, help="eval.dj_analysis songs.json")
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--songs", type=Path, help="eval.dj_analysis songs.json")
+    ap.add_argument("--out", type=Path)
+    ap.add_argument("--index", type=Path, help="write this index's bpm.json instead")
     ap.add_argument("--workers", type=int, default=6)
     args = ap.parse_args()
+    if args.index:
+        write_index(args.index, args.workers)
+        return
+    if not args.songs or not args.out:
+        ap.error("--songs and --out, or --index")
     extras = json.loads((ROOT / "data/segments/medium_unmixdb_b2/extras.json").read_text())
     cat = json.loads((ROOT / "data/segments/medium_unmixdb_b2/catalog.json").read_text())
     by_fma = {e["fma_id"]: e for e in extras}

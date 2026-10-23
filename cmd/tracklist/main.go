@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -52,6 +53,8 @@ type config struct {
 	mergeGap                     float64
 	timeout                      time.Duration
 	jsonOut                      bool
+	analyze                      bool   // D43: fades, turntable or keylock, BPM
+	fmaDir                       string // FMA references' audio, for -analyze
 }
 
 func main() {
@@ -76,6 +79,8 @@ func main() {
 	flag.Float64Var(&cfg.mergeGap, "merge-gap", 2.5, "join consecutive entries of one track this close, seconds (-1: off)")
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
 	flag.BoolVar(&cfg.jsonOut, "json", false, "print entries as JSON")
+	flag.BoolVar(&cfg.analyze, "analyze", false, "also estimate each song's fades, turntable or keylock, and BPM in the set (needs the references' audio)")
+	flag.StringVar(&cfg.fmaDir, "fma-dir", "data/fma_medium", "with -analyze: FMA tracks' audio (non-FMA references use the paths in extras.json)")
 	flag.Parse()
 	var err error
 	if cfg.extra, err = hybrid.ParseFactors(extra); err != nil {
@@ -135,8 +140,18 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	if cfg.mergeGap >= 0 {
 		entries = tracklist.MergeRepeats(entries, cfg.mergeGap)
 	}
+	var an map[int]songAnalysis
+	if cfg.analyze {
+		bpm, err := readBPM(cfg.index)
+		if err != nil {
+			return err
+		}
+		if an, err = analyzeMix(ctx, pcm, rows, entries, cat, cfg.fmaDir, bpm); err != nil {
+			return err
+		}
+	}
 	if cfg.jsonOut {
-		return json.NewEncoder(w).Encode(jsonEntries(entries, cat.Name))
+		return json.NewEncoder(w).Encode(jsonEntries(entries, cat.Name, an))
 	}
 	windows := len(windowStarts(len(pcm), int(cfg.window*audio.SampleRate), int(cfg.hop*audio.SampleRate)))
 	var b strings.Builder
@@ -145,7 +160,7 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	if partial > 0 {
 		fmt.Fprintf(&b, " (%d answered by only some partitions)", partial)
 	}
-	b.WriteString("\n" + formatEntries(entries, cat.Name))
+	b.WriteString("\n" + formatEntries(entries, cat.Name, an))
 	_, err = io.WriteString(w, b.String())
 	return err
 }
@@ -212,25 +227,62 @@ type jsonEntry struct {
 	TempoPct   float64 `json:"tempo_pct"`
 	Evidence   float64 `json:"evidence"`
 	StartClock string  `json:"start"`
+	// With -analyze (D43): fades as [start_s, end_s], whether the tempo
+	// change was a turntable's (pitch moved) or keylock, and the BPM in
+	// the set.
+	FadeIn    []float64 `json:"fade_in,omitempty"`
+	FadeOut   []float64 `json:"fade_out,omitempty"`
+	Turntable *bool     `json:"turntable,omitempty"`
+	BPM       float64   `json:"bpm,omitempty"`
 }
 
-func jsonEntries(entries []tracklist.Entry, names func(int) string) []jsonEntry {
+func jsonEntries(entries []tracklist.Entry, names func(int) string, an map[int]songAnalysis) []jsonEntry {
 	out := make([]jsonEntry, len(entries))
 	for i, e := range entries {
 		out[i] = jsonEntry{Track: e.Track, Name: names(e.Track), StartS: e.Start, EndS: e.End,
 			TempoPct: 100 * (e.Factor - 1), Evidence: e.Evidence, StartClock: clock(e.Start)}
+		if a, ok := an[i]; ok {
+			out[i].FadeIn, out[i].FadeOut, out[i].BPM = a.FadeIn, a.FadeOut, a.BPM
+			out[i].Turntable = &a.Turntable
+		}
 	}
 	return out
 }
 
-func formatEntries(entries []tracklist.Entry, names func(int) string) string {
+func formatEntries(entries []tracklist.Entry, names func(int) string, an map[int]songAnalysis) string {
 	if len(entries) == 0 {
 		return "no tracks found\n"
 	}
 	var b strings.Builder
 	for i, e := range entries {
-		fmt.Fprintf(&b, "%2d. %s-%s  %-52s %+5.1f%%  (evidence %.0f)\n",
+		fmt.Fprintf(&b, "%2d. %s-%s  %-52s %+5.1f%%  (evidence %.0f)",
 			i+1, clock(e.Start), clock(e.End), names(e.Track), 100*(e.Factor-1), e.Evidence)
+		if a, ok := an[i]; ok {
+			b.WriteString(describe(a))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// describe summarizes one song's analysis for the text output.
+func describe(a songAnalysis) string {
+	var b strings.Builder
+	if a.FadeIn != nil {
+		fmt.Fprintf(&b, "  in %s-%s", clock(a.FadeIn[0]), clock(a.FadeIn[1]))
+	}
+	if a.FadeOut != nil {
+		fmt.Fprintf(&b, "  out %s-%s", clock(a.FadeOut[0]), clock(a.FadeOut[1]))
+	}
+	switch { // only a real tempo change has a kind
+	case math.Abs(a.Rate-1) <= 0.005:
+	case a.Turntable:
+		b.WriteString("  turntable")
+	default:
+		b.WriteString("  keylock")
+	}
+	if a.BPM > 0 {
+		fmt.Fprintf(&b, "  %.1f BPM", a.BPM)
 	}
 	return b.String()
 }

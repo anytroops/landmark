@@ -88,3 +88,19 @@ func TestClock(t *testing.T) {
 		}
 	}
 }
+
+func TestDescribe(t *testing.T) {
+	tests := []struct {
+		a    songAnalysis
+		want string
+	}{
+		{songAnalysis{FadeIn: []float64{33.4, 41.1}, FadeOut: []float64{66, 74}, Rate: 1, BPM: 122}, "  in 0:33-0:41  out 1:06-1:14  122.0 BPM"},
+		{songAnalysis{Rate: 1.04, Turntable: true}, "  turntable"},
+		{songAnalysis{Rate: 0.97}, "  keylock"},
+	}
+	for _, tt := range tests {
+		if got := describe(tt.a); got != tt.want {
+			t.Errorf("describe(%+v) = %q, want %q", tt.a, got, tt.want)
+		}
+	}
+}

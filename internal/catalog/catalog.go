@@ -24,6 +24,7 @@ type Track struct {
 type Catalog struct {
 	Tracks []Track
 	extras map[int]string // FMA id -> name, for tracks not from FMA
+	paths  map[int]string // FMA id -> audio file, for tracks not from FMA
 }
 
 // files names the newest version's catalog and extras in dir (catalog.json
@@ -42,7 +43,7 @@ func Load(dir string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Catalog{Tracks: tracks, extras: map[int]string{}}
+	c := &Catalog{Tracks: tracks, extras: map[int]string{}, paths: map[int]string{}}
 	if extrasFile == "" {
 		return c, nil
 	}
@@ -50,12 +51,16 @@ func Load(dir string) (*Catalog, error) {
 		var ex []struct {
 			FMAID int    `json:"fma_id"`
 			Name  string `json:"name"`
+			Path  string `json:"path"`
 		}
 		if err := json.Unmarshal(b, &ex); err != nil {
 			return nil, fmt.Errorf("parse %s extras: %w", dir, err)
 		}
 		for _, e := range ex {
 			c.extras[e.FMAID] = e.Name
+			if e.Path != "" {
+				c.paths[e.FMAID] = e.Path
+			}
 		}
 	}
 	return c, nil
@@ -87,6 +92,23 @@ func (c *Catalog) Name(dense int) string {
 		return name
 	}
 	return fmt.Sprintf("FMA %06d", c.Tracks[dense].FMAID)
+}
+
+// Audio returns a track's audio file: the path recorded for a non-FMA
+// track, or fmaDir/NNN/NNNNNN.mp3 for an FMA track (if fmaDir is set).
+func (c *Catalog) Audio(dense int, fmaDir string) (string, bool) {
+	if dense < 0 || dense >= len(c.Tracks) {
+		return "", false
+	}
+	id := c.Tracks[dense].FMAID
+	if p, ok := c.paths[id]; ok {
+		return p, true
+	}
+	if id < 0 || fmaDir == "" {
+		return "", false
+	}
+	tid := fmt.Sprintf("%06d", id)
+	return filepath.Join(fmaDir, tid[:3], tid+".mp3"), true
 }
 
 // Cluster is a dense id's duplicate cluster (D12); ids outside the catalog

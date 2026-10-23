@@ -21,7 +21,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
 | Adding songs while serving (D42) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load |
 | Head-to-head against audfprint and Panako (D41) | Done: same tracks, queries, and accept rule, each tool's density tuned on val; accuracy, DJ mixes, and cost |
-| DJ mix analysis (D43) | Python prototype: gain curves (how each song was faded in and out), turntable vs keylock; BPM and the Go command next |
+| DJ mix analysis (D43) | Done: `tracklist -analyze` reports each song's fades, turntable or keylock, and BPM in the set; the Go port matches the Python prototype on all 1,058 test songs |
 | Live stream monitoring (D38-D40) | Done: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes; real-time capacity and worker failover measured |
 
 ## Architecture
@@ -104,6 +104,12 @@ For DJ mixes, build a triplet index (`bin/ingest -fingerprint triplets ...`) bes
 ```bash
 bin/tracklist -coordinator 127.0.0.1:7500 -index data/segments/medium_b2 \
     -pairs-coordinator 127.0.0.1:7600 -pairs-index data/segments/medium mix.mp3
+```
+
+With `-analyze` it also reports how each song was mixed in (D43): its fade-in and fade-out, whether a tempo change was made like a turntable or with keylock, and its BPM in the set (from `bpm.json` beside the index, written by `python -m eval.dj_bpm --index <dir>`). It needs the songs' reference audio:
+
+```
+ 2. 0:40-1:12  set044/pntg001-04-demir-you_got_it.excerpt40.mp3   -2.4%  (evidence 4849)  in 0:35-0:40  out 1:07-1:14  turntable  120.1 BPM
 ```
 
 Live monitoring: run a registry with the streams to watch, and one or more workers against the two clusters (each stream in `streams.json` is `{"id": ..., "url": ...}`; an http(s) URL is read live):
