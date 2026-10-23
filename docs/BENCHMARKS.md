@@ -357,3 +357,18 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 
 - 1.55x less fingerprinting per window for the same landmarks (median 13,977.5 per triplet query in both runs; D44's test checks identity landmark for landmark). The index side is unchanged (48.0 and 48.1 ms per track). The before run is within 1% of B12 (486.8 ms); the unchanged pair code moved 5% between runs, a guide to run-to-run spread.
 - Before, the triplet spectrogram was 83% of the profile (the FFT 46% with its call overhead, magnitudes 21%), computed twice per frame. After, the triplet spectrograms are 74% (FFT 36%, magnitudes 16%) and peak picking 10%. With about 145 ms of search per window (B12), fingerprinting drops from about three quarters of a live window's CPU to about two thirds. In real time, one laptop now keeps up with 48 stations instead of 32 (B9).
+
+## B14: a shared, frame-aligned front end, measured before building it (throughput T1 (a))
+
+`bench/frontend`: the first 10 fma_medium test positives back to back as one 300 s stream. Today: windows every 27,562 samples (2.5 s), each fingerprinted with the triplet query fingerprint as is, at double time, and at half time (each resampled per window). Shared: windows every 27,520 samples (2.4961 s, a multiple of 128, so every window's 4 sub-hop grids fall on one 64-sample grid of the stream at all three speeds); the stream resampled once per speed, its dual-filterbank spectrograms computed once on the 64-sample grid, and each window's spectrograms cut out of them, then peak picking and hashing per window as today. One core, fastest of 3 passes; per-hop figures are totals divided by the 117 hops. Commit 00ec42b, AC power, battery "100%; charged". Raw: `bench/results/b14_frontend.json`.
+
+| Per window, one core | Today | Shared front end |
+|---|---|---|
+| Spectrograms (per hop for the shared front end) | | 58.4 ms |
+| Resampling to double and half time (per hop) | | 1.1 ms |
+| Peaks and hashes | | 51.8 ms (mean) |
+| Triplet fingerprints, all three speeds | 278.2 ms (mean) | 111.4 ms |
+
+- 2.5x less triplet fingerprinting per window. With the pair fingerprint unchanged (32 ms, B13), a window's fingerprinting would go from 310 ms to about 143 ms.
+- **Same landmarks.** Every one of the 117 windows gets exactly the landmarks today's FingerprintQuery gives for that window, at all three speeds (5.73M landmarks compared). Resampling the stream instead of each window changes only a window's outer few samples (the resampling filter is 10 input samples each side), where the spectrogram's Hann window is near zero. So the option changes where windows start, not what a window yields.
+- Not built: this measures the computation in batch. A live worker would compute the same frames incrementally as audio arrives.

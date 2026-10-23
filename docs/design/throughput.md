@@ -1,6 +1,6 @@
 # Design: more live streams per machine
 
-Status: draft, 2026-10-22 (numbers updated after D44). Decisions marked **DECIDE** need Sean's pick.
+Status: draft, 2026-10-22 (numbers updated after D44; option (a) measured in B14). Decisions marked **DECIDE** need Sean's pick.
 
 ## Where the time goes
 
@@ -18,11 +18,11 @@ Fingerprinting is about two thirds of the work, three quarters of it the triplet
 | | (a) Shared front end, frame-aligned hop | (b) Fewer hypotheses live | (c) Fewer sub-hop shifts live | (d) Change nothing; add machines |
 |---|---|---|---|---|
 | Idea | Make the hop a multiple of 128 samples (2.4961 s = 27,520 samples, the nearest), so that every window's 4 sub-hop grids (64-sample steps) fall on one 64-sample grid of the stream at all three speeds; compute each stream's spectrograms on that grid once as audio arrives (and the double- and half-time streams' once each), and cut each window's spectrograms out of them; peak picking and hashing stay per window | Drop the double- and half-time searches in live monitoring (the "two-search hybrid") | Fingerprint each window on 2 sub-hop grids instead of 4 (D15) | Leases already spread streams over workers; run workers on more machines |
-| Fingerprinting saved | Up to about 3/4 of the spectrogram work, itself 3/4 of the fingerprinting (each frame computed once instead of four times; peak picking and hashing stay per window) | About 2/3 (the resampled windows: 200 of 310 ms) | About half | None |
-| Accuracy | Unchanged once recalibrated for the new hop (to check); live still equals offline when both use the new hop and both resample the stream rather than each window (a window's resampling filter sees its edges; the stream's does not) | Measured: 93.7% of UnmixDB songs against 95.2% (D37) | To measure (D15 measured the gain of 4 shifts on clips) | Unchanged |
-| Effort | Medium: a streaming spectrogram in Go, the hop change through tracklist, monitor, and eval, a recalibration | Small (a flag) | Small | None in code; needs machines |
+| Fingerprinting saved | Measured before building (B14): the triplet fingerprints per window 278 to 111 ms (2.5x): the stream's spectrograms 58 ms and resampling 1 ms per hop, each window's peaks and hashes 52 ms. With the pair fingerprint (32 ms) unchanged, 310 to about 143 ms | About 2/3 (the resampled windows: 200 of 310 ms) | About half | None |
+| Accuracy | Each window's landmarks are exactly today's, at all three speeds (B14: 117 windows; resampling the stream instead of each window changes only a window's outer few samples, where the Hann window is near zero). Only where windows start changes (every 2.4961 s, not 2.5 s): to check on the UnmixDB eval, likely without recalibration. Live still equals offline when both use the new hop | Measured: 93.7% of UnmixDB songs against 95.2% (D37) | To measure (D15 measured the gain of 4 shifts on clips) | Unchanged |
+| Effort | Medium: a streaming spectrogram and resampler in Go (`bench/frontend` is the batch form), the hop change through tracklist, monitor, and eval, an accuracy check | Small (a flag) | Small | None in code; needs machines |
 
-Recommendation: (a). It removes the duplicated work without giving up any of the hybrid's searches, and the exact live-equals-offline property survives because the offline tracklister would use the same hop. (d) stays the answer for scale beyond one machine and is what leases were built for.
+Recommendation: (a). It removes the duplicated work without giving up any of the hybrid's searches or changing any window's landmarks (B14), and the exact live-equals-offline property survives because the offline tracklister would use the same hop. It cuts a window's CPU from about 455 ms to about 290 ms (with about 145 ms of search). (d) stays the answer for scale beyond one machine and is what leases were built for.
 
 ## T2. Merging added songs
 
