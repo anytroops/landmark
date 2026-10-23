@@ -68,8 +68,8 @@ def build(layout: int, songs: list[int], workers: int) -> Path:
         tsv = d.parent / f"deltas{layout:02d}-add{k:02d}.tsv"
         tsv.write_text("".join(f"{f}\t{audio(f)}\n" for f in batch))
         subprocess.run([str(BIN / "ingest"), "-add", str(tsv), "-out", str(d), "-workers",
-                        str(workers)], check=True, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)  # fmt: skip
+                        str(workers), "-compact-after-add=false"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip
     if layout == 0:
         subprocess.run([str(BIN / "ingest"), "-merge", "-out", str(d)], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip

@@ -98,6 +98,8 @@ def main() -> None:
     ap.add_argument("--rate", type=float, default=200, help="offered queries per second")
     ap.add_argument("--ingest-workers", type=int, default=4)
     ap.add_argument("--dry-run", action="store_true", help="skip the power checks; results invalid")
+    ap.add_argument("--tiered", action="store_true",
+                    help="merge size-tiered after each add (D47; B10 ran without)")  # fmt: skip
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     if not args.dry_run:
@@ -164,7 +166,8 @@ def main() -> None:
         for k, b in enumerate(batches):
             t0 = time.time()
             cmd = [str(BIN / "ingest"), "-add", str(WORK / f"add{k:02d}.tsv"), "-out", str(idx),
-                   "-workers", str(args.ingest_workers)]  # fmt: skip
+                   "-workers", str(args.ingest_workers),
+                   f"-compact-after-add={'true' if args.tiered else 'false'}"]  # fmt: skip
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             t_pub = time.time()
             target = ex / f"{b[0]:06d}.wav"
