@@ -128,7 +128,13 @@ bin/ingest -out data/segments/medium -add new_songs.tsv   # name<TAB>path per li
 bin/ingest -out data/segments/medium -merge               # fold delta segments into new bases
 ```
 
-Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list; add songs; merge), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
+To watch live monitoring on this machine (both clusters, a registry, a stream server playing test mixes as stations, a worker, and `events` printing songs as they are recognized):
+
+```bash
+python -m bench.scripts.live_demo --stations 3
+```
+
+Commands: `ingest` (decode, fingerprint, partition, write segments and the stop list; add songs; merge), `events` (follow live monitoring), `shard`, `coordinator`, `identify`, `tracklist`, `registry` and `monitor` (live monitoring), `streamserver` (test stations with known playlists), `loadgen` (open-loop load generator), `stoplist`. Python reference and evaluation harness: `prototype/`, `eval/`; benchmark harness: `bench/`.
 
 ## Data
 
