@@ -39,6 +39,7 @@ from scipy.ndimage import median_filter, uniform_filter1d
 from scipy.optimize import nnls
 
 from eval.tracklist_score import RES, ROOT, combine, decode_smooth, merge_repeats, pair_rows
+from eval.unmixdb import parse_labels
 from prototype import b2
 from prototype.audio import SAMPLE_RATE, decode
 
@@ -261,19 +262,79 @@ def ref_paths(catalog: str) -> dict[int, Path]:
     return {t["dense"]: extras[t["fma_id"]] for t in cat if t["fma_id"] in extras}
 
 
+def label_fades(mix: dict) -> dict[int, dict]:
+    """Dense id -> UnmixDB's own fade intervals for that song in this mix,
+    read from the dataset's label file: unlike the converted ground truth,
+    they include the first song's fade-in from silence and the last song's
+    fade-out."""
+    path = (ROOT / "data/unmixdb/extracted" / f"mixotic-{mix['set']}-excerpts" / "mixes"
+            / f"{mix['name']}.labels.txt")  # fmt: skip
+    by_file = {t["file"]: t for t in parse_labels(path.read_text()).values() if "file" in t}
+    out = {}
+    for seg in mix["segments"]:
+        t = by_file.get(seg["fma_id"], {})
+        out[seg["dense"]] = {k: t[k] for k in ("fadein", "fadeout") if k in t}
+    return out
+
+
+def rescore(out: Path) -> None:
+    """Score a run's songs.json against every fade UnmixDB labels, including
+    the first and last songs' (which the converted ground truth leaves out);
+    writes label_summary.json. The method is unchanged: this only adds
+    ground truth."""
+    gt = json.loads((ROOT / "eval/mixes/unmixdb_s8.json").read_text())
+    by_name = {m["name"]: m for m in gt["mixes"]}
+    songs = json.loads((out / "songs.json").read_text())
+    cache: dict[str, dict] = {}
+    errs: dict[str, list[float]] = {}
+    for r in songs:
+        if not r.get("known"):
+            continue
+        lab = cache.setdefault(r["name"], label_fades(by_name[r["name"]])).get(r["track"], {})
+        for kind, key in (("fade_in", "fadein"), ("fade_out", "fadeout")):
+            truth = lab.get(key)
+            if truth is None or truth[1] - truth[0] <= 0.5:
+                continue
+            conv = r.get("true_" + kind)
+            edge = conv is None or conv[1] - conv[0] <= 0.5
+            for est in ("ramp_" + kind, "baseline_" + kind):
+                if est not in r:
+                    continue
+                for which, side in ((0, "start"), (1, "end")):
+                    e = abs(r[est][which] - truth[which])
+                    errs.setdefault(f"{est}_{side}", []).append(e)
+                    if edge:
+                        errs.setdefault(f"{est}_{side}_first_or_last_song", []).append(e)
+
+    def stats(v: list[float]) -> dict:
+        return {"n": len(v), "median": round(float(np.median(v)), 2),
+                "p90": round(float(np.percentile(v, 90)), 2)}  # fmt: skip
+
+    summary = {k: stats(v) for k, v in sorted(errs.items())}
+    (out / "label_summary.json").write_text(json.dumps(summary, indent=1) + "\n")
+    print(json.dumps(summary, indent=1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
+        "--rescore", type=Path, help="score a run's songs.json against every labeled fade"
+    )
+    ap.add_argument(
         "--sets",
         nargs="+",
-        required=True,
         help="develop on the calibration sets (set222 set275); test sets once",
     )
     ap.add_argument("--effects", nargs="+", help="only mixes with these effects (none, bass, ...)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=6)
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--out", type=Path)
     args = ap.parse_args()
+    if args.rescore:
+        rescore(args.rescore)
+        return
+    if not args.sets or not args.out:
+        ap.error("--sets and --out, or --rescore")
     gt = json.loads((ROOT / "eval/mixes/unmixdb_s8.json").read_text())
     params = json.loads(CALIBRATION.read_text())["smooth"]["params"]
     w = pd.read_csv(RES / "windows_unmixdb_s8_b2dhp.csv.gz")
