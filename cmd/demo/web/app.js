@@ -41,17 +41,57 @@ async function getJSON(url) {
 
 /* ---------- tabs and header ---------- */
 
+// The address is #tab or #tab?params: a link to an example result reruns it
+// (#tracklist?mix=12, #identify?song=2434&tempo=6&kind=keylock).
+const TABS = ["identify", "tracklist", "live"];
+function route() {
+  const [tab, query] = location.hash.slice(1).split("?");
+  return { tab: TABS.includes(tab) ? tab : null, params: new URLSearchParams(query || "") };
+}
+function setRoute(tab, params) {
+  const q = params ? `?${new URLSearchParams(params)}` : "";
+  history.replaceState(null, "", `#${tab}${q}`);
+}
 function showTab(name) {
   for (const t of document.querySelectorAll(".tab")) t.setAttribute("aria-selected", t.dataset.tab === name);
   for (const p of document.querySelectorAll(".panel")) p.hidden = p.id !== `panel-${name}`;
   if (name === "live") startLive();
-  history.replaceState(null, "", `#${name}`);
 }
-for (const t of document.querySelectorAll(".tab")) t.addEventListener("click", () => showTab(t.dataset.tab));
-window.addEventListener("hashchange", () => {
-  const tab = location.hash.slice(1);
-  if (["identify", "tracklist", "live"].includes(tab)) showTab(tab);
-});
+for (const t of document.querySelectorAll(".tab")) {
+  t.addEventListener("click", () => { showTab(t.dataset.tab); setRoute(t.dataset.tab); });
+}
+window.addEventListener("hashchange", followRoute);
+
+// followRoute shows the address's tab and reruns the example it names.
+function followRoute() {
+  const { tab, params } = route();
+  if (!tab) return;
+  showTab(tab);
+  if (tab === "identify" && params.has("song")) {
+    const sel = $("#id-song");
+    const song = params.get("song");
+    if (![...sel.options].some((o) => o.value === song)) sel.append(el("option", { value: song, text: `Track ${song}` }));
+    sel.value = song;
+    tempo.value = params.get("tempo") || "0";
+    showTempo();
+    setKind(params.get("kind") === "keylock" ? "keylock" : "turntable");
+    identifyExample();
+  } else if (tab === "tracklist" && params.has("mix")) {
+    $("#tl-mix").value = params.get("mix");
+    tracklistExample();
+  }
+}
+
+async function copy(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const was = button.textContent;
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = was; }, 1200);
+  } catch {
+    window.prompt("Copy this:", text);
+  }
+}
 
 let info = { live: false };
 async function init() {
@@ -68,8 +108,7 @@ async function init() {
   } catch (e) {
     $("#stats").replaceChildren(el("span", { class: "chip bad", text: `server: ${e.message}` }));
   }
-  const tab = location.hash.slice(1);
-  if (["identify", "tracklist", "live"].includes(tab)) showTab(tab);
+  followRoute();
 }
 
 /* ---------- identify ---------- */
@@ -82,12 +121,11 @@ function fillSongs(songs) {
 }
 
 let kind = "turntable";
-for (const b of document.querySelectorAll(".seg-btn")) {
-  b.addEventListener("click", () => {
-    kind = b.dataset.kind;
-    for (const o of document.querySelectorAll(".seg-btn")) o.setAttribute("aria-pressed", o === b);
-  });
+function setKind(k) {
+  kind = k;
+  for (const o of document.querySelectorAll(".seg-btn")) o.setAttribute("aria-pressed", o.dataset.kind === k);
 }
+for (const b of document.querySelectorAll(".seg-btn")) b.addEventListener("click", () => setKind(b.dataset.kind));
 const tempo = $("#id-tempo");
 const showTempo = () => ($("#id-tempo-out").textContent = pct(Number(tempo.value)));
 tempo.addEventListener("input", showTempo);
@@ -109,13 +147,14 @@ async function identify(form, label) {
   }
 }
 
-$("#id-example").addEventListener("click", () => {
+function identifyExample() {
   const f = new FormData();
   f.set("example", $("#id-song").value);
   f.set("tempo", tempo.value);
   f.set("kind", kind);
   identify(f, "a test song");
-});
+}
+$("#id-example").addEventListener("click", identifyExample);
 
 const idFile = $("#id-file");
 function sendFile(file) {
@@ -194,6 +233,12 @@ function renderIdentify(res) {
   }
   if (res.truth) {
     const t = res.truth;
+    // The link names the song even when "random" picked it.
+    const params = { song: t.track, tempo: t.tempo_pct, kind: t.kind || "turntable" };
+    setRoute("identify", params);
+    const share = el("button", { class: "btn", text: "Copy link to this result" });
+    share.addEventListener("click", () => copy(location.href, share));
+    card.append(share);
     const how = t.tempo_pct ? ` at ${pct(t.tempo_pct)} (${t.kind})` : "";
     card.append(el("div", { class: `chip note ${t.correct ? "good" : "bad"}`,
       text: `${t.correct ? "Correct" : "Wrong"}: the clip is ${t.name}${how}, from ${clock(t.start_s)}` }));
@@ -244,23 +289,28 @@ function fillMixes(mixes) {
 }
 
 let tl = null;
-$("#tl-run").addEventListener("click", () => {
+function tracklistExample() {
+  const mix = $("#tl-mix").value;
   const f = new FormData();
-  f.set("example", $("#tl-mix").value);
-  setPlayer(`/api/mixes/${$("#tl-mix").value}/audio`);
-  runTracklist(f);
-});
+  f.set("example", mix);
+  setPlayer(`/api/mixes/${mix}/audio`);
+  setRoute("tracklist", { mix });
+  runTracklist(f, null, true);
+}
+$("#tl-run").addEventListener("click", tracklistExample);
 const tlFile = $("#tl-file");
 tlFile.addEventListener("change", () => {
   if (!tlFile.files[0]) return;
   const f = new FormData();
   f.set("audio", tlFile.files[0], tlFile.files[0].name);
   setPlayer(URL.createObjectURL(tlFile.files[0]));
-  runTracklist(f, tlFile.files[0].name);
+  setRoute("tracklist");
+  runTracklist(f, tlFile.files[0].name, false);
 });
 
-async function runTracklist(form, label) {
-  tl = { windows: [], entries: [], analysis: null, truth: null, seconds: 0, done: null, name: label || "", analyzing: false };
+async function runTracklist(form, label, shareable) {
+  tl = { windows: [], entries: [], analysis: null, truth: null, seconds: 0, done: null, name: label || "", analyzing: false, shareable };
+  $("#tl-export").hidden = true;
   $("#tl-out").hidden = false;
   $("#tl-title").textContent = label ? label : "Decoding the mix...";
   $("#tl-status").textContent = "";
@@ -306,6 +356,8 @@ function onMessage(m) {
     case "done":
       tl.done = m;
       if (m.truth) tl.truth = m.truth;
+      $("#tl-export").hidden = false;
+      $("#tl-link").hidden = !tl.shareable;
       break;
     case "error": $("#tl-status").replaceChildren(el("span", { class: "err", text: m.error })); break;
   }
@@ -454,6 +506,35 @@ function drawTracklist() {
   }));
   updatePlayhead();
 }
+
+/* Export: the tracklist as text (one line per song) or as JSON. */
+function tracklistRows() {
+  return tl.entries.map((e, i) => {
+    if (!e) return null;
+    const an = (tl.analysis && tl.analysis[i]) || {};
+    const kind = an.rate && Math.abs(an.rate - 1) > 0.005 ? (an.turntable ? "turntable" : "keylock") : null;
+    return { n: i + 1, track: e.track, name: e.name, artist: e.artist || null, title: e.title || null,
+      start_s: e.start_s, end_s: e.end_s, tempo_pct: e.tempo_pct, change: kind, bpm: an.bpm || null,
+      fade_in: an.fade_in || null, fade_out: an.fade_out || null, correct: e.correct ?? null };
+  }).filter(Boolean);
+}
+$("#tl-text").addEventListener("click", (ev) => {
+  const lines = tracklistRows().map((r) => {
+    const extra = [Math.abs(r.tempo_pct) >= 0.05 ? pct(r.tempo_pct) : "", r.change || "", r.bpm ? `${r.bpm.toFixed(1)} BPM` : ""]
+      .filter(Boolean).join(", ");
+    return `${String(r.n).padStart(2)}. ${clock(r.start_s)}-${clock(r.end_s)}  ${r.name}${extra ? `  (${extra})` : ""}`;
+  });
+  copy(`${tl.name}, tracklisted by Landmark\n${lines.join("\n")}\n`, ev.currentTarget);
+});
+$("#tl-json").addEventListener("click", () => {
+  const doc = { mix: tl.name, tracklisted_at: new Date().toISOString(), seconds: tl.seconds,
+    window_s: tl.window, hop_s: tl.hop, entries: tracklistRows(), truth: tl.truth };
+  const a = el("a", { href: URL.createObjectURL(new Blob([JSON.stringify(doc, null, 1)], { type: "application/json" })),
+    download: `${(tl.name || "mix").replace(/[^\w.-]+/g, "_")}.tracklist.json` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$("#tl-link").addEventListener("click", (ev) => copy(location.href, ev.currentTarget));
 
 /* The mix player: the playhead follows it, the timeline and the table seek it. */
 const audioEl = $("#tl-audio");

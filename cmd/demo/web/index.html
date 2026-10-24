@@ -73,12 +73,17 @@
         <button class="btn primary" id="tl-run">Tracklist it</button>
         <label class="btn" for="tl-file">Or upload a mix<input type="file" id="tl-file" accept="audio/*,video/*" hidden></label>
       </div>
-      <p class="muted small">Every 10 s window, 2.5 s apart, gets six searches. The decoder reports a song once its first window is certain, as live monitoring does; then each song's fades, tempo change, and BPM are read from the audio.</p>
+      <p class="muted small">Every 10 s window, about 2.5 s apart, gets six searches, cut from one shared front end. The decoder reports a song once its first window is certain, as live monitoring does; then each song's fades, tempo change, and BPM are read from the audio.</p>
     </div>
     <div class="card" id="tl-out" hidden>
       <div class="tl-head">
         <h3 id="tl-title"></h3>
         <div class="tl-status" id="tl-status"></div>
+      </div>
+      <div class="row export" id="tl-export" hidden>
+        <button class="btn" id="tl-link">Copy link to this result</button>
+        <button class="btn" id="tl-text">Copy as text</button>
+        <button class="btn" id="tl-json">Download JSON</button>
       </div>
       <div class="player" id="tl-player" hidden>
         <audio id="tl-audio" controls preload="metadata"></audio>
