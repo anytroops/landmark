@@ -652,3 +652,110 @@ func TestLiveSourceOffTheAir(t *testing.T) {
 		t.Errorf("%d requests, want 1", n)
 	}
 }
+
+// TestSearchesInFlightAreCapped: four streams searching at once share two
+// search slots (D49), and do fill them.
+func TestSearchesInFlightAreCapped(t *testing.T) {
+	r, _, client := setup(t, 6*time.Second, 15)
+	list, err := r.ListStreams(context.Background(), &landmarkv1.ListStreamsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"s2", "s3", "s4"} {
+		if _, err := r.AddStream(context.Background(), &landmarkv1.AddStreamRequest{
+			Stream: &landmarkv1.Stream{Id: id, Url: list.GetStreams()[0].GetStream().GetUrl()}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	cur, most := 0, 0
+	s := &scripted{tracks: slices.Repeat([]int{5}, 100)}
+	s.gate = func(context.Context, int) {
+		mu.Lock()
+		cur++
+		most = max(most, cur)
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		cur--
+		mu.Unlock()
+	}
+	cfg := config(s, 50*time.Millisecond)
+	cfg.Capacity, cfg.MaxInFlight = 4, 2
+	w, err := New(cfg, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	logged(t, client, 8) // a start and an end per stream
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if most != 2 {
+		t.Errorf("up to %d searches at once, want the cap of 2 reached and kept", most)
+	}
+}
+
+func TestRetryDelay(t *testing.T) {
+	for _, tt := range []struct {
+		attempt int
+		lo, hi  time.Duration
+	}{{1, 25 * time.Millisecond, 75 * time.Millisecond}, {2, 50 * time.Millisecond, 150 * time.Millisecond},
+		{20, 800 * time.Millisecond, 2400 * time.Millisecond}} {
+		for range 200 {
+			if d := retryDelay(tt.attempt); d < tt.lo || d > tt.hi {
+				t.Fatalf("retryDelay(%d) = %v, want %v to %v", tt.attempt, d, tt.lo, tt.hi)
+			}
+		}
+	}
+}
+
+// TestSearchRetryWaits: a window whose search fails is tried again after a
+// backoff, not at once.
+func TestSearchRetryWaits(t *testing.T) {
+	_, _, client := setup(t, 6*time.Second, 12)
+	var mu sync.Mutex
+	var calls []time.Time
+	failOnce := func(context.Context, *landmarkv1.IdentifyRequest) (*landmarkv1.IdentifyResponse, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, time.Now())
+		if len(calls) == 1 {
+			return nil, errors.New("overloaded")
+		}
+		return &landmarkv1.IdentifyResponse{}, nil
+	}
+	cfg := config(&scripted{}, 50*time.Millisecond)
+	cfg.SearchRetries = 3
+	cfg.Searcher.B2 = failOnce
+	w, err := New(cfg, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	deadline := time.Now().Add(time.Minute)
+	for testutil.ToFloat64(w.m.finished) < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("stream never ended")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) < 2 {
+		t.Fatalf("%d searches", len(calls))
+	}
+	if gap := calls[1].Sub(calls[0]); gap < 25*time.Millisecond {
+		t.Errorf("retried %v after the failure, want at least 25 ms", gap)
+	}
+	if got := testutil.ToFloat64(w.m.searchFailures); got != 0 {
+		t.Errorf("%v windows unanswered, want 0: the retry answered", got)
+	}
+}

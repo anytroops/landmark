@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"slices"
@@ -78,8 +79,14 @@ type Config struct {
 	// WindowLog, if set, receives one JSON line per searched window
 	// (timings for the capacity benchmark).
 	WindowLog io.Writer
-	// SearchRetries: attempts per window before it counts as unanswered.
+	// SearchRetries: attempts per window before it counts as unanswered,
+	// with a jittered backoff between them (D49).
 	SearchRetries int
+	// MaxInFlight: windows of all streams searched at once (D49; 0: no
+	// limit). Streams that start together want their searches at the same
+	// moment; past this many, a window waits here rather than at the
+	// shards, which shed what waits over 100 ms.
+	MaxInFlight int
 }
 
 // Worker runs leased streams.
@@ -92,6 +99,8 @@ type Worker struct {
 
 	jobs map[string]*job // by stream id; used by Run's goroutine only
 	wg   sync.WaitGroup
+
+	inFlight chan struct{} // MaxInFlight slots; nil: no limit
 }
 
 type job struct {
@@ -114,7 +123,11 @@ func New(cfg Config, reg landmarkv1.RegistryServiceClient, promReg prometheus.Re
 	if err != nil {
 		return nil, err
 	}
-	return &Worker{cfg: cfg, reg: reg, m: m, jobs: map[string]*job{}}, nil
+	w := &Worker{cfg: cfg, reg: reg, m: m, jobs: map[string]*job{}}
+	if cfg.MaxInFlight > 0 {
+		w.inFlight = make(chan struct{}, cfg.MaxInFlight)
+	}
+	return w, nil
 }
 
 // Run heartbeats and runs streams until ctx ends, then stops them all.
@@ -493,15 +506,25 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 	var rows []tracklist.Row
 	partial := 0
 	var err error
-	for range w.cfg.SearchRetries {
+	for attempt := range w.cfg.SearchRetries {
+		if attempt > 0 && !sleep(ctx, retryDelay(attempt)) {
+			break
+		}
+		if !w.acquire(ctx) {
+			break
+		}
 		if win.trips != nil {
 			rows, partial, err = w.cfg.Searcher.WindowFrom(ctx, win.x, win.t0, win.trips, fp)
 		} else {
 			rows, partial, err = w.cfg.Searcher.Window(ctx, win.x, win.t0, fp)
 		}
+		w.release()
 		if err == nil || ctx.Err() != nil {
 			break
 		}
+	}
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
 	}
 	done := time.Now()
 	if err != nil {
@@ -520,6 +543,46 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 		w.logMu.Unlock()
 	}
 	return rows
+}
+
+// acquire takes a search slot (D49), waiting while all are taken; false if
+// ctx ended first.
+func (w *Worker) acquire(ctx context.Context) bool {
+	if w.inFlight == nil {
+		return ctx.Err() == nil
+	}
+	select {
+	case w.inFlight <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (w *Worker) release() {
+	if w.inFlight != nil {
+		<-w.inFlight
+	}
+}
+
+// retryDelay is the wait before a window's attempt (from 1): 50 ms doubling
+// per attempt, times a random factor from 0.5 to 1.5 (D49), so the retries
+// of windows that failed together do not come back together.
+func retryDelay(attempt int) time.Duration {
+	base := 50 * time.Millisecond << min(attempt-1, 5)
+	return time.Duration(float64(base) * (0.5 + rand.Float64())) //nolint:gosec // jitter, not security
+}
+
+// sleep waits d unless ctx ends first, and reports whether it waited.
+func sleep(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // events converts decoder events to log events in broadcast time.
