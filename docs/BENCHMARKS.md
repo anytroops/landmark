@@ -294,6 +294,15 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 
   **One laptop now keeps up with 48 stations** (lag p99 2.3 s, as 32 did before), where it previously fell a minute or more behind. At 56 it is saturated: the median lag stays under the hop for the whole run and does not grow, but 30% of windows finish later than the hop (p99 5.8 s), so there is no headroom. Accuracy is unchanged, as D44 changes no landmark: at 48 stations every stream's event log has the same songs, starts, and ends (relative to the stream's first event) as `rt_cap48` before D44, now reported on time.
 - **After D45** (a live source that drops is joined again; only 410 Gone ends it), 16 stations at a48a504 (`rt_cap16_d45`): every stream's event log has the same songs, starts, and ends as `rt_cap16`; each station's end now reads as a drop, one try to rejoin, and 410 Gone (16 of each in the worker log). Window lag p50 0.6 s against 0.9 s before D44. The worker kill repeated at a4c7288 (`rt_kill16_d45`): again all 16 streams moved to the standby with no sequence gaps, 15 resumed and 1 interrupted, 137 of 143 songs found at 99.3% precision; 5.6 s of audio lost per stream (5.2 s before: it depends on where the kill falls between heartbeats).
+- **After D48** (the shared front end, windows every 27,520 samples; commit 1c9d98a, same harness, AC power, battery "100%; charged"; `rt_cap48_d48`, `rt_cap64_d48`, `rt_cap80_d48`, `rt_kill16_d48`):
+
+| Stations | Window lag p50 / p99 | Windows later than the hop | Windows unanswered | Songs found | Precision |
+|---|---|---|---|---|---|
+| 48 | 0.7 / 1.0 s | 0 of 5,952 | 0 | 407/428 (95.1%) | 98.6% |
+| 64 | 1.1 / 1.7 s | 0 of 7,874 | 501 (6.4%) | 542/570 (95.1%) | 98.6% |
+| 80 | 1.9 / 7.1 s | 2,604 of 9,809 | 1,257 | 671/711 (94.4%) | 98.8% |
+
+  Fingerprinting is no longer the limit: at 48 stations the lag is under half what it was after D44 (p99 1.0 s against 2.3 s), and at 64 it stays under the hop. What fails at 64 is the shards: every unanswered window is load shedding ("no free worker within 100 ms"). The test stations all broadcast in lockstep from one start time, so every stream's window is ready at the same moment (90% within 0.1 s of each other in each hop) and 64 x 6 searches arrive at once at shards with 8 workers each; with per-window fingerprinting, about 300 ms of CPU per window spread them out. Songs found still 95.1%, as the decoder rides over a missing window. The worker kill at 16 stations behaves as before (16 streams moved, no sequence gaps, 15 resumed and 1 interrupted, 5.2 s of audio lost each; window lag p99 0.33 s).
 - **Detection delay at real time** is the 12.5 s the decoder needs (D38) plus search time: median 12.6 s at 24 stations.
 - **Failover** (`rt_kill16`): 16 stations on worker w0, a standby w1, w0 killed with SIGKILL 120 s into the broadcast. All 16 streams moved to w1 (16 leases expired, 32 grants in all); each lost 5.2 s of audio (the lease ran out 6 s after w0's last renewal, shortly before the kill, and w1 took the stream at its next heartbeat); the new holder's first event came 21 to 59 s after the kill (when its first song decision fell due). No sequence gaps. The handoff itself duplicated nothing: 15 of the 16 streams carried their song in progress across it (one entry, flagged resumed), and the 16th closed it as interrupted because another song was playing by then. The 2 repeats in the score are songs the decoder split into two entries within the new holder's run (gaps of 5 and 7.5 s, beyond the 2.5 s merge gap), as offline decoding also does. Songs found 137/143 (95.8%), precision 99.3%, window lag p99 1.3 s.
 
@@ -389,3 +398,17 @@ One worker (`cmd/monitor`) monitoring N stations, each playing 3 UnmixDB test mi
 - Every layout scans the same postings (576k per search); the extra cost is per segment, 0.2 to 0.5 ms of CPU per search for each delta (2 to 4% of a merged search; 0.5 ms for the first, 0.2 ms each across 40): each query hash is looked up in every segment.
 - At 40 deltas the shard needs 400 x 20.5 ms = 8.2 cores of search against its 8 workers, so it saturates: queues grow, p50 jumps to 113 ms, and 1 to 4% of queries are shed. Ten deltas cost 21% more CPU; forty, 67%.
 - So the number of segments, not the postings in them, is what a merge policy must bound: size-tiered merging (T2 (a)) keeps a handful of deltas between rewrites of the base.
+
+## B16: adding songs with size-tiered merging (D47)
+
+B10's run again with `ingest -add` merging by D47's policy after each add (`bench.scripts.live_writes --tiered`): ten batches of 100 never-indexed tracks every 30 s under 200 qps, then `-merge`. Commit 1c9d98a, AC power, battery "100%; charged". Raw: `bench/results/livewrites_tiered_r200`.
+
+| Phase | Queries | p50 | p99 | Errors |
+|---|---|---|---|---|
+| Baseline | 7,897 | 12.4 ms | 20.9 ms | 0 |
+| During adds | 16,107 | 13.7 ms | 23.5 ms | 0 |
+| Between adds | 59,336 | 13.4 ms | 22.0 ms | 0 |
+| During the merge | 8,660 | 14.1 ms | 22.8 ms | 0 |
+
+- The partition held at most 6 segments (base plus 5 deltas; the shards' swaps show 2, 3, 4, 5, then 2 after the fourth add's tier merge, and so on), against 11 after ten adds without tiering. Each add is still searchable about 3 s after it starts (2.9 to 3.2 s; an add whose tier merge runs right after it publishes in 3.1 s instead of 2.6).
+- Accuracy on the 1,000 added songs 99.8% (99.6% for songs indexed from the start), no errors in any phase. The final `-merge` rewrote the base in 38 s, as in B10.

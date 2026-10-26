@@ -19,11 +19,11 @@ Every component has a Python reference and a Go implementation tested for parity
 | Benchmarks (latency vs load, max throughput under an SLO, replica kill, index size) | Done on fma_medium (23,985 tracks), single host |
 | Stop list for common hashes (D30) | Done, on in the deploy config |
 | DJ tracklisting | Working end to end (`cmd/tracklist`): hybrid matcher (D36), pruned triplet search (D37), accuracy and cost measured |
-| Adding songs while serving (D42, D47) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load. Size-tiered merging (D47) keeps a few deltas and rewrites the base once per 10% of growth |
+| Adding songs while serving (D42, D47) | Done: delta segments, versioned manifests, shards that swap versions under load, version-pinned queries, `ingest -add` and `-merge`; measured under load. Size-tiered merging (D47) keeps a few deltas (at most 6 segments over ten adds under load, B16) and rewrites the base once per 10% of growth |
 | Head-to-head against audfprint and Panako (D41) | Done: same tracks, queries, and accept rule, each tool's density tuned on val; accuracy, DJ mixes, and cost |
 | DJ mix analysis (D43) | Done: `tracklist -analyze` reports each song's fades, turntable or keylock, and BPM in the set; the Go port matches the Python prototype on all 1,058 test songs |
 | Demo web page (D46) | Done: `make demo`. Identify a clip (a file, the microphone, or a test song sped up like a turntable or with keylock, pair and triplet answers side by side), tracklist a mix while its windows are searched (fades, turntable or keylock, BPM, the true tracklist beside it) and play it under its timeline, watch live stations; links reopen example results, and tracklists export as text or JSON |
-| Shared front end (D48) | Built and the default: each stream's spectrogram frames computed once for all its windows (2.5x less triplet fingerprinting per window in B14, the same landmarks), windows every 27,520 samples; capacity on AC pending |
+| Shared front end (D48) | Done and the default: each stream's spectrogram frames computed once for all its windows (2.5x less triplet fingerprinting per window, B14), windows every 27,520 samples; the test sets' tracklists are exactly per-window fingerprinting's at that hop (95.3% of songs, precision 98.2%) |
 | Live stream monitoring (D38-D40) | Done: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes; real-time capacity and worker failover measured |
 
 ## Architecture
@@ -78,7 +78,7 @@ DJ tracklisting:
 | Synthetic DJ mixes, songs found (clean / with EQ, noise, MP3) | 99.4% / 98.2-98.8%, one search per window |
 | UnmixDB (real club tracks with effects, built by other researchers), songs found | hybrid triplets + pairs (6 searches per window) **95.2%**, precision 98.9%; speed grid (37 searches) 95.2%, precision 98.8% |
 | Live monitoring, UnmixDB test sets played as streams | same entries as offline tracklisting on all 384 mixes, which equal the eval's (95.2% of songs, precision 98.9%); a song is reported a median 12.5 s (stream time) after its transition |
-| Live monitoring in real time, one laptop (before D48) | keeps up with 48 stations (window lag p99 2.3 s against a 2.5 s hop, 94.9% of songs found; 32 before D44 computed each query FFT once for both filterbanks), saturated at 56; a killed worker's 16 streams resume on a standby, 5.2 s of audio lost each |
+| Live monitoring in real time, one laptop | with the shared front end (D48): 48 stations at window lag p99 1.0 s; at 64 the lag holds (p99 1.7 s) but the shards shed 6% of windows because the lockstep test stations search in bursts. Before D48 it kept up with 48 stations (window lag p99 2.3 s against a 2.5 s hop, 94.9% of songs found; 32 before D44 computed each query FFT once for both filterbanks), saturated at 56; a killed worker's 16 streams resume on a standby, 5.2 s of audio lost each |
 | Adding songs while serving, under 200 qps | 100 songs searchable about 3 s after the add starts; p99 20.8 ms at baseline, 28.4 ms during adds; no errors |
 | Search cost, one partition | triplet search 378 qps under p99 <= 100 ms after pruning (D37; 118 qps before), pair search 734 qps: the hybrid tracklists 3.5-4.2x as many windows per second as the speed grid (10-13x with its 2-search variant) |
 
