@@ -62,6 +62,7 @@ func main() {
 	flag.DurationVar(&search.Timeout, "timeout", 5*time.Second, "deadline per search")
 	flag.IntVar(&cfg.SearchRetries, "search-retries", 3, "attempts per window before it counts as unanswered (jittered backoff between, D49)")
 	flag.IntVar(&cfg.MaxInFlight, "max-in-flight", 32, "windows of all streams searched at once (D49; 0: no limit): bursts wait here, not at the shards")
+	flag.DurationVar(&cfg.DropAfter, "drop-after", 2500*time.Millisecond, "a live window with no search slot this long after its audio arrived is not searched (D50; 0: never)")
 	flag.Float64Var(&cfg.TAbs, "t-abs", 10, "minimum window score")
 	flag.Float64Var(&cfg.TRatio, "t-ratio", 2, "minimum top / runner-up ratio")
 	flag.IntVar(&cfg.K, "k", 1, "neighbors on each side in the majority vote; labels are final k windows later")

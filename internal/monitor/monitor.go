@@ -87,6 +87,12 @@ type Config struct {
 	// moment; past this many, a window waits here rather than at the
 	// shards, which shed what waits over 100 ms.
 	MaxInFlight int
+	// DropAfter: a window of a live source not yet given a search slot this
+	// long after its last sample arrived is not searched (D50; 0: never),
+	// and the decoder treats it as unanswered: an overloaded worker stays in
+	// real time instead of falling further behind. Files are read ahead of
+	// their searches on purpose, so their windows are never dropped.
+	DropAfter time.Duration
 }
 
 // Worker runs leased streams.
@@ -269,6 +275,7 @@ type window struct {
 	x     []float32
 	trips [][]triplet.Landmark
 	ready time.Time
+	drop  time.Time // not searched once this passes (zero: never; D50)
 }
 
 // hopSamples is the window hop in samples.
@@ -305,9 +312,13 @@ func (w *Worker) runStream(ctx context.Context, l *landmarkv1.Lease, finished *a
 		return err
 	}
 	fp := hybrid.NewFingerprinters()
+	var dropAfter time.Duration
+	if isLive(url) {
+		dropAfter = w.cfg.DropAfter
+	}
 	quick := 0 // live connections in a row that ended before their first window
 	for src != nil {
-		n, dropped, err := w.decode(ctx, id, src, base, dec, a, fp)
+		n, dropped, err := w.decode(ctx, id, src, base, dropAfter, dec, a, fp)
 		_ = src.Close()
 		if ctx.Err() != nil {
 			return nil
@@ -410,14 +421,16 @@ func (w *Worker) decoder(open *landmarkv1.Event, base float64) (*tracklist.Onlin
 // decode searches the source's windows and feeds them to dec, appending
 // its events, until the source ends or fails, and returns how many windows
 // it decoded and the source's error (nil at its end). err is any other
-// failure: the decoder refusing a window, or an append (fenced).
-func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base float64, dec *tracklist.Online,
-	a *appender, fp *hybrid.Fingerprinters) (n int, dropped, err error) {
+// failure: the decoder refusing a window, or an append (fenced). A window
+// not given a search slot within dropAfter of its audio arriving is
+// dropped (0: never).
+func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base float64, dropAfter time.Duration,
+	dec *tracklist.Online, a *appender, fp *hybrid.Fingerprinters) (n int, dropped, err error) {
 	ctx, cancel := context.WithCancel(ctx) // ends the reader on an early return
 	defer cancel()
 	windows := make(chan window, 64)
 	readErr := make(chan error, 1)
-	go func() { readErr <- w.readWindows(ctx, src, windows) }()
+	go func() { readErr <- w.readWindows(ctx, src, dropAfter, windows) }()
 	for win := range windows {
 		rows := w.search(ctx, id, win, fp)
 		if ctx.Err() != nil {
@@ -439,7 +452,7 @@ func (w *Worker) decode(ctx context.Context, id string, src *audio.Stream, base 
 // closes out when the source ends. With a shared front end, a window waits
 // until the front end can cut its landmarks (the resamplers look a few
 // samples ahead); its ready time stays when its last sample arrived.
-func (w *Worker) readWindows(ctx context.Context, src *audio.Stream, out chan<- window) error {
+func (w *Worker) readWindows(ctx context.Context, src *audio.Stream, dropAfter time.Duration, out chan<- window) error {
 	defer close(out)
 	size, hop := int(w.cfg.Window*audio.SampleRate), w.cfg.hopSamples()
 	cut := windower{size: size, hop: hop}
@@ -476,6 +489,9 @@ func (w *Worker) readWindows(ctx context.Context, src *audio.Stream, out chan<- 
 			win := pending[0]
 			pending = pending[1:]
 			msg := window{t0: hybrid.WindowT0(win.start), x: win.x, ready: win.at}
+			if dropAfter > 0 {
+				msg.drop = win.at.Add(dropAfter)
+			}
 			if fe != nil {
 				if msg.trips, err = fe.Landmarks(win.start); err != nil {
 					return err
@@ -510,7 +526,7 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 		if attempt > 0 && !sleep(ctx, retryDelay(attempt)) {
 			break
 		}
-		if !w.acquire(ctx) {
+		if err = w.acquire(ctx, win.drop); err != nil {
 			break
 		}
 		if win.trips != nil {
@@ -527,9 +543,15 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 		err = ctx.Err()
 	}
 	done := time.Now()
-	if err != nil {
+	late := errors.Is(err, errLate)
+	switch {
+	case late: // not logged one by one: an overloaded worker drops many
+		w.m.late.Inc()
+	case err != nil:
 		w.m.searchFailures.Inc()
 		slog.Warn("window unanswered", "stream", stream, "t0", win.t0, "err", err)
+	}
+	if err != nil {
 		rows = []tracklist.Row{{T0: win.t0, Mode: "b2", Factor: 1, Track: -1}}
 	}
 	lag := done.Sub(win.ready)
@@ -537,7 +559,7 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 	w.m.lag.Observe(lag.Seconds())
 	if w.cfg.WindowLog != nil {
 		b, _ := json.Marshal(map[string]any{"stream": stream, "t0": win.t0, "ready_unix": unix(win.ready),
-			"done_unix": unix(done), "searches": len(rows), "partial": partial, "failed": err != nil})
+			"done_unix": unix(done), "searches": len(rows), "partial": partial, "failed": err != nil, "late": late})
 		w.logMu.Lock()
 		_, _ = w.cfg.WindowLog.Write(append(b, '\n'))
 		w.logMu.Unlock()
@@ -545,17 +567,33 @@ func (w *Worker) search(ctx context.Context, stream string, win window, fp *hybr
 	return rows
 }
 
-// acquire takes a search slot (D49), waiting while all are taken; false if
-// ctx ended first.
-func (w *Worker) acquire(ctx context.Context) bool {
+// errLate: a window was not given a search slot before its drop time (D50).
+var errLate = errors.New("monitor: window dropped, too late to search")
+
+// acquire takes a search slot (D49), waiting while all are taken. It
+// returns errLate once drop (unless zero) has passed, at once if it already
+// has (D50), or ctx's error if ctx ends first.
+func (w *Worker) acquire(ctx context.Context, drop time.Time) error {
+	var late <-chan time.Time
+	if !drop.IsZero() {
+		d := time.Until(drop)
+		if d <= 0 {
+			return errLate
+		}
+		t := time.NewTimer(d)
+		defer t.Stop()
+		late = t.C
+	}
 	if w.inFlight == nil {
-		return ctx.Err() == nil
+		return ctx.Err()
 	}
 	select {
 	case w.inFlight <- struct{}{}:
-		return true
+		return nil
+	case <-late:
+		return errLate
 	case <-ctx.Done():
-		return false
+		return ctx.Err()
 	}
 }
 
@@ -734,9 +772,9 @@ func (c *windower) add(x []float32) []cutWindow {
 func unix(t time.Time) float64 { return float64(t.UnixNano()) / 1e9 }
 
 type metrics struct {
-	windows, searchFailures, appended, fenced, heartbeatFailures, finished, reconnects prometheus.Counter
-	running                                                                            prometheus.Gauge
-	lag                                                                                prometheus.Histogram
+	windows, searchFailures, late, appended, fenced, heartbeatFailures, finished, reconnects prometheus.Counter
+	running                                                                                  prometheus.Gauge
+	lag                                                                                      prometheus.Histogram
 }
 
 func newMetrics(reg prometheus.Registerer) (*metrics, error) {
@@ -745,6 +783,8 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 			Name: "landmark_monitor_windows_total", Help: "Windows searched."}),
 		searchFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "landmark_monitor_windows_unanswered_total", Help: "Windows whose searches failed after retries."}),
+		late: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "landmark_monitor_windows_dropped_late_total", Help: "Live windows not searched: no search slot within -drop-after of their audio (D50)."}),
 		appended: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "landmark_monitor_events_appended_total", Help: "Events logged."}),
 		fenced: prometheus.NewCounter(prometheus.CounterOpts{
@@ -762,7 +802,7 @@ func newMetrics(reg prometheus.Registerer) (*metrics, error) {
 			Buckets: prometheus.ExponentialBuckets(0.01, 2, 12)}),
 	}
 	if reg != nil {
-		for _, c := range []prometheus.Collector{m.windows, m.searchFailures, m.appended, m.fenced,
+		for _, c := range []prometheus.Collector{m.windows, m.searchFailures, m.late, m.appended, m.fenced,
 			m.heartbeatFailures, m.finished, m.reconnects, m.running, m.lag} {
 			if err := reg.Register(c); err != nil {
 				return nil, fmt.Errorf("monitor: metrics: %w", err)

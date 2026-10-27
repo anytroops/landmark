@@ -759,3 +759,97 @@ func TestSearchRetryWaits(t *testing.T) {
 		t.Errorf("%v windows unanswered, want 0: the retry answered", got)
 	}
 }
+
+// TestLateLiveWindowsAreDropped: with one search slot and 500 ms searches,
+// a live source's later windows wait past their drop time and are not
+// searched (D50); a file's windows wait their turn and are all searched.
+func TestLateLiveWindowsAreDropped(t *testing.T) {
+	pcm, err := audio.Decode(context.Background(), noiseWAV(t, 15), audio.SampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name       string
+		live       bool
+		searched   int
+		late       float64
+		windowsOut float64
+	}{
+		{name: "live", live: true, searched: 1, late: 2, windowsOut: 3},
+		{name: "file", live: false, searched: 3, late: 0, windowsOut: 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			url := noiseWAV(t, 15)
+			if tt.live {
+				srv := httptest.NewServer(&station{replies: []reply{{start: 1000, pcm: pcm}}}) // then 410 Gone
+				defer srv.Close()
+				url = srv.URL + "/stream/s1"
+			}
+			_, _, client := setupURL(t, 6*time.Second, url)
+			s := &scripted{gate: func(context.Context, int) { time.Sleep(500 * time.Millisecond) }}
+			cfg := config(s, 50*time.Millisecond)
+			cfg.MaxInFlight, cfg.DropAfter = 1, 200*time.Millisecond
+			w, err := New(cfg, client, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- w.Run(ctx) }()
+			deadline := time.Now().Add(time.Minute)
+			for testutil.ToFloat64(w.m.finished) < 1 {
+				if time.Now().After(deadline) {
+					t.Fatal("stream never ended")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			cancel()
+			<-done
+			s.mu.Lock()
+			searched := s.n
+			s.mu.Unlock()
+			if searched != tt.searched {
+				t.Errorf("%d windows searched, want %d", searched, tt.searched)
+			}
+			if got := testutil.ToFloat64(w.m.late); got != tt.late {
+				t.Errorf("%v windows dropped late, want %v", got, tt.late)
+			}
+			if got := testutil.ToFloat64(w.m.windows); got != tt.windowsOut {
+				t.Errorf("%v windows decoded, want %v", got, tt.windowsOut)
+			}
+			if got := testutil.ToFloat64(w.m.searchFailures); got != 0 {
+				t.Errorf("%v windows counted as failed searches, want 0", got)
+			}
+		})
+	}
+}
+
+// TestAcquireGivesUpAtTheDropTime: a window waiting for a search slot stops
+// waiting at its drop time, and one already past it does not take a free
+// slot (D50).
+func TestAcquireGivesUpAtTheDropTime(t *testing.T) {
+	w := &Worker{inFlight: make(chan struct{}, 1)}
+	ctx := context.Background()
+	if err := w.acquire(ctx, time.Now().Add(-time.Millisecond)); !errors.Is(err, errLate) {
+		t.Errorf("past its drop time with a free slot: %v, want errLate", err)
+	}
+	if err := w.acquire(ctx, time.Time{}); err != nil {
+		t.Fatalf("a free slot: %v", err)
+	}
+	start := time.Now()
+	if err := w.acquire(ctx, start.Add(50*time.Millisecond)); !errors.Is(err, errLate) {
+		t.Errorf("no free slot: %v, want errLate", err)
+	}
+	if waited := time.Since(start); waited < 50*time.Millisecond {
+		t.Errorf("gave up after %v, before the drop time", waited)
+	}
+	stopped, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := w.acquire(stopped, time.Time{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("ctx ended: %v, want context.Canceled", err)
+	}
+	w.release()
+	if err := w.acquire(ctx, time.Now().Add(time.Second)); err != nil {
+		t.Errorf("a slot freed before the drop time: %v", err)
+	}
+}

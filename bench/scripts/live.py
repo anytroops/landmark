@@ -216,6 +216,7 @@ def lag_stats(paths: list[Path], hop: float) -> dict:
         ready.setdefault((x["holder"], x["stream"]), []).append(x["ready_unix"])
     gap = max((b - a for r in ready.values() for a, b in itertools.pairwise(sorted(r))), default=0)
     return {"windows": len(w), "unanswered": sum(x["failed"] for x in w),
+            "dropped_late": sum(x.get("late", False) for x in w),
             "lag_s": {"p50": q(0.5), "p90": q(0.9), "p99": q(0.99), "max": round(lag[-1], 3)},
             "windows_lag_over_hop": sum(x > hop for x in lag),
             "per_s": throughput(w),
@@ -318,7 +319,8 @@ def realtime(args: argparse.Namespace) -> None:
                      "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX),
                      "-window-log", str(out / f"windows-w{i}.jsonl"),
                      "-admin", f"127.0.0.1:{7910 + i}", "-front", args.front,
-                     "-max-in-flight", str(args.max_in_flight)],
+                     "-max-in-flight", str(args.max_in_flight),
+                     "-drop-after", f"{args.drop_after}s"],
                     stdout=log.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
                 want, until = min(args.capacity, free), time.monotonic() + 30
                 while want and log.read_text(errors="replace").count("stream start") < want:
@@ -365,7 +367,8 @@ def realtime(args: argparse.Namespace) -> None:
     meta = {"mixes": args.mixes, "catalog": str((B2_INDEX / "catalog.json").relative_to(ROOT)),
             "stations": args.stations, "per_station": args.per_station, "sets": args.sets,
             "seed": args.seed, "workers": args.workers, "capacity": args.capacity,
-            "max_in_flight": args.max_in_flight, "heartbeat": args.heartbeat, "ttl": args.ttl,
+            "max_in_flight": args.max_in_flight, "drop_after_s": args.drop_after,
+            "heartbeat": args.heartbeat, "ttl": args.ttl,
             "broadcast_start_unix": start,
             "stop_fraction": args.stop_fraction,
             "kill_unix": kill_unix, "kill_at_s": args.kill_at or None, "stop_unix": stop_unix,
@@ -439,6 +442,8 @@ def main() -> None:
                     help="shared (D48) or window (before D48)")  # fmt: skip
     rt.add_argument("--max-in-flight", type=int, default=32,
                     help="windows a worker searches at once (D49); 0: no limit")  # fmt: skip
+    rt.add_argument("--drop-after", type=float, default=2.5,
+                    help="seconds a live window waits for a slot (D50); 0: forever")  # fmt: skip
     rt.add_argument("--out", type=Path, required=True)
     rs = sub.add_parser("rates", help="windows ready and answered per second, from run dirs")
     rs.add_argument("runs", type=Path, nargs="+")
