@@ -1,6 +1,6 @@
 # Design: more live streams per machine
 
-Status: both decided 2026-10-23 (D47, D48); numbers updated after D44, option T1 (a) measured in B14.
+Status: both decided 2026-10-23 (D47, D48); numbers below are from after D44, option T1 (a) measured in B14. Outcome: with D48 and D49 one laptop keeps up with 88 stations (BENCHMARKS B9).
 
 ## Where the time goes
 

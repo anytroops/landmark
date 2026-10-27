@@ -74,6 +74,12 @@ After each core component: 3 interview-style questions and Sean's answers.
 2. The first version of the rejoin treated a refused append as a dropped source. What did that do once another worker took the stream, and why did the system still recover by itself?
 3. Why does a connection that ends before its first window get a backoff, when one that played for a while is rejoined at once?
 
+### Pacing a worker's searches (D49)
+1. Making fingerprinting faster (D48) caused 6% of windows to go unanswered at 64 stations, where the slower code lost none. Why?
+2. The cap was first set to the shards' 16 search workers, and at 80 stations the worker fell a minute behind without the shards ever turning a search away. What was wrong with 16, and what would you measure to pick the cap instead of guessing?
+3. Jittered retries alone cut the unanswered windows at 80 stations from 1,257 to 502; the cap cut them to 0. Why does the cap help so much more?
+4. Past capacity, the worker with the cap answers fewer windows a second than at a lower load, rather than holding at its maximum. What are the options for an overloaded worker, and which failure would a radio-monitoring customer prefer?
+
 ### DJ mix analysis (D43)
 1. How do you get a song's gain curve out of a mix when you only know which songs play and how they are aligned? Why do it in power, and why non-negative?
 2. A turntable change and a keylock change at the same tempo look identical to the triplet matcher. How does the analysis tell them apart, and what bug once made it always answer keylock?

@@ -27,9 +27,10 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-10-23, on battery: demo audio playback (mixes under their timelines, the searched clip, the matched song from its offset); D47 size-tiered merging built (`ingest -add` merges by it, `-compact`); D48 shared front end built and made the default for `cmd/tracklist`, `cmd/monitor`, and the demo (exact-landmark tests at every layer); timings wait for AC.
 - 2026-10-26, on AC: the shipped default (D48) gives the test sets exactly per-window fingerprinting's tracklists at its hop, live still equal; live lag at 48 stations p99 1.0 s (2.3 s before D48), 64 stations hold their lag but lose 6.4% of windows to shard shedding in bursts; worker kill unchanged; tiered adds under load keep at most 6 segments (B16).
 - 2026-10-23: demo web page (D46, Sean's go): `make demo`; identify (file, microphone, test songs with turntable or keylock changes, pairs against triplets), tracklisting with a live timeline, analysis, and the true tracklist, live stations.
+- 2026-10-27, on AC: D49 (Sean's picks: a worker-wide cap on windows searched at once, jittered retries). One laptop keeps up with 88 stations with every window answered (lag p99 2.1 s); 96 falls behind. The first cap, 16, left the shards idle part of the time (a window holds its slot through its pair fingerprinting too) and fell a minute behind at 80; 24 and 32 kept up, 32 is the default. Retries alone still lose 502 windows at 80. `live rates` reports windows answered per second.
 
 ## Next
-- Searches arrive in bursts when many streams share a phase (B9 after D48: 6.4% of windows shed at 64 lockstep stations): options for Sean (a worker-side cap on searches in flight, jittered retry backoff, or larger shard queues).
+- What an overloaded worker should do (B9 at 96 stations: it sheds nothing, so it falls minutes behind, fills its buffers, stops reading audio, and answers fewer windows a second than at 88): options for Sean.
 - Sean to review D44 and D45, made while he was away: D44 is output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 

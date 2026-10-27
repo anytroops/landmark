@@ -218,7 +218,33 @@ def lag_stats(paths: list[Path], hop: float) -> dict:
     return {"windows": len(w), "unanswered": sum(x["failed"] for x in w),
             "lag_s": {"p50": q(0.5), "p90": q(0.9), "p99": q(0.99), "max": round(lag[-1], 3)},
             "windows_lag_over_hop": sum(x > hop for x in lag),
+            "per_s": throughput(w),
             "max_arrival_gap_s": round(gap, 2), "valid": gap < 3 * hop}  # fmt: skip
+
+
+def throughput(w: list[dict]) -> dict:
+    """Windows ready and windows answered per second over the middle half
+    of the run (from the first window ready to the last): what the worker
+    gets through against what reaches it. A worker that stops reading
+    (its buffers full) makes fewer windows ready than the stations send."""
+    ready = sorted(x["ready_unix"] for x in w)
+    a = ready[0] + (ready[-1] - ready[0]) / 4
+    b = ready[0] + (ready[-1] - ready[0]) * 3 / 4
+    if b <= a:
+        return {}
+
+    def rate(ts: list[float]) -> float:
+        return round(sum(a <= t < b for t in ts) / (b - a), 1)
+
+    return {"ready": rate(ready), "answered": rate([x["done_unix"] for x in w if not x["failed"]])}
+
+
+def rates(args: argparse.Namespace) -> None:
+    """Prints throughput for runs already made."""
+    for d in args.runs:
+        logs = sorted(d.glob("windows-w*.jsonl"))
+        w = [json.loads(x) for p in logs for x in p.read_text().splitlines()]
+        print(d, json.dumps(throughput(w)))
 
 
 def realtime(args: argparse.Namespace) -> None:
@@ -414,9 +440,11 @@ def main() -> None:
     rt.add_argument("--max-in-flight", type=int, default=32,
                     help="windows a worker searches at once (D49); 0: no limit")  # fmt: skip
     rt.add_argument("--out", type=Path, required=True)
+    rs = sub.add_parser("rates", help="windows ready and answered per second, from run dirs")
+    rs.add_argument("runs", type=Path, nargs="+")
     args = ap.parse_args()
     os.environ.setdefault("PYTHONHASHSEED", "0")
-    {"equiv": equiv, "realtime": realtime}[args.cmd](args)
+    {"equiv": equiv, "realtime": realtime, "rates": rates}[args.cmd](args)
 
 
 if __name__ == "__main__":
