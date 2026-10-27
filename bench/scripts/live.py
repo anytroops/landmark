@@ -411,7 +411,7 @@ def main() -> None:
     )
     rt.add_argument("--front", default="shared", choices=["shared", "window"],
                     help="shared (D48) or window (before D48)")  # fmt: skip
-    rt.add_argument("--max-in-flight", type=int, default=16,
+    rt.add_argument("--max-in-flight", type=int, default=32,
                     help="windows a worker searches at once (D49); 0: no limit")  # fmt: skip
     rt.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
