@@ -1,7 +1,7 @@
 # Progress
 
 ## Current phase: roadmap complete; next direction open
-Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to-head against audfprint and Panako (D41), adding songs while serving (D42), and DJ mix analysis (D43), each built, measured, and written up. The demo UI waits for Sean's go; product direction to be discussed.
+Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to-head against audfprint and Panako (D41), adding songs while serving (D42), and DJ mix analysis (D43), each built, measured, and written up, then the demo web page (D46) and more stations per laptop (D44, D48 to D51: 32 to 96 in real time). Product direction to be discussed.
 
 ## Done
 - 2026-10-14, Phase 0: repo, toolchain, CI, compose stack, FMA data verified and extracted.
@@ -28,10 +28,10 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-10-26, on AC: the shipped default (D48) gives the test sets exactly per-window fingerprinting's tracklists at its hop, live still equal; live lag at 48 stations p99 1.0 s (2.3 s before D48), 64 stations hold their lag but lose 6.4% of windows to shard shedding in bursts; worker kill unchanged; tiered adds under load keep at most 6 segments (B16).
 - 2026-10-23: demo web page (D46, Sean's go): `make demo`; identify (file, microphone, test songs with turntable or keylock changes, pairs against triplets), tracklisting with a live timeline, analysis, and the true tracklist, live stations.
 - 2026-10-27, on AC: D49 (Sean's picks: a worker-wide cap on windows searched at once, jittered retries). One laptop keeps up with 88 stations with every window answered (lag p99 2.1 s); 96 falls behind. The first cap, 16, left the shards idle part of the time (a window holds its slot through its pair fingerprinting too) and fell a minute behind at 80; 24 and 32 kept up, 32 is the default. Retries alone still lose 502 windows at 80. `live rates` reports windows answered per second.
+- 2026-10-27, on AC: D50 (Sean's pick): an overloaded worker drops a live window still waiting for a search slot 2.5 s after its audio arrived; files are never dropped. At 96 stations it kept the worker reading its audio but dropped half the windows (85.7% of songs). A worker profile showed why throughput fell past capacity: half its CPU zeroing and copying fresh memory, about 112 MB per window, on a laptop already short of memory. D51 keeps fingerprinting buffers between windows (output identical; the test sets' window rows match byte for byte): 10% less time per window on an idle machine and 10x less memory allocated (B17). One laptop now keeps up with 96 stations with every window answered; at 112 it drops 18% of windows and still finds 94.2% of songs.
 
 ## Next
-- What an overloaded worker should do (B9 at 96 stations: it sheds nothing, so it falls minutes behind, fills its buffers, stops reading audio, and answers fewer windows a second than at 88): options for Sean.
-- Sean to review D44 and D45, made while he was away: D44 is output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
+- Sean to review D44, D45, and D51, made while he was away: D44 and D51 are output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers
@@ -40,7 +40,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 ## Open questions
 - fma_large needs ~186 GB (zip + extracted); ~75 GiB free. External disk or a cloud VM.
 - Real-noise condition (MUSAN or Sean's recordings) not yet in the eval; white noise only.
-- 12 interview questions pending in `docs/INTERVIEW_NOTES.md` (Sean deferred; answer before resume use).
+- 40 interview questions pending, over 13 components, in `docs/INTERVIEW_NOTES.md` (Sean deferred; answer before resume use).
 
 ## Gotchas
 - Benchmarks: never while the battery charges. On the 65 W adapter (the original 70 W is lost), P=1 at 550 qps failed all reps while charging from 82%, after passing B2 at full charge. The harness waits for the charge to finish and invalidates runs where the battery drained or began charging.

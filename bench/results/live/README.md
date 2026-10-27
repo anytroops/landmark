@@ -13,3 +13,4 @@
 - `rt_cap64_d49_f32`, `rt_cap80_d49_f0`, `rt_cap80_d49_f24`, `rt_cap80_d49_f32`: valid runs at 9d1bbde, with the cap the harness sets (32, none, 24, 32). `rt_cap88_d49_f32`: valid run at ebdf59f (cap 32, the new default). `rt_cap96_d49_f32`: same, not valid (gaps of up to 105 s).
 - `rt_cap88_d50`, `rt_cap96_d50`: valid runs at e16ac50, after D50 (late live windows dropped). `rt_cap112_d50`: same, not valid (gaps of up to 17 s).
 - `diag_d50/`: diagnostic runs at b6f0d1e, not timed results: a 30 s CPU profile of the worker 200 s into 88- and 96-station runs (`worker_cpu_*.pprof`, top functions in `.txt`), and the machine's CPU and memory lines from `top` every 5 s over the same span (`machine_*.txt`).
+- `rt_cap88_d51`, `rt_cap96_d51`, `rt_cap104_d51`, `rt_cap112_d51`: valid runs at 78de07e, after D51 (fingerprinting buffers kept between windows), each with `machine.txt`: the machine's CPU and memory lines from `top` every 30 s during the run.
