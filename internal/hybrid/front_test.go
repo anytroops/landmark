@@ -132,3 +132,40 @@ func TestSearchMix(t *testing.T) {
 		t.Errorf("emit's error: got %v", err)
 	}
 }
+
+// BenchmarkLiveWindow is one live window's fingerprinting as the worker
+// does it with the shared front end: a hop of audio pushed in quarter
+// seconds, the window's triplet landmarks cut at every speed, and its pair
+// landmarks (WindowFrom). One op is a 60 s stream; the metrics are per
+// window.
+func BenchmarkLiveWindow(b *testing.B) {
+	x := noise(60 * audio.SampleRate)
+	s := &Searcher{Shifts: 4, Extra: []float64{2, 0.5}}
+	fp := NewFingerprinters()
+	windows := len(WindowStarts(len(x), testWindow, testHop))
+	b.ReportAllocs()
+	for b.Loop() {
+		f, err := s.NewFront(testWindow)
+		if err != nil {
+			b.Fatal(err)
+		}
+		next := 0
+		for pushed := 0; pushed < len(x); {
+			n := min(audio.SampleRate/4, len(x)-pushed)
+			f.Push(x[pushed : pushed+n])
+			if pushed += n; pushed == len(x) {
+				f.Close()
+			}
+			for next+testWindow <= len(x) && f.Ready(next) {
+				if _, err := f.Landmarks(next); err != nil {
+					b.Fatal(err)
+				}
+				fp.pair.FingerprintQuery(x[next:next+testWindow], s.Shifts)
+				next += testHop
+				f.Forget(next)
+			}
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Microseconds())/1000/float64(b.N*windows), "ms/window")
+	b.ReportMetric(0, "ns/op")
+}

@@ -88,3 +88,47 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// TestKeptBuffersDoNotLeak: a Fingerprinter and a Stream keep their
+// buffers from call to call (D51). Landmarks they returned must not change
+// with later calls, and a reused Fingerprinter must give what a new one
+// gives, for longer and shorter signals in turn.
+func TestKeptBuffersDoNotLeak(t *testing.T) {
+	x := syntheticSignal(40 * audio.SampleRate)
+	sec := func(a, n int) []float32 { return x[a*audio.SampleRate : (a+n)*audio.SampleRate] }
+	spans := [][2]int{{0, 10}, {5, 3}, {12, 20}, {1, 0}, {30, 10}}
+	fp := New(DefaultParams())
+	var query, index [][]Landmark
+	for _, s := range spans {
+		query = append(query, fp.FingerprintQuery(sec(s[0], s[1]), 4))
+		index = append(index, fp.Fingerprint(sec(s[0], s[1])))
+	}
+	for i, s := range spans {
+		if want := New(DefaultParams()).FingerprintQuery(sec(s[0], s[1]), 4); !slices.Equal(query[i], want) {
+			t.Errorf("FingerprintQuery %v: %d landmarks, a new Fingerprinter %d", s, len(query[i]), len(want))
+		}
+		if want := New(DefaultParams()).Fingerprint(sec(s[0], s[1])); !slices.Equal(index[i], want) {
+			t.Errorf("Fingerprint %v: %d landmarks, a new Fingerprinter %d", s, len(index[i]), len(want))
+		}
+	}
+
+	st, err := NewStream(DefaultParams(), 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Push(x)
+	const hop, n = 27520, 10 * audio.SampleRate
+	var got [][]Landmark
+	for start := 0; start+n <= len(x) && len(got) < 8; start += hop {
+		lms, err := st.Query(start, n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, lms)
+	}
+	for i, lms := range got {
+		if want := New(DefaultParams()).FingerprintQuery(x[i*hop:i*hop+n], 4); !slices.Equal(lms, want) {
+			t.Errorf("Stream window %d, checked after later windows: %d landmarks, want %d", i, len(lms), len(want))
+		}
+	}
+}

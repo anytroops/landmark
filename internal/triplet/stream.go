@@ -29,6 +29,8 @@ type Stream struct {
 	rows     [2][]float64 // frames rowStart.. on each filterbank, p.NBands values each
 	rowStart int
 	frames   int // frames computed: frame k covers samples [k*step, k*step+NFFT)
+
+	spec []float64 // Query's spectrogram of one grid, kept for the next (D51)
 }
 
 // NewStream returns a Stream for p's query fingerprint on nShifts grids.
@@ -51,7 +53,7 @@ func (s *Stream) Push(x []float32) {
 	if len(s.buf)-from < s.p.NFFT {
 		return
 	}
-	specs := s.grid.spectrograms(s.buf[from:], s.grid.bands, s.half)
+	specs := s.grid.spectrogramsInto(s.grid.specs[:], s.buf[from:], s.grid.bands, s.half)
 	for i := range s.rows {
 		s.rows[i] = append(s.rows[i], specs[i].Data...)
 	}
@@ -93,7 +95,7 @@ func (s *Stream) Query(start, n int) ([]Landmark, error) {
 		return nil, fmt.Errorf("triplet: window at sample %d is not complete", start)
 	}
 	bins := s.p.NBands
-	var all []Landmark
+	all := s.grid.lms[:0]
 	for k := range s.shifts {
 		if k*s.step >= n {
 			break
@@ -103,16 +105,18 @@ func (s *Stream) Query(start, n int) ([]Landmark, error) {
 		for i := range s.rows {
 			spec := fingerprint.Spectrogram{Bins: bins}
 			if c > 0 {
-				spec.Frames, spec.Data = c, make([]float64, c*bins)
+				s.spec = fingerprint.Resize(s.spec, c*bins) // every row is copied in
+				spec.Frames, spec.Data = c, s.spec
 				for t := range c {
 					src := (first + t*s.shifts) * bins
 					copy(spec.Data[t*bins:(t+1)*bins], s.rows[i][src:src+bins])
 				}
 			}
-			all = append(all, Triplets(fingerprint.FindPeaks(spec, s.p.PeakParams()), s.p)...)
+			all = appendTriplets(all, s.grid.peaks.Find(spec, s.p.PeakParams()), s.p)
 		}
 	}
-	return union(all), nil
+	s.grid.lms = all
+	return clone(union(all)), nil
 }
 
 // Forget drops the frames of samples before sample, which no later window

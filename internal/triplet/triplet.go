@@ -18,8 +18,10 @@
 package triplet
 
 import (
+	"cmp"
 	"math"
 	"math/cmplx"
+	"slices"
 	"sort"
 
 	"gonum.org/v1/gonum/dsp/fourier"
@@ -137,6 +139,9 @@ type Fingerprinter struct {
 	frame  []float64
 	coeffs []complex128
 	mag    []float64
+	specs  [2][]float64 // spectrograms of the last fingerprint, kept for the next (D51)
+	peaks  fingerprint.PeakFinder
+	lms    []Landmark // FingerprintQuery's landmarks before union, kept for the next
 }
 
 // New returns a Fingerprinter for p.
@@ -163,6 +168,13 @@ func (fp *Fingerprinter) Spectrogram(pcm []float32) fingerprint.Spectrogram {
 // window, so only the band sums differ. Each result equals that
 // filterbank's Spectrogram exactly.
 func (fp *Fingerprinter) spectrograms(pcm []float32, banks ...[]band) []fingerprint.Spectrogram {
+	return fp.spectrogramsInto(nil, pcm, banks...)
+}
+
+// spectrogramsInto is spectrograms, written into bufs[i] for banks[i] (nil:
+// new slices; every value is written, so no clearing). A buffer too small
+// is replaced in bufs by the larger one.
+func (fp *Fingerprinter) spectrogramsInto(bufs [][]float64, pcm []float32, banks ...[]band) []fingerprint.Spectrogram {
 	p := fp.p
 	out := make([]fingerprint.Spectrogram, len(banks))
 	if len(pcm) < p.NFFT {
@@ -173,7 +185,14 @@ func (fp *Fingerprinter) spectrograms(pcm []float32, banks ...[]band) []fingerpr
 	}
 	frames := (len(pcm)-p.NFFT)/p.Hop + 1
 	for i := range out {
-		out[i] = fingerprint.Spectrogram{Frames: frames, Bins: p.NBands, Data: make([]float64, frames*p.NBands)}
+		var data []float64
+		if bufs == nil {
+			data = make([]float64, frames*p.NBands)
+		} else {
+			data = fingerprint.Resize(bufs[i], frames*p.NBands)
+			bufs[i] = data
+		}
+		out[i] = fingerprint.Spectrogram{Frames: frames, Bins: p.NBands, Data: data}
 	}
 	for t := 0; t < frames; t++ {
 		start := t * p.Hop
@@ -210,9 +229,24 @@ func (p Params) PeakParams() fingerprint.Params {
 // prototype.b2.triplets order: by anchor time, then hash (stable from
 // generation order: target pair (a, b) major, anchor minor).
 func Triplets(peaks []fingerprint.Peak, p Params) []Landmark {
+	out := appendTriplets(nil, peaks, p)
+	sort.SliceStable(out, func(x, y int) bool {
+		if out[x].T != out[y].T {
+			return out[x].T < out[y].T
+		}
+		return out[x].Hash < out[y].Hash
+	})
+	return out
+}
+
+// appendTriplets appends the triplet landmarks of peaks to dst in the order
+// they are generated; Triplets sorts them. A query's are sorted by union.
+func appendTriplets(dst []Landmark, peaks []fingerprint.Peak, p Params) []Landmark {
 	n := len(peaks)
 	tgt := make([][]int, n)
+	targets := make([]int, n*p.Fanout) // one allocation for every anchor's list
 	for i, a := range peaks {
+		tgt[i] = targets[i*p.Fanout : i*p.Fanout : (i+1)*p.Fanout]
 		for j := i + 1; j < n && len(tgt[i]) < p.Fanout; j++ {
 			dt := peaks[j].T - a.T
 			if dt > p.MaxDT {
@@ -223,7 +257,6 @@ func Triplets(peaks []fingerprint.Peak, p Params) []Landmark {
 			}
 		}
 	}
-	var out []Landmark
 	for a := 0; a < p.Fanout; a++ {
 		for b := a + 1; b < p.Fanout; b++ {
 			for i := range peaks {
@@ -238,22 +271,17 @@ func Triplets(peaks []fingerprint.Peak, p Params) []Landmark {
 				rt := (pj.T - pi.T) * p.RTLevels / span
 				h := uint32(pi.F/p.BandWidth)<<20 | uint32(rt)<<14 |
 					uint32(pj.F-pi.F+p.Zone)<<7 | uint32(pk.F-pi.F+p.Zone)
-				out = append(out, Landmark{Hash: h, T: uint32(pi.T), Span: uint8(span), Band: uint8(pi.F)})
+				dst = append(dst, Landmark{Hash: h, T: uint32(pi.T), Span: uint8(span), Band: uint8(pi.F)})
 			}
 		}
 	}
-	sort.SliceStable(out, func(x, y int) bool {
-		if out[x].T != out[y].T {
-			return out[x].T < out[y].T
-		}
-		return out[x].Hash < out[y].Hash
-	})
-	return out
+	return dst
 }
 
 // Fingerprint returns the triplet landmarks of pcm.
 func (fp *Fingerprinter) Fingerprint(pcm []float32) []Landmark {
-	return Triplets(fingerprint.FindPeaks(fp.Spectrogram(pcm), fp.p.PeakParams()), fp.p)
+	s := fp.spectrogramsInto(fp.specs[:1], pcm, fp.bands)[0]
+	return Triplets(fp.peaks.Find(s, fp.p.PeakParams()), fp.p)
 }
 
 // HalfBand returns p with every filterbank center half a band higher (D35).
@@ -280,32 +308,42 @@ func (fp *Fingerprinter) QuerySpectrograms(pcm []float32) [2]fingerprint.Spectro
 // prototype.b2.fingerprint_query does. The index side uses Fingerprint.
 func (fp *Fingerprinter) FingerprintQuery(pcm []float32, nShifts int) []Landmark {
 	step := fp.p.Hop / nShifts
-	var all []Landmark
+	all := fp.lms[:0]
 	for k := 0; k < nShifts; k++ {
 		if k*step >= len(pcm) {
 			break
 		}
-		for _, s := range fp.QuerySpectrograms(pcm[k*step:]) {
-			all = append(all, Triplets(fingerprint.FindPeaks(s, fp.p.PeakParams()), fp.p)...)
+		if fp.half == nil {
+			fp.half = sparse(Filterbank(HalfBand(fp.p)))
+		}
+		for _, s := range fp.spectrogramsInto(fp.specs[:], pcm[k*step:], fp.bands, fp.half) {
+			all = appendTriplets(all, fp.peaks.Find(s, fp.p.PeakParams()), fp.p)
 		}
 	}
-	return union(all)
+	fp.lms = all
+	return clone(union(all))
+}
+
+// clone copies landmarks out of a kept buffer; nil if there are none.
+func clone(lms []Landmark) []Landmark {
+	if len(lms) == 0 {
+		return nil
+	}
+	return slices.Clone(lms)
 }
 
 // union sorts landmarks by (Hash, T, Span, Band) and drops exact
-// duplicates: a query's landmarks from all its grids and filterbanks.
+// duplicates, in place: a query's landmarks from all its grids and
+// filterbanks. The order compares every field, so the result does not
+// depend on the order of all (D51).
 func union(all []Landmark) []Landmark {
-	key := func(l Landmark) uint64 {
-		return uint64(l.Hash)<<32 | uint64(l.T)<<16 | uint64(l.Span)<<8 | uint64(l.Band)
-	}
-	sort.Slice(all, func(i, j int) bool { return key(all[i]) < key(all[j]) })
-	out := all[:0]
-	for i, l := range all {
-		if i == 0 || l != all[i-1] {
-			out = append(out, l)
+	slices.SortFunc(all, func(a, b Landmark) int {
+		if c := cmp.Compare(uint64(a.Hash)<<32|uint64(a.T), uint64(b.Hash)<<32|uint64(b.T)); c != 0 {
+			return c
 		}
-	}
-	return out
+		return cmp.Compare(uint16(a.Span)<<8|uint16(a.Band), uint16(b.Span)<<8|uint16(b.Band))
+	})
+	return slices.Compact(all)
 }
 
 func abs(x int) int {

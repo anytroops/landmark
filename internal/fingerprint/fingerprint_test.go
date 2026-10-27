@@ -87,12 +87,13 @@ func naiveMaxFilter(s Spectrogram, sizeT, sizeF int) []float64 {
 
 func TestMaxFilterMatchesNaive(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
-	for _, frames := range []int{1, 5, 40} {
+	var pf PeakFinder // reused, smaller after larger: stale values must not leak (D51)
+	for _, frames := range []int{1, 5, 40, 5} {
 		s := Spectrogram{Frames: frames, Bins: NBins, Data: make([]float64, frames*NBins)}
 		for i := range s.Data {
 			s.Data[i] = rng.Float64()
 		}
-		got, want := maxFilter(s, 17, 17), naiveMaxFilter(s, 17, 17)
+		got, want := pf.maxFilter(s, 17, 17), naiveMaxFilter(s, 17, 17)
 		for i := range got {
 			if got[i] != want[i] {
 				t.Fatalf("frames=%d: cell %d = %v, want %v", frames, i, got[i], want[i])
@@ -203,6 +204,21 @@ func TestRescaleTempo(t *testing.T) {
 	for _, tt := range tests {
 		if got := RescaleTempo(in, tt.factor); !slices.Equal(got, tt.want) {
 			t.Errorf("factor %v: %v, want %v", tt.factor, got, tt.want)
+		}
+	}
+}
+
+// TestPeakFinderReuse: one PeakFinder over spectrograms of different sizes
+// finds what a fresh FindPeaks finds on each (D51).
+func TestPeakFinderReuse(t *testing.T) {
+	p := DefaultParams()
+	fp := New(p)
+	x := syntheticSignal(30 * 11025)
+	var pf PeakFinder
+	for _, n := range []int{20, 3, 30, 0, 10} {
+		s := fp.Spectrogram(x[:n*11025])
+		if got, want := pf.Find(s, p), FindPeaks(s, p); !slices.Equal(got, want) {
+			t.Fatalf("%d s: %d peaks, FindPeaks %d", n, len(got), len(want))
 		}
 	}
 }

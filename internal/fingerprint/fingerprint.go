@@ -88,6 +88,8 @@ type Fingerprinter struct {
 	window []float64
 	frame  []float64
 	coeffs []complex128
+	spec   []float64 // Fingerprint's spectrogram, kept for the next (D51)
+	peaks  PeakFinder
 }
 
 // New returns a Fingerprinter for p.
@@ -109,12 +111,17 @@ func New(p Params) *Fingerprinter {
 // Spectrogram computes the log-magnitude STFT. Frame k starts at sample k*Hop;
 // there is no centering or padding.
 func (fp *Fingerprinter) Spectrogram(pcm []float32) Spectrogram {
+	return fp.spectrogram(pcm, nil)
+}
+
+// spectrogram is Spectrogram, written into buf when it is large enough.
+func (fp *Fingerprinter) spectrogram(pcm []float32, buf []float64) Spectrogram {
 	p := fp.p
 	if len(pcm) < p.NFFT {
 		return Spectrogram{}
 	}
 	frames := (len(pcm)-p.NFFT)/p.Hop + 1
-	data := make([]float64, frames*NBins)
+	data := Resize(buf, frames*NBins) // every value is written below
 	for t := 0; t < frames; t++ {
 		start := t * p.Hop
 		for n := range fp.frame {
@@ -129,14 +136,39 @@ func (fp *Fingerprinter) Spectrogram(pcm []float32) Spectrogram {
 	return Spectrogram{Frames: frames, Bins: NBins, Data: data}
 }
 
+// Resize returns buf resliced to n values when it can hold them, else a new
+// slice; the values are not cleared.
+func Resize(buf []float64, n int) []float64 {
+	if cap(buf) < n {
+		return make([]float64, n)
+	}
+	return buf[:n]
+}
+
 // FindPeaks returns local maxima above FloorDB, keeping the strongest
 // PeaksPerBlock per block of BlockFrames frames, sorted by (t, f).
 func FindPeaks(s Spectrogram, p Params) []Peak {
+	var pf PeakFinder
+	return pf.Find(s, p)
+}
+
+// PeakFinder is FindPeaks with its working buffers (the max filter's, and
+// the candidate peaks) kept from call to call, so fingerprinting window
+// after window allocates them once instead of a few megabytes per window
+// (D51). The zero value is ready to use. It is not safe for concurrent use.
+type PeakFinder struct {
+	tmp, local []float64
+	sc         maxScratch
+	cand       []Peak
+}
+
+// Find returns FindPeaks(s, p), in a new slice.
+func (pf *PeakFinder) Find(s Spectrogram, p Params) []Peak {
 	if s.Frames == 0 {
 		return nil
 	}
-	local := maxFilter(s, p.NbhdT, p.NbhdF)
-	var peaks []Peak // row-major (t, f) order, like numpy.nonzero
+	local := pf.maxFilter(s, p.NbhdT, p.NbhdF)
+	peaks := pf.cand[:0] // row-major (t, f) order, like numpy.nonzero
 	for t := 0; t < s.Frames; t++ {
 		for f := 0; f < s.Bins; f++ {
 			v := s.At(t, f)
@@ -166,36 +198,44 @@ func FindPeaks(s Spectrogram, p Params) []Peak {
 		}
 		rank++
 	}
-	sort.Slice(kept, func(i, j int) bool {
-		if kept[i].T != kept[j].T {
-			return kept[i].T < kept[j].T
+	pf.cand = peaks
+	if len(kept) == 0 {
+		return nil
+	}
+	out := slices.Clone(kept)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].T != out[j].T {
+			return out[i].T < out[j].T
 		}
-		return kept[i].F < kept[j].F
+		return out[i].F < out[j].F
 	})
-	return kept
+	return out
 }
 
 // maxFilter is scipy.ndimage.maximum_filter(size=(sizeT, sizeF),
 // mode="constant", cval=-inf). Max over a rectangle is separable, so filter
 // along f, then along t, each with maxFilter1D. Sizes must be odd.
-func maxFilter(s Spectrogram, sizeT, sizeF int) []float64 {
-	tmp := make([]float64, len(s.Data))
-	out := make([]float64, len(s.Data))
-	sc := newMaxScratch(max(s.Frames, s.Bins), max(sizeT, sizeF))
+// The result is pf's, valid until its next call.
+func (pf *PeakFinder) maxFilter(s Spectrogram, sizeT, sizeF int) []float64 {
+	// Both passes write every value, so reused buffers need no clearing.
+	pf.tmp, pf.local = Resize(pf.tmp, len(s.Data)), Resize(pf.local, len(s.Data))
+	pf.sc.grow(max(s.Frames, s.Bins), max(sizeT, sizeF))
 	for t := 0; t < s.Frames; t++ { // along f: contiguous rows
-		maxFilter1D(s.Data, tmp, t*s.Bins, 1, s.Bins, sizeF/2, sc)
+		maxFilter1D(s.Data, pf.tmp, t*s.Bins, 1, s.Bins, sizeF/2, &pf.sc)
 	}
 	for f := 0; f < s.Bins; f++ { // along t: stride Bins
-		maxFilter1D(tmp, out, f, s.Bins, s.Frames, sizeT/2, sc)
+		maxFilter1D(pf.tmp, pf.local, f, s.Bins, s.Frames, sizeT/2, &pf.sc)
 	}
-	return out
+	return pf.local
 }
 
 type maxScratch struct{ pad, g, r []float64 }
 
-func newMaxScratch(n, w int) *maxScratch {
-	m := n + 2*w
-	return &maxScratch{make([]float64, m), make([]float64, m), make([]float64, m)}
+// grow makes room for a sequence of n with a window of width w.
+func (sc *maxScratch) grow(n, w int) {
+	if m := n + 2*w; len(sc.pad) < m {
+		sc.pad, sc.g, sc.r = make([]float64, m), make([]float64, m), make([]float64, m)
+	}
 }
 
 // maxFilter1D writes the max over [i-h, i+h] (out of range = -inf) for the n
@@ -269,7 +309,11 @@ func Pair(peaks []Peak, p Params) []Landmark {
 
 // Fingerprint returns the landmarks of pcm, in anchor order.
 func (fp *Fingerprinter) Fingerprint(pcm []float32) []Landmark {
-	return Pair(FindPeaks(fp.Spectrogram(pcm), fp.p), fp.p)
+	s := fp.spectrogram(pcm, fp.spec)
+	if cap(s.Data) > cap(fp.spec) {
+		fp.spec = s.Data
+	}
+	return Pair(fp.peaks.Find(s, fp.p), fp.p)
 }
 
 // FingerprintQuery fingerprints pcm on nShifts sub-hop grids, Hop/nShifts
