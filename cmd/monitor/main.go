@@ -9,7 +9,7 @@
 // Decoder settings and -alpha default to cmd/tracklist's (the hybrid's
 // calibration on UnmixDB, with both clusters' stop lists at 0.04). A stream URL that is not http(s) is a local file,
 // read at -read-rate times real time (simulated live sources). Ports:
-// -admin for Prometheus /metrics (never expose it).
+// -admin for Prometheus /metrics and pprof (never expose it).
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -70,7 +71,7 @@ func main() {
 	flag.Float64Var(&cfg.ResumeWithin, "resume-within", 10, "after a failover, continue the open entry if its track is found this soon, seconds")
 	flag.Float64Var(&cfg.ReadRate, "read-rate", 1, "file sources: playback speed (0: as fast as possible)")
 	flag.StringVar(&windowLog, "window-log", "", "write one JSON line of timings per window to this file")
-	flag.StringVar(&admin, "admin", "127.0.0.1:9400", "metrics address")
+	flag.StringVar(&admin, "admin", "127.0.0.1:9400", "metrics and pprof address")
 	flag.Parse()
 	var err error
 	if search.Extra, err = hybrid.ParseFactors(extra); err != nil {
@@ -141,6 +142,11 @@ func run(registryAddr, admin, windowLog, coordinator, index, pairsCoord, pairsIn
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	adminSrv := &http.Server{Addr: admin, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
