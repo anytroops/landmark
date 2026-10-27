@@ -291,7 +291,8 @@ def realtime(args: argparse.Namespace) -> None:
                      "-coordinator", b2, "-index", str(B2_INDEX),
                      "-pairs-coordinator", pairs, "-pairs-index", str(PAIR_INDEX),
                      "-window-log", str(out / f"windows-w{i}.jsonl"),
-                     "-admin", f"127.0.0.1:{7910 + i}", "-front", args.front],
+                     "-admin", f"127.0.0.1:{7910 + i}", "-front", args.front,
+                     "-max-in-flight", str(args.max_in_flight)],
                     stdout=log.open("w"), stderr=subprocess.STDOUT))  # fmt: skip
                 want, until = min(args.capacity, free), time.monotonic() + 30
                 while want and log.read_text(errors="replace").count("stream start") < want:
@@ -338,7 +339,8 @@ def realtime(args: argparse.Namespace) -> None:
     meta = {"mixes": args.mixes, "catalog": str((B2_INDEX / "catalog.json").relative_to(ROOT)),
             "stations": args.stations, "per_station": args.per_station, "sets": args.sets,
             "seed": args.seed, "workers": args.workers, "capacity": args.capacity,
-            "heartbeat": args.heartbeat, "ttl": args.ttl, "broadcast_start_unix": start,
+            "max_in_flight": args.max_in_flight, "heartbeat": args.heartbeat, "ttl": args.ttl,
+            "broadcast_start_unix": start,
             "stop_fraction": args.stop_fraction,
             "kill_unix": kill_unix, "kill_at_s": args.kill_at or None, "stop_unix": stop_unix,
             **head, "power": run_out("pmset", "-g", "batt").splitlines()[:2]}  # fmt: skip
@@ -409,6 +411,8 @@ def main() -> None:
     )
     rt.add_argument("--front", default="shared", choices=["shared", "window"],
                     help="shared (D48) or window (before D48)")  # fmt: skip
+    rt.add_argument("--max-in-flight", type=int, default=16,
+                    help="windows a worker searches at once (D49); 0: no limit")  # fmt: skip
     rt.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     os.environ.setdefault("PYTHONHASHSEED", "0")
