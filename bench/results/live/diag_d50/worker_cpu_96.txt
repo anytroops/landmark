@@ -1,0 +1,38 @@
+File: monitor
+Type: cpu
+Time: 2026-10-27 02:52:12 EDT
+Duration: 30.18s, Total samples = 203.97s (675.80%)
+Showing nodes accounting for 196.35s, 96.26% of 203.97s total
+Dropped 399 nodes (cum <= 1.02s)
+Showing top 30 nodes out of 84
+      flat  flat%   sum%        cum   cum%
+    62.96s 30.87% 30.87%     62.96s 30.87%  runtime.memclrNoHeapPointers
+    51.78s 25.39% 56.25%     51.78s 25.39%  runtime.memmove
+    21.25s 10.42% 66.67%     21.56s 10.57%  github.com/anytroops/landmark/internal/fingerprint.maxFilter1D
+    17.35s  8.51% 75.18%     42.40s 20.79%  github.com/anytroops/landmark/internal/triplet.(*Fingerprinter).spectrograms
+     7.95s  3.90% 79.08%     11.13s  5.46%  github.com/anytroops/landmark/internal/fingerprint.(*Fingerprinter).Spectrogram
+     4.59s  2.25% 81.33%     13.57s  6.65%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.radf4
+     3.85s  1.89% 83.21%      4.70s  2.30%  math.hypot
+     3.72s  1.82% 85.04%      4.19s  2.05%  math.log
+     3.11s  1.52% 86.56%      3.21s  1.57%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.setCmplx (inline)
+     2.62s  1.28% 87.85%      2.71s  1.33%  runtime.(*mspan).moveInlineMarks
+     2.50s  1.23% 89.07%      2.51s  1.23%  github.com/anytroops/landmark/internal/fingerprint.Spectrogram.At (inline)
+     1.90s  0.93% 90.00%      1.96s  0.96%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.at (inline)
+     1.81s  0.89% 90.89%      1.83s   0.9%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.atCmplx (inline)
+     1.41s  0.69% 91.58%      1.43s   0.7%  runtime.asyncPreempt
+     1.40s  0.69% 92.27%      1.45s  0.71%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.threeArray.set (inline)
+     1.34s  0.66% 92.93%      1.34s  0.66%  runtime.(*spanInlineMarkBits).init
+     1.32s  0.65% 93.57%      1.32s  0.65%  syscall.rawsyscalln
+     0.91s  0.45% 94.02%      1.86s  0.91%  sort.partition_func
+     0.85s  0.42% 94.44%     15.07s  7.39%  gonum.org/v1/gonum/dsp/fourier.(*FFT).Coefficients
+     0.73s  0.36% 94.79%      1.31s  0.64%  runtime.typedmemmove
+     0.61s   0.3% 95.09%      1.91s  0.94%  internal/reflectlite.typedmemmove
+     0.43s  0.21% 95.30%      3.06s  1.50%  github.com/anytroops/landmark/internal/triplet.union
+     0.42s  0.21% 95.51%     57.97s 28.42%  github.com/anytroops/landmark/internal/fingerprint.FindPeaks
+     0.34s  0.17% 95.68%      2.40s  1.18%  sort.symMerge_func
+     0.32s  0.16% 95.83%      2.28s  1.12%  internal/reflectlite.Swapper.func9
+     0.29s  0.14% 95.97%      1.63s   0.8%  sort.swapRange_func (inline)
+     0.24s  0.12% 96.09%      6.61s  3.24%  github.com/anytroops/landmark/internal/audio.(*Resampler).produce
+     0.17s 0.083% 96.18%      1.80s  0.88%  sort.rotate_func
+     0.10s 0.049% 96.22%      9.65s  4.73%  github.com/anytroops/landmark/internal/triplet.Triplets
+     0.08s 0.039% 96.26%     13.65s  6.69%  gonum.org/v1/gonum/dsp/fourier/internal/fftpack.rfftf1

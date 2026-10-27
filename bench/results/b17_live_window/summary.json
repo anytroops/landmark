@@ -1,0 +1,58 @@
+{
+ "benchmark": "internal/hybrid BenchmarkLiveWindow",
+ "stream_seconds": 60,
+ "windows_per_op": 21,
+ "runs": "8 rounds alternating before and after, -benchtime 3x -count 1 each, -benchmem",
+ "commits": {
+  "before": "b6f0d1e with the benchmark added (dirty)",
+  "after": "b6c7fb4"
+ },
+ "before": {
+  "ms_per_window": [
+   139.3,
+   139.4,
+   140.4,
+   141.2,
+   142.5,
+   143.1,
+   144.2,
+   144.0
+  ],
+  "median_ms_per_window": 141.85,
+  "mb_allocated_per_window": 111.9,
+  "allocations_per_window": 34128
+ },
+ "after": {
+  "ms_per_window": [
+   125.0,
+   125.5,
+   126.0,
+   127.0,
+   127.4,
+   128.3,
+   128.8,
+   129.5
+  ],
+  "median_ms_per_window": 127.2,
+  "mb_allocated_per_window": 10.96,
+  "allocations_per_window": 660
+ },
+ "after_over_before_per_round": [
+  0.897,
+  0.9,
+  0.897,
+  0.899,
+  0.894,
+  0.897,
+  0.893,
+  0.899
+ ],
+ "machine": {
+  "cpu": "Apple M4 Pro",
+  "cores": "12",
+  "go": "go1.27.2",
+  "os": "darwin/arm64",
+  "power": "ac",
+  "battery": "100%; charged"
+ }
+}

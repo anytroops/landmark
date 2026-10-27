@@ -80,6 +80,16 @@ After each core component: 3 interview-style questions and Sean's answers.
 3. Jittered retries alone cut the unanswered windows at 80 stations from 1,257 to 502; the cap cut them to 0. Why does the cap help so much more?
 4. Past capacity, the worker with the cap answers fewer windows a second than at a lower load, rather than holding at its maximum. What are the options for an overloaded worker, and which failure would a radio-monitoring customer prefer?
 
+### Dropping late windows (D50)
+1. Why measure a window's deadline from when its last sample arrived, not from when it was queued? What goes wrong with the second when a stream has already fallen behind?
+2. Live windows are dropped but a file's windows never are. Why the difference, and what would dropping do to the claim that live and offline tracklists are equal?
+3. With dropping, 96 stations kept their precision at 99% while songs found fell from 95% to 86%, and 115 songs were split in two. Explain each of the three numbers from what a dropped window does in the decoder.
+
+### Keeping buffers between windows (D51)
+1. The worker profile at 96 stations showed 56% of CPU in `memclr` and `memmove`, yet the benchmark of one window on an idle machine showed only 10% less time once the allocations were gone (B17). Reconcile the two.
+2. Why does a buffer kept for the next window have to be copied out before it is returned, and what bug would a test that only compares one call's output against a fresh fingerprinter miss?
+3. Why not a `sync.Pool`? When would a pool be the better choice?
+
 ### DJ mix analysis (D43)
 1. How do you get a song's gain curve out of a mix when you only know which songs play and how they are aligned? Why do it in power, and why non-negative?
 2. A turntable change and a keylock change at the same tempo look identical to the triplet matcher. How does the analysis tell them apart, and what bug once made it always answer keylock?
