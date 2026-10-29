@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from eval import demand
 from eval.backends import LocalBackend, ShardBackend, dense_tables
 from eval.degrade import add_noise, excerpt, keylock, reencode, speed, stretch
 from prototype import fingerprint as fp
@@ -61,12 +62,26 @@ CONDITIONS: dict[str, tuple[float, Degrade]] = {
 # model of key lock kept for the results that used it (degrade.stretch).
 _SCALED = re.compile(r"(speed|keylock|stretch)_([+-]\d+(?:\.\d+)?)pct_(\d+)s")
 _TEMPO = {"speed": speed, "keylock": keylock, "stretch": stretch}
+# Noise at any SNR by name: white_snr{db}_{n}s is white Gaussian noise (the
+# named conditions above are the same), demand_{environment}_snr{db}_{n}s a
+# DEMAND recording (eval.demand), from the split's half of it.
+_WHITE = re.compile(r"white_snr(-?\d+)_(\d+)s")
+_DEMAND = re.compile(r"demand_([a-z]+)_snr(-?\d+)_(\d+)s")
 
 
-def condition(name: str) -> tuple[float, Degrade]:
-    """(excerpt seconds, degradation) for a named condition."""
+def condition(name: str, split: str = "test") -> tuple[float, Degrade]:
+    """(excerpt seconds, degradation) for a named condition; `split` picks
+    the half of a real-noise recording the degradation draws from."""
     if name in CONDITIONS:
         return CONDITIONS[name]
+    if m := _WHITE.fullmatch(name):
+        db = float(m.group(1))
+        return float(m.group(2)), lambda x, r: add_noise(x, db, r)
+    if m := _DEMAND.fullmatch(name):
+        env, snr = m.group(1).upper(), float(m.group(2))
+        if env not in demand.ENVIRONMENTS:
+            raise KeyError(f"unknown condition {name!r}: no DEMAND environment {env}")
+        return float(m.group(3)), lambda x, r: add_noise(x, snr, r, demand.noise(env, split))
     m = _SCALED.fullmatch(name)
     if m is None:
         raise KeyError(f"unknown condition {name!r}")
@@ -75,15 +90,15 @@ def condition(name: str) -> tuple[float, Degrade]:
     return float(m.group(3)), lambda x, r: fn(x, factor)
 
 
-def _work(job: tuple[int, str, int, int, str, list[str], int]) -> list[dict[str, object]]:
-    fma_id, label, rep, seed, subset, conds, shifts = job
+def _work(job: tuple[int, str, int, int, str, list[str], int, str]) -> list[dict[str, object]]:
+    fma_id, label, rep, seed, subset, conds, shifts, split = job
     try:
         pcm = decode(audio_path(fma_id, subset))
     except DecodeError as e:
         return [{"fma_id": fma_id, "label": label, "rep": rep, "error": str(e)}]
     rows = []
     for ci, name in enumerate(conds):
-        secs, degrade = condition(name)
+        secs, degrade = condition(name, split)
         start_rng = np.random.default_rng([seed, fma_id, rep, int(secs * 1000)])
         try:
             clip, start = excerpt(pcm, secs, start_rng)
@@ -126,6 +141,8 @@ def main() -> None:
     args = ap.parse_args()
     for name in args.conditions:
         condition(name)  # fail fast on a typo, before any decoding
+        if m := _DEMAND.fullmatch(name):
+            demand.recording(m.group(1).upper())  # and on a recording not prepared
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     manifest = json.loads(args.manifest.read_text())
@@ -148,12 +165,12 @@ def main() -> None:
     limits = {f: (stop.limit(f) if f > 0 else None) for f in args.stop_fractions}
     lim = args.limit or None
     jobs = [
-        (f, "pos", 0, args.seed, subset, args.conditions, args.query_shifts)
+        (f, "pos", 0, args.seed, subset, args.conditions, args.query_shifts, args.split)
         for f in manifest[f"{args.split}_pos"][:lim]
     ]
     if not args.positives_only:
         jobs += [
-            (f, "neg", r, args.seed, subset, args.conditions, args.query_shifts)
+            (f, "neg", r, args.seed, subset, args.conditions, args.query_shifts, args.split)
             for f in manifest[f"{args.split}_neg"][:lim]
             for r in range(NEG_REPS)
         ]

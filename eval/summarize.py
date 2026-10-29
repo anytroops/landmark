@@ -103,6 +103,11 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max-far", type=float, default=0.001)
     ap.add_argument("--tag", default="")
+    ap.add_argument(
+        "--thresholds-from", type=Path,
+        help="a summary JSON whose thresholds to apply to test, instead of calibrating on "
+        "this tag's val (new conditions judged by an existing calibration)",
+    )  # fmt: skip
     args = ap.parse_args()
 
     def load(split: str) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -110,14 +115,24 @@ def main() -> None:
         errors = df[df["error"].notna()] if "error" in df else df.iloc[:0]
         return df.drop(errors.index), errors
 
-    val, val_err = load("val")
     test, test_err = load("test")
-    t_abs, t_ratio, val_acc, val_far = calibrate(val, args.max_far)
+    if args.thresholds_from:
+        fixed = json.loads(args.thresholds_from.read_text())
+        t_abs, t_ratio = fixed["thresholds"]["t_abs"], fixed["thresholds"]["t_ratio"]
+        max_far = fixed["thresholds"]["max_far"]
+        val_summary: dict[str, object] = {"thresholds_from": args.thresholds_from.name}
+        skipped = {"test": len(test_err)}
+    else:
+        val, val_err = load("val")
+        t_abs, t_ratio, val_acc, val_far = calibrate(val, args.max_far)
+        val_summary = {"mean_accuracy": val_acc, "pooled_far": val_far}
+        max_far = args.max_far
+        skipped = {"val": len(val_err), "test": len(test_err)}
     rows = table(test, t_abs, t_ratio)
     summary = {
-        "thresholds": {"t_abs": t_abs, "t_ratio": t_ratio, "max_far": args.max_far},
-        "val": {"mean_accuracy": val_acc, "pooled_far": val_far},
-        "skipped": {"val": len(val_err), "test": len(test_err)},
+        "thresholds": {"t_abs": t_abs, "t_ratio": t_ratio, "max_far": max_far},
+        "val": val_summary,
+        "skipped": skipped,
         "test": rows,
     }
     (RES / f"summary_seed{args.seed}{args.tag}.json").write_text(

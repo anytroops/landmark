@@ -48,6 +48,8 @@ def test_stretch_keeps_pitch_and_speed_shifts_it() -> None:
         ("speed_+0.25pct_10s", 10.0),
         ("stretch_-8pct_5s", 5.0),
         ("keylock_+3pct_10s", 10.0),
+        ("white_snr-10_10s", 10.0),
+        ("demand_tmetro_snr-5_5s", 5.0),
     ],
 )
 def test_condition_parses_names(name: str, secs: float) -> None:
@@ -58,3 +60,11 @@ def test_condition_parses_names(name: str, secs: float) -> None:
 def test_condition_rejects_unknown_names(name: str) -> None:
     with pytest.raises(KeyError):
         condition(name)
+
+
+@pytest.mark.parametrize("db", [-10, -5, 0])
+def test_white_noise_at_any_snr(db: int) -> None:
+    x = tone(10.0)
+    added = condition(f"white_snr{db}_10s")[1](x, np.random.default_rng(3)).astype(np.float64) - x
+    snr = 10 * np.log10(np.mean(x.astype(np.float64) ** 2) / np.mean(added**2))
+    assert abs(snr - db) < 0.01

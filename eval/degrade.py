@@ -26,15 +26,17 @@ def add_noise(
     """Add noise scaled to `snr_db` relative to the signal power.
 
     With `noise=None`, uses white Gaussian noise. Otherwise a random window of
-    `noise` (tiled if shorter than the signal).
+    `noise`, from within it when it is long enough (a window across the seam
+    of a tiled recording would add a click), tiled only when it is shorter
+    than the signal.
     """
     if noise is None:
         n = rng.standard_normal(len(pcm))
     else:
-        reps = int(np.ceil(len(pcm) / len(noise))) + 1
-        tiled = np.tile(noise, reps)
-        start = int(rng.integers(0, len(tiled) - len(pcm) + 1))
-        n = tiled[start : start + len(pcm)].astype(np.float64)
+        if len(noise) < len(pcm):
+            noise = np.tile(noise, int(np.ceil(len(pcm) / len(noise))) + 1)
+        start = int(rng.integers(0, len(noise) - len(pcm) + 1))
+        n = noise[start : start + len(pcm)].astype(np.float64)
     p_sig = float(np.mean(pcm.astype(np.float64) ** 2))
     p_noise = float(np.mean(n**2))
     if p_sig == 0 or p_noise == 0:
