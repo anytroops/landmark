@@ -56,6 +56,7 @@ Accuracy: [docs/EVAL.md](docs/EVAL.md). Performance: [docs/BENCHMARKS.md](docs/B
 | Catalog | 23,985 fma_medium tracks |
 | Accuracy, 10 s clean excerpt | 99.9% (false accepts 0.1%) |
 | Accuracy, 10 s at 0 dB SNR white noise | 97.1% |
+| Accuracy, 10 s at 0 dB SNR recorded background noise (10 places) | 89.0% (restaurant) to 99.9% (car); 7 of 10 places at or above white noise |
 | Max throughput under p99 <= 100 ms, one partition | 550 qps; 719 qps with the stop list |
 | Latency at about 250 qps (8 partitions vs 1) | p50 3.4 vs 14.6 ms, p99 7.4 vs 36.3 ms |
 | Replica killed under load | 100% complete answers; p99 back to about 9 ms the next second |

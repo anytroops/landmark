@@ -82,6 +82,33 @@ Test accuracy at threshold (median postings scanned per query in parentheses):
 - FAR stays within the 0.1% target at every cutoff.
 - Speed conditions stay broken (under 1.2%) at every cutoff; that is D31's job.
 
+## Real background noise (D52)
+
+The same fma_medium test queries (1,000 positives and 1,000 negatives per condition, the same seeded 10 s excerpts) with recorded noise mixed in instead of white noise: ten environments from DEMAND (Thiemann, Ito, and Vincent, 2013; CC BY 4.0), channel 1 of each 5-minute recording, test queries drawing from its second half (`eval/demand.py`). SNR over the whole clip, as for white noise; white noise at the same SNRs on the same excerpts for a paired comparison. Searched through the Go P=1 shard and scored at the thresholds the tables above were calibrated to (t_abs 24, t_ratio 3.0 without the stop list; 2, 4.0 at 4%), not recalibrated. The run reproduces the committed `_medium_d30` rows for the six conditions they share, all 12,000 rows in every column at both settings. Commit 69b2cfc. Raw: `eval/results/queries_test_seed0_medium_demand{,_stop0.04}.csv.gz`; summaries `summary_seed0_medium_demand*.md`; per-environment report with paired tests and power by band `demand_seed0_medium_demand*.md` (`python -m eval.demand report`).
+
+Accuracy at threshold, no stop list:
+
+| Noise | 5 dB | 0 dB | -5 dB | -10 dB |
+|---|---|---|---|---|
+| White | 99.4 | 97.1 | 84.8 | 35.4 |
+| Restaurant | 97.2 | 89.0 | 51.3 | 7.9 |
+| Cafeteria | 99.0 | 95.4 | 80.7 | 46.7 |
+| Train station | 99.1 | 96.9 | 85.4 | 52.5 |
+| Park | 99.4 | 97.8 | 88.2 | 58.6 |
+| Street | 99.6 | 99.3 | 96.5 | 83.7 |
+| Subway train | 99.5 | 99.1 | 95.7 | 84.7 |
+| Public square | 99.6 | 99.2 | 96.1 | 85.5 |
+| Living room | 99.4 | 99.2 | 98.0 | 92.3 |
+| Bus | 99.8 | 99.9 | 99.3 | 98.8 |
+| Car | 99.9 | 99.9 | 99.9 | 99.9 |
+
+False accepts at most 0.1% in every cell (0.035% pooled over the 40 real-noise conditions). With the stop list at 4%, no cell gains and none loses more than 5.2 points, as for white noise (restaurant at 0 dB 86.6%, white 95.5%).
+
+- **White noise is not the hard case; a restaurant is.** At equal SNR, seven of the ten places cost less than white noise does: at 0 dB 97.8 to 99.9% against 97.1%, and at -10 dB 58.6 to 99.9% against 35.4% (paired on the same excerpts, p below 1e-4 for each of the seven at -5 and -10 dB, except the park at -5 dB, p 0.004). The restaurant costs more at every SNR (89.0% against 97.1% at 0 dB: 83 queries right only with white noise, 2 only with the restaurant, p 2e-22), and the cafeteria at 0 and -5 dB (95.4% against 97.1% at 0 dB, p 0.01; not at -10 dB, where white noise's losses are mostly rejections, below).
+- **Where a noise puts its power decides it.** Peaks are picked from the whole 0 to 5,512 Hz spectrum, the strongest per second. Music averages 48.5% of its power below 300 Hz, 44.1% from 300 to 2,000 Hz, and 7.4% above (50 test tracks). White noise puts 64% above 2,000 Hz, where music is weak, so at equal SNR it outweighs the song across that part of the spectrum. The seven easier places put 84 to 100% of theirs below 300 Hz (car 100%, bus 99.7%), where music's own bass is strongest, so few of a clip's peaks are lost. The restaurant puts 64% of its power from 300 to 2,000 Hz, the speech band, which is also where the song's mid-range peaks are, so its chatter and clatter compete with them directly.
+- **At -10 dB the threshold, not identification, is the limit for white noise:** the right song is still the top answer for 88.7% of clips, but only 35.4% score high enough to be accepted. Under restaurant noise the top answer itself is right for only 36.6%.
+- Not measured: the triplet fingerprint (the h2h comparison has it 1.3 points behind the pairs at 0 dB white noise); over the air, where room reverberation and the microphone's response add to the noise; louder or closer sources (DEMAND's recordings are ambient, so a talker next to the phone may be harder still).
+
 ## Speed tolerance of the current fingerprint (D31 step 1)
 
 fma_medium test positives (1,000 per point), clean 10 s excerpts with a tempo change, from 0.25% to 8% either way: turntable (`speed_`, resampled, so tempo and pitch move together), keylock by WSOLA (`keylock_`, time-domain overlap-add, tempo only, the family SoundTouch belongs to), and keylock by librosa's phase vocoder (`stretch_`). Go P=1 shard, stop list off, fma_medium thresholds (t_abs 24, t_ratio 3.0). Commits 5177a69 (turntable, phase vocoder) and 377644e (WSOLA). Raw: `eval/results/queries_test_seed0_medium_speedtol*.csv.gz`; tables `speedtol_seed0_medium_speedtol*.md`; figures `docs/figures/speed_tolerance_medium*.png` (the `_stop0.04` variants use the 4% stop list and its thresholds).

@@ -29,6 +29,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-10-23: demo web page (D46, Sean's go): `make demo`; identify (file, microphone, test songs with turntable or keylock changes, pairs against triplets), tracklisting with a live timeline, analysis, and the true tracklist, live stations.
 - 2026-10-27, on AC: D49 (Sean's picks: a worker-wide cap on windows searched at once, jittered retries). One laptop keeps up with 88 stations with every window answered (lag p99 2.1 s); 96 falls behind. The first cap, 16, left the shards idle part of the time (a window holds its slot through its pair fingerprinting too) and fell a minute behind at 80; 24 and 32 kept up, 32 is the default. Retries alone still lose 502 windows at 80. `live rates` reports windows answered per second.
 - 2026-10-27, on AC: D50 (Sean's pick): an overloaded worker drops a live window still waiting for a search slot 2.5 s after its audio arrived; files are never dropped. At 96 stations it kept the worker reading its audio but dropped half the windows (85.7% of songs). A worker profile showed why throughput fell past capacity: half its CPU zeroing and copying fresh memory, about 112 MB per window, on a laptop already short of memory. D51 keeps fingerprinting buffers between windows (output identical; the test sets' window rows match byte for byte): 10% less time per window on an idle machine and 10x less memory allocated (B17). One laptop now keeps up with 96 stations with every window answered; at 112 it drops 18% of windows and still finds 94.2% of songs.
+- 2026-10-29: D52, real background noise in the eval (Sean's go for the DEMAND download, 10 places, 1.1 GB, kept as 126 MB). At equal SNR most places are easier than white noise, as their power lies below 300 Hz (car 99.9% at -10 dB against white noise's 35.4%); a restaurant is harder at every SNR (89.0% against 97.1% at 0 dB). False accepts within 0.1% everywhere at the published thresholds; the published white-noise rows reproduce exactly.
 
 ## Next
 - Sean to review D44, D45, and D51, made while he was away: D44 and D51 are output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
@@ -39,7 +40,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 
 ## Open questions
 - fma_large needs ~186 GB (zip + extracted); ~75 GiB free. External disk or a cloud VM.
-- Real-noise condition (MUSAN or Sean's recordings) not yet in the eval; white noise only.
+- Noise is now recorded (D52), but mixed in digitally: over-the-air recording (room reverberation, the microphone's response) and nearby talkers remain untested, as does the triplet fingerprint under real noise.
 - 40 interview questions pending, over 13 components, in `docs/INTERVIEW_NOTES.md` (Sean deferred; answer before resume use).
 
 ## Gotchas

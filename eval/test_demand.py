@@ -95,3 +95,12 @@ def test_add_noise_tiles_a_short_recording() -> None:
     y = add_noise(x, 0, np.random.default_rng(0), short)
     assert len(y) == SR
     assert abs(np.mean((y.astype(np.float64) - 1) ** 2) - 1) < 1e-6
+
+
+def test_band_shares_of_white_noise_follow_the_band_widths() -> None:
+    x = np.random.default_rng(0).standard_normal(60 * SR)
+    lo, mid, hi = demand.band_shares(x)
+    nyquist = SR / 2
+    assert abs(lo - 100 * 300 / nyquist) < 0.5
+    assert abs(mid - 100 * 1700 / nyquist) < 0.5
+    assert abs(lo + mid + hi - 100) < 0.2
