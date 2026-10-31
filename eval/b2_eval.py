@@ -64,7 +64,7 @@ def _query(job: tuple) -> list[dict]:
     want = dense.get(fma_id, -1)
     rows = []
     for ci, name in enumerate(conds):
-        secs, degrade = condition(name)
+        secs, degrade = condition(name, split)
         rng = np.random.default_rng([seed, fma_id, 0, int(secs * 1000)])
         n = int(round(secs * 11025))
         if len(pcm) < n:
@@ -122,7 +122,18 @@ def main() -> None:
     ap.add_argument(
         "--limit", type=int, default=0, help="first N tracks per split and label (debug)"
     )
+    ap.add_argument("--conditions", nargs="+", default=CONDITIONS)
+    ap.add_argument("--splits", nargs="+", choices=["val", "test"], default=["val", "test"])
+    ap.add_argument(
+        "--thresholds-from", type=Path,
+        help="an earlier run's JSON: apply its thresholds per system instead of calibrating "
+        "on val (new conditions judged by an existing calibration)",
+    )  # fmt: skip
     args = ap.parse_args()
+    if "val" not in args.splits and args.thresholds_from is None:
+        raise SystemExit("without val queries, give --thresholds-from")
+    for name in args.conditions:
+        condition(name)  # fail fast on a typo, before building the indexes
     m = json.loads(Path(args.manifest).read_text())
     rng = np.random.default_rng(args.seed)
     pos = set(m["val_pos"]) | set(m["test_pos"])
@@ -143,12 +154,9 @@ def main() -> None:
     print(f"catalog {len(ids)} tracks: pairs {pair_index.n_postings} postings, "
           f"b2 {_STATE['b2'].n_postings}", flush=True)  # fmt: skip
     lim = args.limit or None
-    jobs = [
-        (s, "pos", f, args.seed, CONDITIONS) for s in ("val", "test") for f in m[f"{s}_pos"][:lim]
-    ]
-    jobs += [
-        (s, "neg", f, args.seed, CONDITIONS) for s in ("val", "test") for f in m[f"{s}_neg"][:lim]
-    ]
+    conds = args.conditions
+    jobs = [(s, "pos", f, args.seed, conds) for s in args.splits for f in m[f"{s}_pos"][:lim]]
+    jobs += [(s, "neg", f, args.seed, conds) for s in args.splits for f in m[f"{s}_neg"][:lim]]
     rows = []
     with ctx.Pool(args.workers) as pool:
         for i, r in enumerate(pool.imap_unordered(_query, jobs, chunksize=4), 1):
@@ -161,19 +169,25 @@ def main() -> None:
 
     result = {"catalog_tracks": len(ids), "pair_postings": int(pair_index.n_postings),
               "b2_postings": int(_STATE["b2"].n_postings), "systems": {},
+              "thresholds_from": args.thresholds_from.name if args.thresholds_from else None,
               "machine": machine_spec()}  # fmt: skip
+    fixed = json.loads(args.thresholds_from.read_text()) if args.thresholds_from else None
+    source = f"from {args.thresholds_from.name}" if fixed else "calibrated on val"
     lines = [f"# B2 vs pairs, one catalog of {len(ids)} fma_medium tracks", "",
-             "Accuracy at threshold on test (95% Wilson CI); thresholds calibrated on val.", "",
+             f"Accuracy at threshold on test (95% Wilson CI); thresholds {source}.", "",
              "| Condition | Pairs | B2 |", "|---|---|---|"]  # fmt: skip
     per = {}
     for system in ("pairs", "b2"):
         ds = d[d["system"] == system]
-        ta, tr = calibrate(ds[ds["split"] == "val"], args.max_far)
+        if fixed is not None:
+            ta, tr = fixed["systems"][system]["t_abs"], fixed["systems"][system]["t_ratio"]
+        else:
+            ta, tr = calibrate(ds[ds["split"] == "val"], args.max_far)
         test = ds[ds["split"] == "test"]
         neg = test[test["label"] == "neg"]
         far = float(accepted(neg, ta, tr).mean())
         rows_s = {}
-        for cond in CONDITIONS:
+        for cond in conds:
             p = test[(test["label"] == "pos") & (test["cond"] == cond)]
             k = int((accepted(p, ta, tr) & p["correct"].to_numpy()).sum())
             rows_s[cond] = {"n": len(p), "accuracy": k / max(len(p), 1), "ci": wilson(k, len(p)),
@@ -182,7 +196,7 @@ def main() -> None:
         result["systems"][system] = {"t_abs": ta, "t_ratio": tr, "test_far": far,
                                      "conditions": rows_s}  # fmt: skip
         per[system] = rows_s
-    for cond in CONDITIONS:
+    for cond in conds:
         cells = []
         for system in ("pairs", "b2"):
             r = per[system][cond]
