@@ -670,11 +670,24 @@ func TestSearchesInFlightAreCapped(t *testing.T) {
 	var mu sync.Mutex
 	cur, most := 0, 0
 	s := &scripted{tracks: slices.Repeat([]int{5}, 100)}
-	s.gate = func(context.Context, int) {
+	// A search holds on until a second one joins it (or a second passes), so
+	// two windows' searches overlap however slowly the machine fingerprints;
+	// left to chance, they did not always on a CI runner. Past the cap, a
+	// third would join them.
+	s.gate = func(ctx context.Context, _ int) {
 		mu.Lock()
 		cur++
 		most = max(most, cur)
 		mu.Unlock()
+		for wait := time.Now().Add(time.Second); time.Now().Before(wait) && ctx.Err() == nil; {
+			mu.Lock()
+			n := cur
+			mu.Unlock()
+			if n >= 2 {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
 		time.Sleep(20 * time.Millisecond)
 		mu.Lock()
 		cur--
