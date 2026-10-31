@@ -147,3 +147,58 @@ def test_prune_keeps_the_tracks_with_most_matches() -> None:
     assert kept.tolist() == [True] * 5 + [False] * 3 + [True, False]
     assert sorted(set(track[kept].tolist())) == [2, 5]  # three-way tie at 3: smallest ids win
     assert b2_match.prune(track, 10).all()
+
+
+def music_like_spec(seed: int = 0, frames: int = 430) -> np.ndarray:
+    """A dB spectrogram with a quiet bed and scattered strong events."""
+    rng = np.random.default_rng(seed)
+    p = b2.DEFAULT
+    spec = rng.normal(0, 3, (frames, p.n_bands))
+    for _ in range(600):
+        spec[rng.integers(frames), rng.integers(p.n_bands)] += rng.uniform(15, 40)
+    return spec
+
+
+def test_robust_peaks_without_options_equal_find_peaks() -> None:
+    from prototype.fingerprint import find_peaks
+
+    spec = music_like_spec()
+    a, b = find_peaks(spec, b2.DEFAULT), b2.robust_peaks(spec, b2.DEFAULT)
+    np.testing.assert_array_equal(a.t, b.t)
+    np.testing.assert_array_equal(a.f, b.f)
+
+
+def test_normalizing_stops_a_steady_hum_taking_the_peaks() -> None:
+    spec = music_like_spec()
+    spec[:, 40] += 60  # a hum: one band, loud and steady
+    spec[::9, 40] += 1  # rippling, so it has local maxima along time
+    plain = b2.robust_peaks(spec, b2.DEFAULT)
+    normed = b2.robust_peaks(spec, b2.Params(norm_frames=129))
+    assert (plain.f == 40).sum() > 20
+    assert (normed.f == 40).sum() <= 2
+
+
+def test_normalizing_keeps_near_silence_out() -> None:
+    spec = np.full((200, b2.DEFAULT.n_bands), -100.0)
+    spec[::7, ::5] += 1  # local maxima, but all far below the absolute floor
+    assert len(b2.robust_peaks(spec, b2.Params(norm_frames=43)).t) == 0
+
+
+def test_region_cap_limits_each_slice_of_the_bands() -> None:
+    spec = music_like_spec()
+    spec[:, :39] += 30  # the lowest sixth of the bands much louder
+    p = b2.Params(peak_regions=6, region_cap=10)
+    capped = b2.robust_peaks(spec, p)
+    plain = b2.robust_peaks(spec, b2.DEFAULT)
+    blocks = capped.t // p.block_frames
+    low = capped.f * 6 // p.n_bands == 0
+    assert max(np.bincount(blocks[low])) <= 10
+    assert max(np.bincount(blocks)) <= p.peaks_per_block
+    assert (plain.f < 39).sum() > (capped.f < 39).sum()
+
+
+def test_options_change_nothing_by_default() -> None:
+    x = np.random.default_rng(1).standard_normal(SAMPLE_RATE * 12)
+    a, b = b2.fingerprint(x), b2.fingerprint(x, b2.Params())
+    np.testing.assert_array_equal(a.hash, b.hash)
+    np.testing.assert_array_equal(a.t, b.t)

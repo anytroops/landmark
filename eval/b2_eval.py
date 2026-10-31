@@ -14,6 +14,7 @@ Writes eval/results/b2_eval_seed0<tag>.{csv.gz,md,json}.
 """
 
 import argparse
+import dataclasses
 import json
 import multiprocessing as mp
 import os
@@ -51,7 +52,8 @@ def _fingerprint(fma_id: int) -> tuple:
         pcm = decode(audio_path(fma_id, _STATE["subset"]))
     except DecodeError:
         return fma_id, None, None
-    return fma_id, fp.fingerprint(pcm), b2.fingerprint(pcm)
+    pairs = fp.fingerprint(pcm) if "pairs" in _STATE["systems"] else None
+    return fma_id, pairs, b2.fingerprint(pcm, _STATE["b2p"])
 
 
 def _query(job: tuple) -> list[dict]:
@@ -80,12 +82,13 @@ def _query(job: tuple) -> list[dict]:
                     "runner_up_score": runner, "scale": scale, "postings_scanned": scanned,
                     "correct": bool(ok)}  # fmt: skip
 
-        h, t = fp.fingerprint_query(q, 4)
-        r = pmatch.search(pidx, h, t, top_k=1)
-        top = r.candidates[0].track if r.candidates else -1
-        score = r.candidates[0].score if r.candidates else 0
-        rows.append(row("pairs", top, score, r.runner_up, 1.0, r.postings_scanned))
-        rb = b2_match.search(bidx, b2.fingerprint_query(q))
+        if pidx is not None:
+            h, t = fp.fingerprint_query(q, 4)
+            r = pmatch.search(pidx, h, t, top_k=1)
+            top = r.candidates[0].track if r.candidates else -1
+            score = r.candidates[0].score if r.candidates else 0
+            rows.append(row("pairs", top, score, r.runner_up, 1.0, r.postings_scanned))
+        rb = b2_match.search(bidx, b2.fingerprint_query(q, p=_STATE["b2p"]))
         c = rb.candidates
         top = c[0].track if c else -1
         runner = next((x.score for x in c[1:] if cluster[x.track] != cluster[top]), 0) if c else 0
@@ -123,6 +126,11 @@ def main() -> None:
         "--limit", type=int, default=0, help="first N tracks per split and label (debug)"
     )
     ap.add_argument("--conditions", nargs="+", default=CONDITIONS)
+    ap.add_argument("--systems", nargs="+", choices=["pairs", "b2"], default=["pairs", "b2"])
+    ap.add_argument(
+        "--b2-params", nargs="*", default=[], metavar="NAME=VALUE",
+        help="triplet fingerprint options for index and queries, e.g. norm_frames=129",
+    )  # fmt: skip
     ap.add_argument("--splits", nargs="+", choices=["val", "test"], default=["val", "test"])
     ap.add_argument(
         "--thresholds-from", type=Path,
@@ -140,18 +148,30 @@ def main() -> None:
     others = sorted(set(m["indexed"]) - pos)
     ids = sorted(pos | {int(x) for x in rng.choice(others, args.extra, replace=False)})
     _STATE["subset"] = m["meta"]["subset"]
+    _STATE["systems"] = args.systems
+    fields = {f.name: f.type for f in dataclasses.fields(b2.Params)}
+    overrides = {}
+    for kv in args.b2_params:
+        name, value = kv.split("=", 1)
+        if name not in fields:
+            raise SystemExit(f"unknown triplet parameter {name}")
+        overrides[name] = float(value) if fields[name] in (float, "float") else int(value)
+    _STATE["b2p"] = dataclasses.replace(b2.DEFAULT, **overrides)
     ctx = mp.get_context("fork")
     with ctx.Pool(args.workers) as pool:
         fps = pool.map(_fingerprint, ids, chunksize=8)
-    ok = [(f, p, q) for f, p, q in fps if p is not None]
+    ok = [(f, p, q) for f, p, q in fps if q is not None]
     ids = [f for f, _, _ in ok]
     clusters = [members for members in m["clusters"].values()]
-    pair_index = pindex.build([p for _, p, _ in ok], ids, clusters)
+    pair_index = (
+        pindex.build([p for _, p, _ in ok], ids, clusters) if "pairs" in args.systems else None
+    )
     _STATE["pair"] = pair_index
     _STATE["b2"] = b2_match.build([q for _, _, q in ok])
-    _STATE["cluster"] = pair_index.cluster
+    _STATE["cluster"] = pindex.dense_clusters(ids, clusters)
     _STATE["dense"] = {f: i for i, f in enumerate(ids)}
-    print(f"catalog {len(ids)} tracks: pairs {pair_index.n_postings} postings, "
+    pair_postings = int(pair_index.n_postings) if pair_index is not None else 0
+    print(f"catalog {len(ids)} tracks: pairs {pair_postings} postings, "
           f"b2 {_STATE['b2'].n_postings}", flush=True)  # fmt: skip
     lim = args.limit or None
     conds = args.conditions
@@ -167,23 +187,29 @@ def main() -> None:
     out = ROOT / "eval" / "results" / f"b2_eval_seed{args.seed}{args.tag}"
     d.to_csv(out.with_suffix(".csv.gz"), index=False)
 
-    result = {"catalog_tracks": len(ids), "pair_postings": int(pair_index.n_postings),
+    result = {"catalog_tracks": len(ids), "pair_postings": pair_postings,
               "b2_postings": int(_STATE["b2"].n_postings), "systems": {},
+              "b2_params": overrides,
               "thresholds_from": args.thresholds_from.name if args.thresholds_from else None,
               "machine": machine_spec()}  # fmt: skip
     fixed = json.loads(args.thresholds_from.read_text()) if args.thresholds_from else None
     source = f"from {args.thresholds_from.name}" if fixed else "calibrated on val"
+    # Test when it was run; a val-only run (choosing options) reports val itself.
+    shown = "test" if "test" in args.splits else "val"
+    result["reported_split"] = shown
+    names = {"pairs": "Pairs", "b2": "B2"}
     lines = [f"# B2 vs pairs, one catalog of {len(ids)} fma_medium tracks", "",
-             f"Accuracy at threshold on test (95% Wilson CI); thresholds {source}.", "",
-             "| Condition | Pairs | B2 |", "|---|---|---|"]  # fmt: skip
+             f"Accuracy at threshold on {shown} (95% Wilson CI); thresholds {source}.", "",
+             "| Condition | " + " | ".join(names[x] for x in args.systems) + " |",
+             "|---|" + "---|" * len(args.systems)]  # fmt: skip
     per = {}
-    for system in ("pairs", "b2"):
+    for system in args.systems:
         ds = d[d["system"] == system]
         if fixed is not None:
             ta, tr = fixed["systems"][system]["t_abs"], fixed["systems"][system]["t_ratio"]
         else:
             ta, tr = calibrate(ds[ds["split"] == "val"], args.max_far)
-        test = ds[ds["split"] == "test"]
+        test = ds[ds["split"] == shown]
         neg = test[test["label"] == "neg"]
         far = float(accepted(neg, ta, tr).mean())
         rows_s = {}
@@ -198,17 +224,17 @@ def main() -> None:
         per[system] = rows_s
     for cond in conds:
         cells = []
-        for system in ("pairs", "b2"):
+        for system in args.systems:
             r = per[system][cond]
             lo, hi = r["ci"]
             cells.append(f"{100 * r['accuracy']:.1f} ({100 * lo:.1f}-{100 * hi:.1f})")
-        lines.append(f"| {cond} | {cells[0]} | {cells[1]} |")
-    for system in ("pairs", "b2"):
+        lines.append(f"| {cond} | " + " | ".join(cells) + " |")
+    for system in args.systems:
         s = result["systems"][system]
         med = np.median([r["median_postings"] for r in per[system].values()])
         far = 100 * s["test_far"]
         th = f"t_abs {s['t_abs']}, t_ratio {s['t_ratio']}"
-        lines.append(f"\n{system}: {th}, test FAR {far:.2f}%, "
+        lines.append(f"\n{system}: {th}, {shown} FAR {far:.2f}%, "
                      f"median postings scanned per query {med:,.0f}")  # fmt: skip
     out.with_suffix(".md").write_text("\n".join(lines) + "\n")
     out.with_suffix(".json").write_text(json.dumps(result, indent=1, default=float) + "\n")

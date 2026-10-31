@@ -33,9 +33,10 @@ from functools import cache
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
+from scipy.ndimage import maximum_filter, percentile_filter
 
 from prototype.audio import SAMPLE_RATE
-from prototype.fingerprint import find_peaks
+from prototype.fingerprint import Peaks, find_peaks
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,12 @@ class Params:
     zone: int = 36  # max |band gap| to a target (one octave)
     band_width: int = 18  # bands per hash pitch band (half an octave)
     rt_levels: int = 64
+    # Noise-robustness options under test (EVAL, D52 follow-up); the defaults
+    # keep the fingerprint as D33 to D37 define it.
+    norm_frames: int = 0  # > 0: rank peaks on the spectrogram less each band's
+    norm_pct: float = 50.0  # running norm_pct percentile over norm_frames frames
+    peak_regions: int = 1  # > 1: at most region_cap peaks per block in each of
+    region_cap: int = 0  # peak_regions equal slices of the bands
 
 
 DEFAULT = Params()
@@ -158,8 +165,49 @@ def triplets(
     )
 
 
+def robust_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
+    """find_peaks with the noise-robustness options. With norm_frames, local
+    maxima and ranking use the spectrogram less each band's running
+    percentile, so a steady noise (a hum, a rumble, a crowd's bed) stops
+    looking like a run of strong peaks; the absolute floor still applies to
+    the spectrogram itself, so near-silence stays out. With peak_regions,
+    each slice of the bands keeps at most region_cap of a block's peaks, so a
+    loud noise in one range cannot take every slot. With neither, the same
+    peaks as find_peaks."""
+    if spec.size == 0:
+        empty = np.empty(0, dtype=np.int64)
+        return Peaks(empty, empty, np.empty(0, dtype=np.float64))
+    rank = spec
+    if p.norm_frames > 0:
+        floor = percentile_filter(spec, p.norm_pct, size=(p.norm_frames, 1), mode="nearest")
+        rank = spec - floor
+    local_max = maximum_filter(rank, size=(p.nbhd_t, p.nbhd_f), mode="constant", cval=-np.inf)
+    t, f = np.nonzero((rank == local_max) & (spec > p.floor_db))
+    mag = rank[t, f]
+    block = t // p.block_frames
+    keep = np.arange(len(t))
+    if p.peak_regions > 1:
+        region = f * p.peak_regions // spec.shape[1]
+        keep = _strongest(keep, block * p.peak_regions + region, mag, p.region_cap)
+    keep = _strongest(keep, block, mag, p.peaks_per_block)
+    keep = keep[np.lexsort((f[keep], t[keep]))]
+    return Peaks(t[keep].astype(np.int64), f[keep].astype(np.int64), mag[keep])
+
+
+def _strongest(idx: np.ndarray, group: np.ndarray, mag: np.ndarray, n: int) -> np.ndarray:
+    """The n strongest of idx in each group (ties in idx order, as find_peaks)."""
+    order = idx[np.lexsort((-mag[idx], group[idx]))]
+    g = group[order]
+    rank = np.arange(len(order)) - np.searchsorted(g, g, side="left")
+    return order[rank < n]
+
+
 def fingerprint(pcm: np.ndarray, p: Params = DEFAULT) -> Landmarks:
-    pk = find_peaks(spectrogram(pcm, p), p)  # uses nbhd_t, nbhd_f, floor_db, block, per-block
+    spec = spectrogram(pcm, p)
+    if p.norm_frames > 0 or p.peak_regions > 1:
+        pk = robust_peaks(spec, p)
+    else:
+        pk = find_peaks(spec, p)  # uses nbhd_t, nbhd_f, floor_db, block, per-block
     return triplets(pk.t, pk.f, p)
 
 
