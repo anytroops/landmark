@@ -1,6 +1,6 @@
 # Triplet fingerprint under real noise: options, measured before building
 
-Status: experiment running (2026-10-31), Sean's pick of what to test: A, B, and A with B.
+Status: step 1 done (2026-10-31): B chosen on val, A failed the rule. Step 3 (full val and test) not yet run. Sean's pick of what to test: A, B, and A with B.
 
 ## Problem
 
@@ -27,4 +27,40 @@ All of these change the triplet fingerprint, so a winner means re-indexing the t
 
 ## Results
 
-[TBD]
+### Step 1: settings on val
+
+`eval/results/b2_eval_seed0_tn_val_{tag}.*` (commit c96eede, clean tree), rule applied with `python -m eval.b2_compare grid`. Mean val accuracy in points; each run calibrated on its own val (pooled FAR at most 0.1%).
+
+| Setting | 20 real-noise conditions | Clean and 5 tempo conditions | Qualifies |
+|---|---|---|---|
+| Baseline (today) | 76.25 | 99.77 | |
+| B, 6 slices, at most 5 | **86.01** | 99.67 | yes, chosen |
+| B, 6 slices, at most 10 | 76.27 | 99.77 | yes |
+| B, 3 slices, at most 15 | 77.75 | 99.77 | yes |
+| A, 43 frames, 25th pct | 46.83 | 98.57 | no |
+| A, 43 frames, 50th pct | 56.09 | 98.60 | no |
+| A, 129 frames, 25th pct | 59.05 | 98.97 | no |
+| A, 129 frames, 50th pct | 64.10 | 99.17 | no |
+
+- **B (6 slices, at most 5)** gains most where today's triplets are weakest, at -5 dB: cafeteria 4.4% to 44.0%, train station 7.6% to 57.6%, living room 52.2% to 82.6%, metro 85.0% to 93.8%. White noise at 0 dB 96.6% to 95.2%. The looser caps change almost nothing, so the gain comes from forcing an even spread (6 x 5 = all 30 slots).
+- **A fails at every setting**: worse under every noise (white noise at 0 dB 96.6% to between 14.6% and 56.0%) and more than 0.5 points below the baseline on clean and tempo. With no A chosen, the rule leaves no A with B to run.
+
+### Why (200 val positives, scratch analysis, not a committed run)
+
+Share of a noisy query's peaks within 1 frame and 1 band of a peak the indexed track has at the same place (reference with context on both sides, as indexed):
+
+| Condition | Baseline | A (129, 50th) | B (6 x 5) |
+|---|---|---|---|
+| clean | 90.6% | 79.9% | 86.0% |
+| white 0 dB | 50.6% | 33.1% | 44.0% |
+| train station 0 dB | 34.4% | 31.7% | 44.8% |
+| cafeteria 0 dB | 33.2% | 27.8% | 39.8% |
+| restaurant 0 dB | 34.9% | 24.8% | 34.9% |
+| living room -5 dB | 30.3% | 29.9% | 36.2% |
+| car 0 dB | 67.8% | 61.6% | 71.4% |
+
+Under noise the baseline's peaks move down: the top third of the bands holds 18.5% of a clean query's peaks but 5.2% at a train station at 0 dB, so the high-band music peaks the index has are lost. B keeps about a sixth in each slice in every condition. A matches fewer peaks even in clean audio (79.9%), the edge effect named under Options: a 10 s query's normalization near its ends differs from the indexed track's.
+
+### Step 3: not yet run
+
+Full val and test (1,000 positives, 500 negatives per split) for the baseline and B, with `python -m eval.b2_compare pair _tn_base _tn_b6x5` for the McNemar table, plus an exploratory val run of B with the least bad A (129 frames, 50th percentile) since Sean asked about a combination. Started 2026-10-31 18:20 and stopped at 18:37 before any run finished (laptop shut down); rerun from scratch.
