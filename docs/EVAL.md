@@ -107,7 +107,29 @@ False accepts at most 0.1% in every cell (0.035% pooled over the 40 real-noise c
 - **White noise is not the hard case; a restaurant is.** At equal SNR, seven of the ten places cost less than white noise does: at 0 dB 97.8 to 99.9% against 97.1%, and at -10 dB 58.6 to 99.9% against 35.4% (paired on the same excerpts, p below 1e-4 for each of the seven at -5 and -10 dB, except the park at -5 dB, p 0.004). The restaurant costs more at every SNR (89.0% against 97.1% at 0 dB: 83 queries right only with white noise, 2 only with the restaurant, p 2e-22), and the cafeteria at 0 and -5 dB (95.4% against 97.1% at 0 dB, p 0.01; not at -10 dB, where white noise's losses are mostly rejections, below).
 - **Where a noise puts its power decides it.** Peaks are picked from the whole 0 to 5,512 Hz spectrum, the strongest per second. Music averages 48.5% of its power below 300 Hz, 44.1% from 300 to 2,000 Hz, and 7.4% above (50 test tracks). White noise puts 64% above 2,000 Hz, where music is weak, so at equal SNR it outweighs the song across that part of the spectrum. The seven easier places put 84 to 100% of theirs below 300 Hz (car 100%, bus 99.7%), where music's own bass is strongest, so few of a clip's peaks are lost. The restaurant puts 64% of its power from 300 to 2,000 Hz, the speech band, which is also where the song's mid-range peaks are, so its chatter and clatter compete with them directly.
 - **At -10 dB the threshold, not identification, is the limit for white noise:** the right song is still the top answer for 88.7% of clips, but only 35.4% score high enough to be accepted. Under restaurant noise the top answer itself is right for only 36.6%.
-- Not measured: the triplet fingerprint (the h2h comparison has it 1.3 points behind the pairs at 0 dB white noise); over the air, where room reverberation and the microphone's response add to the noise; louder or closer sources (DEMAND's recordings are ambient, so a talker next to the phone may be harder still).
+- Not measured: over the air, where room reverberation and the microphone's response add to the noise; louder or closer sources (DEMAND's recordings are ambient, so a talker next to the phone may be harder still).
+
+**The triplet fingerprint under real noise.** `eval.b2_eval` with the same noise conditions on its catalog of 3,000 fma_medium tracks: pairs and triplets (B2, as D35 and D37) answer the same 1,000 positive and 500 negative test excerpts, each at the thresholds of the published D37 run (pairs t_abs 2, t_ratio 2.5; triplets 44, 2.5), not recalibrated. It reproduces the D37 run's rows for the three conditions they share (9,000 rows, every column). Commit 651d26d. Raw: `eval/results/b2_eval_seed0_d37_demand.*`; paired report `demand_b2_seed0_d37_demand.md` (`python -m eval.demand report-b2`).
+
+| Noise | Pairs, 0 dB | Triplets, 0 dB | Pairs, -5 dB | Triplets, -5 dB |
+|---|---|---|---|---|
+| White | 98.5 | 94.9 | 94.4 | 67.2 |
+| Train station | 98.5 | 60.6 | 89.9 | 4.4 |
+| Cafeteria | 97.5 | 70.5 | 88.0 | 14.3 |
+| Restaurant | 94.2 | 77.3 | 70.4 | 24.7 |
+| Park | 98.4 | 93.3 | 92.8 | 68.3 |
+| Public square | 99.3 | 94.4 | 97.7 | 75.4 |
+| Street | 99.3 | 94.6 | 97.2 | 77.3 |
+| Subway train | 99.1 | 95.9 | 97.2 | 76.0 |
+| Living room | 99.5 | 97.8 | 98.4 | 87.1 |
+| Bus | 99.9 | 99.6 | 99.7 | 98.5 |
+| Car | 99.9 | 99.8 | 99.9 | 99.7 |
+
+Clean: 99.9% for both. Test false accepts 0.11% (pairs) and 0.08% (triplets) over all conditions.
+
+- **The triplets are the fragile fingerprint.** Of the 44 noisy cells (5 to -10 dB), the triplets do significantly worse than the pairs in 36 (exact McNemar p < 0.01) and better in none; the other 8 are at 5 dB or in a bus or car. At 0 dB in a train station they keep 60.6% where the pairs keep 98.5% (379 queries right only with the pairs, none only with the triplets).
+- **The places that hurt them most differ from the pairs'.** The station and the cafeteria cost the triplets more than the restaurant does, the reverse of the pairs. Two facts bear on it. A triplet hash needs three peaks to survive where a pair needs two. And the triplets' log-frequency filterbank (D33, 36 bands per octave from 55 Hz) centers 89 of its 234 bands below 300 Hz, where the pair spectrogram has 5% of its bins; noise below its 55 Hz floor never reaches it, which is why a bus and a car (97% and 91% of their power below 55 Hz) cost it almost nothing. The band shares do not explain the rest of the order, though: the street puts more of its power between 55 and 300 Hz than the station does (38.0% against 27.4%) and costs the triplets far less. That is not resolved.
+- **What it means.** A recording made in a noisy place is answered well when its song plays at its own speed, by the pair search. A tempo-changed song needs the triplets, so a DJ set recorded on a phone in a loud room is the weak case. Making the triplets more robust changes their fingerprint, a core component: options for Sean.
 
 ## Speed tolerance of the current fingerprint (D31 step 1)
 

@@ -4,6 +4,7 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 from scipy.io import wavfile
 
@@ -99,8 +100,38 @@ def test_add_noise_tiles_a_short_recording() -> None:
 
 def test_band_shares_of_white_noise_follow_the_band_widths() -> None:
     x = np.random.default_rng(0).standard_normal(60 * SR)
-    lo, mid, hi = demand.band_shares(x)
-    nyquist = SR / 2
-    assert abs(lo - 100 * 300 / nyquist) < 0.5
-    assert abs(mid - 100 * 1700 / nyquist) < 0.5
-    assert abs(lo + mid + hi - 100) < 0.2
+    shares = demand.band_shares(x)
+    edges = [0, *demand.BAND_EDGES_HZ, SR / 2]
+    assert len(shares) == len(edges) - 1
+    for share, lo, hi in zip(shares, edges[:-1], edges[1:], strict=True):
+        assert abs(share - 100 * (hi - lo) / (SR / 2)) < 0.5
+    assert abs(sum(shares) - 100) < 0.2
+
+
+def test_report_b2_pairs_the_systems_on_the_same_queries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    res = tmp_path / "eval" / "results"
+    res.mkdir(parents=True)
+    rows = []
+    # Four queries: right in both, pairs only, triplets only, neither; one of
+    # them right but under the triplet threshold, and a val row ignored.
+    for fma_id, pairs_ok, b2_score in [(1, True, 50), (2, True, 10), (3, False, 60), (4, False, 0)]:
+        for cond in ("white_snr0_10s", "demand_tcar_snr0_10s"):
+            base = {"split": "test", "label": "pos", "fma_id": fma_id, "cond": cond}
+            rows.append({**base, "system": "pairs", "top1_score": 30 if pairs_ok else 1,
+                         "runner_up_score": 1, "correct": pairs_ok})  # fmt: skip
+            rows.append({**base, "system": "b2", "top1_score": b2_score, "runner_up_score": 1,
+                         "correct": b2_score > 0})  # fmt: skip
+    val = {"split": "val", "label": "pos", "fma_id": 9, "cond": "white_snr0_10s"}
+    rows.append({**val, "system": "b2", "top1_score": 99, "runner_up_score": 1, "correct": True})
+    pd.DataFrame(rows).to_csv(res / "b2_eval_seed0_x.csv.gz", index=False)
+    meta = {"catalog_tracks": 4, "systems": {
+        "pairs": {"t_abs": 2, "t_ratio": 2.5, "test_far": 0.0},
+        "b2": {"t_abs": 44, "t_ratio": 2.5, "test_far": 0.0}}}  # fmt: skip
+    (res / "b2_eval_seed0_x.json").write_text(json.dumps(meta))
+    monkeypatch.setattr(demand, "ROOT", tmp_path)
+    r = demand.report_b2("_x", 0)
+    c = r["accuracy"]["demand_tcar_snr0_10s"]
+    assert c["n"] == 4 and c["pairs"] == 0.5 and c["b2"] == 0.5
+    assert (c["only_b2"], c["only_pairs"]) == (1, 1)  # fma 3 vs fma 2 (score 10 < 44)

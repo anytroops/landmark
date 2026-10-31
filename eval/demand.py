@@ -22,11 +22,13 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from scipy.io import wavfile
 from scipy.signal import resample_poly
 from scipy.stats import binomtest
 
 from eval.compare import accepted_correct
+from eval.summarize import accepted
 from prototype.audio import SAMPLE_RATE, decode
 from prototype.fma import DATA_DIR, audio_path
 
@@ -34,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NOISE_DIR = DATA_DIR / "noise" / "demand"
 SOURCE_RATE = 16_000
 SNRS = (5, 0, -5, -10)  # the report's columns, dB
-BAND_EDGES_HZ = [300, 2000]  # bass; the speech band; above
+BAND_EDGES_HZ = [55, 300, 2000]  # the triplet filterbank's floor; bass; the speech band
 # Condition names use these in lower case: demand_pcafeter_snr0_10s.
 ENVIRONMENTS = (
     "PCAFETER",  # cafeteria: crowd chatter, dishes
@@ -103,7 +105,7 @@ def noise(env: str, split: str) -> np.ndarray:
 
 
 def band_shares(x: np.ndarray) -> list[float]:
-    """Percent of x's power below 300 Hz, 300 to 2,000 Hz, and above."""
+    """Percent of x's power in each band between BAND_EDGES_HZ (and below and above)."""
     power = np.abs(np.fft.rfft(x.astype(np.float64))) ** 2
     freq = np.fft.rfftfreq(len(x), 1 / SAMPLE_RATE)
     edges = [0.0, *BAND_EDGES_HZ, SAMPLE_RATE / 2 + 1]
@@ -161,10 +163,74 @@ def markdown(r: dict[str, object]) -> str:
                 s += f" ({c['only_here']}/{c['only_white']}, p {c['p']:.2g})"
             cells.append(s)
         out.append(f"| {env} | " + " | ".join(cells) + " |")
-    lo, hi = r["band_edges_hz"]
-    out += ["", f"| Power share | below {lo} Hz | {lo} to {hi} Hz | above {hi} Hz |",
-            "|---|---|---|---|"]  # fmt: skip
-    out += [f"| {k} | " + " | ".join(f"{v}%" for v in s) + " |" for k, s in r["bands"].items()]
+    out += ["", *band_table(r["band_edges_hz"], r["bands"])]
+    return "\n".join(out) + "\n"
+
+
+def band_table(edges: list[int], bands: dict[str, list[float]]) -> list[str]:
+    heads = [f"below {edges[0]} Hz"]
+    heads += [f"{lo} to {hi} Hz" for lo, hi in itertools.pairwise(edges)]
+    heads += [f"above {edges[-1]} Hz"]
+    out = ["| Power share | " + " | ".join(heads) + " |", "|---|" + "---|" * len(heads)]
+    return out + [f"| {k} | " + " | ".join(f"{v}%" for v in s) + " |" for k, s in bands.items()]
+
+
+def report_b2(tag: str, seed: int) -> dict[str, object]:
+    """From an eval.b2_eval run: pairs and triplets (B2) on the same excerpts
+    and catalog, each at its own thresholds, with the exact McNemar test
+    between them per condition."""
+    res = ROOT / "eval" / "results"
+    d = pd.read_csv(res / f"b2_eval_seed{seed}{tag}.csv.gz")
+    d = d[(d["split"] == "test") & (d["label"] == "pos")]
+    meta = json.loads((res / f"b2_eval_seed{seed}{tag}.json").read_text())
+    ok = {}
+    for system in ("pairs", "b2"):
+        th = meta["systems"][system]
+        g = d[d["system"] == system]
+        ok[system] = pd.Series(
+            accepted(g, th["t_abs"], th["t_ratio"]) & g["correct"].to_numpy(),
+            index=pd.MultiIndex.from_frame(g[["fma_id", "cond"]]),
+        )
+    pairs, trip = ok["pairs"].align(ok["b2"], join="inner")
+    cells: dict[str, dict[str, object]] = {}
+    for cond in pairs.index.get_level_values("cond").unique():
+        x, y = pairs.xs(cond, level="cond"), trip.xs(cond, level="cond")
+        only_b2, only_pairs = int((~x & y).sum()), int((x & ~y).sum())
+        n = only_b2 + only_pairs
+        cells[cond] = {"n": len(x), "pairs": float(x.mean()), "b2": float(y.mean()),
+                       "only_b2": only_b2, "only_pairs": only_pairs,
+                       "p": binomtest(only_b2, n, 0.5).pvalue if n else 1.0}  # fmt: skip
+    return {"tag": tag, "seed": seed, "catalog_tracks": meta["catalog_tracks"],
+            "thresholds": {s: {k: meta["systems"][s][k] for k in ("t_abs", "t_ratio")}
+                           for s in ("pairs", "b2")},
+            "test_far": {s: meta["systems"][s]["test_far"] for s in ("pairs", "b2")},
+            "accuracy": cells}  # fmt: skip
+
+
+def markdown_b2(r: dict[str, object]) -> str:
+    acc = r["accuracy"]
+    head = " | ".join(f"{db} dB" for db in SNRS)
+    out = [f"# Pairs and triplets (B2) under real background noise ({r['tag']})", "",
+           f"One catalog of {r['catalog_tracks']} fma_medium tracks, the same test excerpts. "
+           "Each cell: pairs / triplets accuracy at threshold, then queries right only with "
+           "triplets / only with pairs, and the exact McNemar p.", "",
+           f"| Noise | {head} |", "|---|" + "---|" * len(SNRS)]  # fmt: skip
+    for env in ("white", *(e.lower() for e in ENVIRONMENTS)):
+        row = []
+        for db in SNRS:
+            c = acc[f"white_snr{db}_10s" if env == "white" else f"demand_{env}_snr{db}_10s"]
+            row.append(f"{100 * c['pairs']:.1f}% / {100 * c['b2']:.1f}% "
+                       f"({c['only_b2']}/{c['only_pairs']}, p {c['p']:.2g})")  # fmt: skip
+        out.append(f"| {env} | " + " | ".join(row) + " |")
+    th, far = r["thresholds"], r["test_far"]
+    out += [
+        "",
+        *(
+            f"{s}: t_abs {th[s]['t_abs']}, t_ratio {th[s]['t_ratio']}, "
+            f"test FAR {100 * far[s]:.2f}% (all conditions)"
+            for s in ("pairs", "b2")
+        ),
+    ]
     return "\n".join(out) + "\n"
 
 
@@ -180,17 +246,23 @@ def main() -> None:
     r.add_argument("--manifest", type=Path,
                    default=ROOT / "eval/manifests/splits_medium_seed0.json")  # fmt: skip
     r.add_argument("--music-tracks", type=int, default=50)
+    b = sub.add_parser("report-b2", help="pairs vs triplets from an eval.b2_eval run")
+    b.add_argument("--tag", required=True, help="a b2_eval tag with demand and white conditions")
+    b.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     if args.cmd == "prepare":
         for env, m in prepare(args.zips, args.out).items():
             print(env, m["seconds"], "s, rms", round(float(m["rms"]), 4))
         return
-    rep = report(args.tag, args.seed, args.manifest, args.music_tracks)
-    base = f"demand_seed{args.seed}{args.tag}"  # a tag may hold a dot: _stop0.04
+    if args.cmd == "report":
+        rep, md, base = report(args.tag, args.seed, args.manifest, args.music_tracks), markdown, ""
+    else:
+        rep, md, base = report_b2(args.tag, args.seed), markdown_b2, "_b2"
+    base = f"demand{base}_seed{args.seed}{args.tag}"  # a tag may hold a dot: _stop0.04
     res = ROOT / "eval" / "results"
     (res / f"{base}.json").write_text(json.dumps(rep, indent=1) + "\n")
-    (res / f"{base}.md").write_text(markdown(rep))
-    print(markdown(rep))
+    (res / f"{base}.md").write_text(md(rep))
+    print(md(rep))
 
 
 if __name__ == "__main__":
