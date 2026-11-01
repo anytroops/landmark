@@ -125,6 +125,59 @@ func TestPeaksCappedPerBlockAndSorted(t *testing.T) {
 	}
 }
 
+// loudLowSpectrogram is a spectrogram of scattered peaks whose lowest sixth
+// of the bins is 30 dB louder, so an uncapped block takes most of its peaks
+// there.
+func loudLowSpectrogram() Spectrogram {
+	s := Spectrogram{Frames: 430, Bins: 234}
+	s.Data = make([]float64, s.Frames*s.Bins)
+	state := uint32(7)
+	for i := range s.Data {
+		state = state*1664525 + 1013904223
+		s.Data[i] = 10 * float64(state) / (1 << 32)
+		if i%s.Bins < s.Bins/6 {
+			s.Data[i] += 30
+		}
+	}
+	return s
+}
+
+func TestRegionCapLimitsEachSliceOfTheBins(t *testing.T) {
+	p := Params{NbhdT: 17, NbhdF: 9, FloorDB: -8, BlockFrames: 43, PeaksPerBlock: 30}
+	s := loudLowSpectrogram()
+	low := func(peaks []Peak) int {
+		n := 0
+		for _, pk := range peaks {
+			if pk.F*6/s.Bins == 0 {
+				n++
+			}
+		}
+		return n
+	}
+	plain := FindPeaks(s, p)
+	for _, regions := range []int{0, 1} { // either means no cap
+		q := p
+		q.Regions, q.RegionCap = regions, 5
+		if got := FindPeaks(s, q); !slices.Equal(got, plain) {
+			t.Fatalf("Regions %d changed the peaks", regions)
+		}
+	}
+	p.Regions, p.RegionCap = 6, 5
+	capped := FindPeaks(s, p)
+	group := map[[2]int]int{}
+	for _, pk := range capped {
+		group[[2]int{pk.T / p.BlockFrames, pk.F * 6 / s.Bins}]++
+	}
+	for g, n := range group {
+		if n > p.RegionCap {
+			t.Errorf("block %d slice %d has %d peaks, cap %d", g[0], g[1], n, p.RegionCap)
+		}
+	}
+	if low(capped) >= low(plain) {
+		t.Errorf("lowest slice kept %d peaks capped, %d uncapped", low(capped), low(plain))
+	}
+}
+
 func TestLandmarksRespectZoneAndFanout(t *testing.T) {
 	p := DefaultParams()
 	lms := New(p).Fingerprint(syntheticSignal(10 * 11025))

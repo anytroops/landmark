@@ -46,6 +46,12 @@ type Params struct {
 	MinDT         int     `json:"min_dt"`
 	MaxDT         int     `json:"max_dt"`
 	MaxDF         int     `json:"max_df"`
+	// Regions > 1 keeps at most RegionCap of a block's peaks in each of
+	// Regions equal slices of the bins before the block's PeaksPerBlock
+	// strongest are chosen (D53, the triplet fingerprint; the pair
+	// fingerprint leaves it 0). JSON names as prototype.b2.Params.
+	Regions   int `json:"peak_regions"`
+	RegionCap int `json:"region_cap"`
 }
 
 // DefaultParams matches prototype.fingerprint.DEFAULT. A function, not a
@@ -177,28 +183,13 @@ func (pf *PeakFinder) Find(s Spectrogram, p Params) []Peak {
 			}
 		}
 	}
-
-	// Rank within each block by descending magnitude. Stable, so equal
-	// magnitudes keep (t, f) order, matching numpy.lexsort.
-	sort.SliceStable(peaks, func(i, j int) bool {
-		bi, bj := peaks[i].T/p.BlockFrames, peaks[j].T/p.BlockFrames
-		if bi != bj {
-			return bi < bj
-		}
-		return peaks[i].Mag > peaks[j].Mag
-	})
-	kept := peaks[:0]
-	block, rank := -1, 0
-	for _, pk := range peaks {
-		if b := pk.T / p.BlockFrames; b != block {
-			block, rank = b, 0
-		}
-		if rank < p.PeaksPerBlock {
-			kept = append(kept, pk)
-		}
-		rank++
+	pf.cand = peaks // kept for the next call; strongest reorders it in place
+	if p.Regions > 1 {
+		peaks = strongest(peaks, p.RegionCap, func(pk Peak) int {
+			return pk.T/p.BlockFrames*p.Regions + pk.F*p.Regions/s.Bins
+		})
 	}
-	pf.cand = peaks
+	kept := strongest(peaks, p.PeaksPerBlock, func(pk Peak) int { return pk.T / p.BlockFrames })
 	if len(kept) == 0 {
 		return nil
 	}
@@ -210,6 +201,31 @@ func (pf *PeakFinder) Find(s Spectrogram, p Params) []Peak {
 		return out[i].F < out[j].F
 	})
 	return out
+}
+
+// strongest keeps the n strongest peaks of each group, in place, sorted by
+// group then descending magnitude. Stable, so equal magnitudes keep their
+// order in peaks, as numpy.lexsort does in prototype.b2._strongest (and, on
+// (t, f)-ordered peaks, in prototype.fingerprint.find_peaks).
+func strongest(peaks []Peak, n int, group func(Peak) int) []Peak {
+	sort.SliceStable(peaks, func(i, j int) bool {
+		if gi, gj := group(peaks[i]), group(peaks[j]); gi != gj {
+			return gi < gj
+		}
+		return peaks[i].Mag > peaks[j].Mag
+	})
+	kept := peaks[:0]
+	g, rank := 0, 0
+	for i, pk := range peaks {
+		if gk := group(pk); i == 0 || gk != g {
+			g, rank = gk, 0
+		}
+		if rank < n {
+			kept = append(kept, pk)
+		}
+		rank++
+	}
+	return kept
 }
 
 // maxFilter is scipy.ndimage.maximum_filter(size=(sizeT, sizeF),

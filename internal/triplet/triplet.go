@@ -3,7 +3,8 @@
 // hashes of three peaks built from values a tempo change cannot move.
 //
 // It is a port of prototype/b2.py and must match it up to FFT rounding (D17):
-// same framing, window, filterbank, peak rule (fingerprint.FindPeaks), target
+// same framing, window, filterbank, peak rule (fingerprint.FindPeaks with
+// at most RegionCap peaks per slice of the bands, D53), target
 // order, hash layout, and output order. Parity is tested against
 // testdata/golden_b2.
 //
@@ -47,6 +48,8 @@ type Params struct {
 	Zone           int     `json:"zone"`
 	BandWidth      int     `json:"band_width"`
 	RTLevels       int     `json:"rt_levels"`
+	PeakRegions    int     `json:"peak_regions"` // D53: at most RegionCap of a block's
+	RegionCap      int     `json:"region_cap"`   // peaks in each of PeakRegions slices
 }
 
 // DefaultParams matches prototype.b2.DEFAULT.
@@ -55,6 +58,7 @@ func DefaultParams() Params {
 		NFFT: 4096, Hop: 256, BandsPerOctave: 36, FMin: 55, NBands: 234,
 		NbhdT: 17, NbhdF: 9, FloorDB: -8, BlockFrames: 43, PeaksPerBlock: 30,
 		Fanout: 5, MaxDT: 63, Zone: 36, BandWidth: 18, RTLevels: 64,
+		PeakRegions: 6, RegionCap: 5,
 	}
 }
 
@@ -222,6 +226,7 @@ func (p Params) PeakParams() fingerprint.Params {
 	return fingerprint.Params{
 		NbhdT: p.NbhdT, NbhdF: p.NbhdF, FloorDB: p.FloorDB,
 		BlockFrames: p.BlockFrames, PeaksPerBlock: p.PeaksPerBlock,
+		Regions: p.PeakRegions, RegionCap: p.RegionCap,
 	}
 }
 

@@ -56,12 +56,15 @@ class Params:
     zone: int = 36  # max |band gap| to a target (one octave)
     band_width: int = 18  # bands per hash pitch band (half an octave)
     rt_levels: int = 64
-    # Noise-robustness options under test (EVAL, D52 follow-up); the defaults
-    # keep the fingerprint as D33 to D37 define it.
+    # Per-band normalization (option A, docs/design/triplet-noise.md): rejected,
+    # kept so that experiment reproduces; Go has no port of it.
     norm_frames: int = 0  # > 0: rank peaks on the spectrogram less each band's
     norm_pct: float = 50.0  # running norm_pct percentile over norm_frames frames
-    peak_regions: int = 1  # > 1: at most region_cap peaks per block in each of
-    region_cap: int = 0  # peak_regions equal slices of the bands
+    # D53: at most region_cap of a block's peaks in each of peak_regions equal
+    # slices of the bands, so noise loud in one range cannot take every slot.
+    # peak_regions 1 is the fingerprint before D53.
+    peak_regions: int = 6
+    region_cap: int = 5
 
 
 DEFAULT = Params()

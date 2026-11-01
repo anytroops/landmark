@@ -32,6 +32,7 @@ def landmarks(lm: b2.Landmarks) -> dict[str, list[int]]:
 
 
 def main() -> None:
+    assert b2.DEFAULT.norm_frames == 0, "Go has no per-band normalization"
     OUT.mkdir(parents=True, exist_ok=True)
     n = 30 * 11025
     x = synthetic_signal(n)
