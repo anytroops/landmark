@@ -395,6 +395,20 @@ How each song was faded in and out, not only which songs played. For each trackl
 - **Go port** (`internal/analysis`, `cmd/tracklist -analyze`, D43 A3): on all 384 test mixes it gives the prototype's answer for every one of the 1,058 songs: the same turntable or keylock call and the same fades to within 0.1 s (largest difference 0.00 s; `bench/analysisparity`, `test/go_parity.json`). The per-frame fit tries every subset of the songs playing (at most a few), which is exact non-negative least squares at that size.
 - Limitations: needs the reference audio; effects beyond gain are outside the model; fades are read as linear ramps (UnmixDB's are). The converted labels give a mix's first song no fade-in and its last no fade-out (they are measured from the mix's start and end for tracklisting), so the table above leaves those fades out.
 
+## Set reconstructor, milestone 1 (D54)
+
+The pipeline: `cmd/rekordbox extras` turns a Rekordbox collection export into the list `cmd/ingest -extra` indexes; `cmd/tracklist -local` searches the two indexes inside one process (`internal/local`: a shard per partition on a loopback port and the coordinator in process, the code a cluster runs); its JSON gives each entry's position in the song at the entry's start and end (`analysis.Alignment` over the window rows); `cmd/rekordbox playlist -cues` writes the set as a Rekordbox playlist of the collection's own tracks, with a memory cue at each of those positions. Checked on the UnmixDB test sets (384 mixes) with the medium plus UnmixDB indexes; not yet on Sean's library and sets.
+
+- **Local equals a cluster.** `tracklist -local` gives the same entries as the cluster run of `eval/results/live/equiv_test_d53/` on all 384 mixes, every field the cluster run has (`bench.scripts.local_equiv`; `eval/results/local/equiv_d53.json` at 32f9d04 and `equiv_d54.json` at 1fc1072, clean tree).
+- **Cue points.** For each entry on the right file (1,050 entries), the reported position against the truth, src_start + factor x (t - mix_start) from the mixes file (`python -m eval.cue_accuracy`; `eval/results/local/cue_accuracy_d54.json`, from `runs_d54.jsonl`):
+
+  | | Median error | 90th percentile | Within 50 ms | Within 0.5 s | Largest |
+  |---|---|---|---|---|---|
+  | Where the set brought the song in | 16 ms | 26 ms | 97.4% | 98.1% | 11.4 s |
+  | Where it took the song out | 15 ms | 27 ms | 97.2% | 98.1% | 11.4 s |
+
+  The same within 0.5 s for unchanged tempo (98.4%), turntable (97.8%), and key lock (98.0%) mixes. The 20 entries off by more than 0.5 s are on 9 songs, 17 of them in mixes with UnmixDB's distortion effect (a quarter of the test mixes); about half are within 0.15 beats of a whole number of beats by the songs' estimated BPM, consistent with the fit locking onto a repeat of a loop, not verified further.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.

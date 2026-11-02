@@ -55,7 +55,7 @@ Recommendation: (b) for the editor; the demo page stays as it is.
 
 ## Milestones
 
-1. **Reconstruct from a Rekordbox library, locally.** Import the XML, index the library, reconstruct a set, export a Rekordbox playlist with cues. Checked on Sean's own recorded sets (he knows what he played) and on UnmixDB.
+1. **Reconstruct from a Rekordbox library, locally.** Import the XML, index the library, reconstruct a set, export a Rekordbox playlist with cues. Checked on Sean's own recorded sets (he knows what he played) and on UnmixDB. Built, and checked on UnmixDB (EVAL, "Set reconstructor, milestone 1"); Sean's library and sets next.
 2. **The editor.** Timeline, corrections, playback of the reconstruction against the recording.
 3. **The ML model** (R2), trained, compared with the baseline, written up like the other evals.
 4. **The hosted service** (R1), deployed with accounts, the local agent, and monitoring.
