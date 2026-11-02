@@ -263,3 +263,19 @@ def test_onset_rank_keeps_onsets_and_drops_tail_ripples() -> None:
 def test_previous_max_looks_only_backwards() -> None:
     x = np.array([[1.0], [5.0], [2.0], [0.0], [0.0]])
     np.testing.assert_array_equal(b2._previous_max(x, 2)[:, 0], [1.0, 1.0, 5.0, 5.0, 2.0])
+
+
+def test_gate_drops_tail_ripples_and_keeps_magnitude_ranking() -> None:
+    spec = np.full((330, b2.DEFAULT.n_bands), -20.0)
+    onsets = (20, 120, 220)
+    for o in onsets:
+        tail = 30 - 0.3 * np.arange(80)
+        tail[9::9] += 3  # ripples: local maxima rising 0.6 dB over the last 8 frames
+        spec[o : o + 80, 50] = tail
+    spec[60, 100] = 10.0  # a lone, quieter onset in another band
+    gated = b2.robust_peaks(spec, replace(NO_CAP, gate_frames=8, gate_db=3.0))
+    assert sorted(gated.t[gated.f == 50].tolist()) == list(onsets)
+    assert 60 in gated.t[gated.f == 100].tolist()
+    assert np.all(gated.mag[gated.f == 50] == 30.0)  # ranked by magnitude, not by rise
+    plain = b2.robust_peaks(spec, NO_CAP)
+    assert (plain.f == 50).sum() > len(onsets)

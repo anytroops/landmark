@@ -71,6 +71,8 @@ class Params:
     dereverb_delay: int = 2  # frames between a sound and the late reverb it predicts
     dereverb_floor_db: float = -10.0  # the most a cell is attenuated
     onset_frames: int = 0  # > 0: rank peaks by their rise over the band's last n frames
+    gate_frames: int = 0  # > 0: a peak must rise gate_db over its band's last n frames
+    gate_db: float = 0.0
 
 
 DEFAULT = Params()
@@ -182,7 +184,10 @@ def robust_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
     the spectrogram itself, so near-silence stays out. With onset_frames,
     they use each cell's rise over the most its band held in the preceding
     onset_frames frames, so a reverberant tail decaying from earlier energy
-    ranks low and an onset high. With peak_regions, each slice of the bands
+    ranks low and an onset high. With gate_frames, a candidate must also
+    rise gate_db over the most its band held in the preceding gate_frames
+    frames, ranked as before: a decaying tail is no peak at all, while noise
+    onsets still have to outrank the music. With peak_regions, each slice of the bands
     keeps at most region_cap of a block's peaks, so a loud noise in one range
     cannot take every slot. With none, the same peaks as find_peaks."""
     if spec.size == 0:
@@ -195,7 +200,10 @@ def robust_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
     if p.onset_frames > 0:
         rank = rank - _previous_max(rank, p.onset_frames)
     local_max = maximum_filter(rank, size=(p.nbhd_t, p.nbhd_f), mode="constant", cval=-np.inf)
-    t, f = np.nonzero((rank == local_max) & (spec > p.floor_db))
+    candidate = (rank == local_max) & (spec > p.floor_db)
+    if p.gate_frames > 0:
+        candidate &= spec - _previous_max(spec, p.gate_frames) >= p.gate_db
+    t, f = np.nonzero(candidate)
     mag = rank[t, f]
     block = t // p.block_frames
     keep = np.arange(len(t))
@@ -250,7 +258,7 @@ def fingerprint(pcm: np.ndarray, p: Params = DEFAULT, query: bool = False) -> La
     spec = spectrogram(pcm, p)
     if query and p.dereverb_rt60 > 0:
         spec = dereverb(spec, p)
-    if p.norm_frames > 0 or p.peak_regions > 1 or p.onset_frames > 0:
+    if p.norm_frames > 0 or p.peak_regions > 1 or p.onset_frames > 0 or p.gate_frames > 0:
         pk = robust_peaks(spec, p)
     else:
         pk = find_peaks(spec, p)  # uses nbhd_t, nbhd_f, floor_db, block, per-block

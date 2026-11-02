@@ -107,3 +107,7 @@ Build neither. Next, a variant that keeps what each does well, with its own rule
 
 - **B gated:** peaks ranked by magnitude as today (with the region cap, D53), but a candidate must rise at least some threshold over its band's last frames to be a peak at all. A reverberant tail, decaying, never rises, so it gives up the slots it takes today; crowd onsets still have to outrank the music by magnitude, as today. Index and query, so a re-index if it wins.
 - Later, if the gate is not enough: index both peak sets (magnitude and onset) and search both, at about twice the postings.
+
+## Gated B: method (fixed before its runs, 2026-11-02)
+
+`gate_frames` and `gate_db` in `prototype.b2.Params`: a candidate peak must rise `gate_db` over the most its band held in the preceding `gate_frames` frames; peaks are still ranked by magnitude, with D53's region cap. A candidate is already the largest within 8 frames either side, so a 0 dB gate over 8 frames or fewer changes nothing. The same 14 conditions, splits, and rule as A and B above (`grid --target room --noise-margin 1`), on val at 500 and 500, with the baseline re-run in the same batch: 16 and 32 frames with a 0 dB gate; 8 and 16 frames with a 3 dB gate; 8 and 16 frames with a 6 dB gate. Then val and test in full for the chosen setting, against the baseline's runs above.
