@@ -110,7 +110,7 @@ func main() {
 	}
 	clusters := !cfg.local && cfg.coordinator != "" && (cfg.pairsCoordinator == "") == (cfg.pairsIndex == "")
 	inProcess := cfg.local && cfg.coordinator == "" && cfg.pairsCoordinator == ""
-	if flag.NArg() != 1 || cfg.index == "" || !(clusters || inProcess) ||
+	if flag.NArg() != 1 || cfg.index == "" || (!clusters && !inProcess) ||
 		(cfg.decoder != "align" && cfg.decoder != "smooth") || (cfg.front != "shared" && cfg.front != "window") {
 		fmt.Fprintln(os.Stderr, "usage: tracklist -coordinator addr -index dir [-pairs-coordinator addr -pairs-index dir] [flags] mix-file")
 		fmt.Fprintln(os.Stderr, "       tracklist -local -index dir [-pairs-index dir] [flags] mix-file")
