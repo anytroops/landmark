@@ -34,6 +34,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-10-31, triplet noise options (docs/design/triplet-noise.md, Sean's pick of A, B, and both): on val, B (6 slices of the bands, at most 5 of each second's 30 peaks per slice) raises mean accuracy over the 20 real-noise conditions from 76.3 to 86.0 points at 0.1 points' cost on clean and tempo; every A (per-band normalization) setting is worse under noise and fails the rule. On test (rerun after a shutdown), B raises the real-noise mean from 76.8 to 85.1 points (train station at -5 dB 5.6% to 52.0%), significantly better in 12 of 20 real-noise conditions and worse in none, at a cost of 1.7 points in white noise at 0 dB; clean, tempo, and false accepts unchanged. A with B (exploratory) is worse than B alone. Why: noise pushes the peaks into the low bands, and B keeps them spread (`eval.peak_survival`).
 - 2026-11-01: D53 built (Sean's pick): triplet peaks capped at 5 per sixth of the bands in Python and Go (exact parity), the triplet index rebuilt, DJ tracklisting on the UnmixDB test sets 1,081 of 1,135 songs at 98.6% precision (1,082 at 98.2% before), live still equal to offline on all 384 test mixes. D54: Sean picked the set reconstructor as the next product (a recorded set back as an editable session from his own Rekordbox library), to fill the ML and cloud gaps on his resume.
 - 2026-11-01, D54 milestone 1 built: Rekordbox import (`cmd/rekordbox extras`), the indexes searched in one process (`tracklist -local`, equal to a cluster on all 384 test mixes), each song's position in the set (`source_start_s`, `source_end_s`), and the Rekordbox export (`rekordbox playlist -cues`). Cue points on the UnmixDB test sets: median error 16 ms, 98.1% within 0.5 s.
+- 2026-11-01, D55: a song's alignment is now the intercept most of its windows share, not the median (windows of a repetitive song match repeats of its loop): cue points within 0.5 s 98.1% to 98.7% on the UnmixDB test sets, chosen on the calibration sets; fades unchanged; Go equals the prototype on all 1,058 test songs. The mix analysis also holds up after D53.
 
 ## Next
 - Sean to review D44, D45, and D51, made while he was away: D44 and D51 are output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
@@ -42,7 +43,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
   - Real sets: Sean's collection export, one to three recorded sets with their tracklists (History copied to a playlist), under data/mine/; score the tracklists, fix what breaks, and check the exported playlist imports into his Rekordbox.
   - Over the air: Sean records a few mixes played through speakers on his phone; meanwhile a simulated room (synthetic reverberation and a phone microphone's response) in the eval.
   - Re-measure after D53: B17 and live capacity (B9), on an idle machine.
-- The cue points 20 of 1,050 UnmixDB entries put more than 0.5 s off (mostly in distortion mixes, often near whole beats): look at whether the alignment locks onto a repeated loop.
+- Sean to review D55 (my call: how a tracklisted song is aligned).
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers
