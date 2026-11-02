@@ -65,6 +65,12 @@ class Params:
     # peak_regions 1 is the fingerprint before D53.
     peak_regions: int = 6
     region_cap: int = 5
+    # Reverberation options under test (docs/design/reverb.md); the defaults
+    # keep the fingerprint as D53 defines it.
+    dereverb_rt60: float = 0.0  # > 0: queries only, subtract late reverb assumed this long (s)
+    dereverb_delay: int = 2  # frames between a sound and the late reverb it predicts
+    dereverb_floor_db: float = -10.0  # the most a cell is attenuated
+    onset_frames: int = 0  # > 0: rank peaks by their rise over the band's last n frames
 
 
 DEFAULT = Params()
@@ -173,10 +179,12 @@ def robust_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
     maxima and ranking use the spectrogram less each band's running
     percentile, so a steady noise (a hum, a rumble, a crowd's bed) stops
     looking like a run of strong peaks; the absolute floor still applies to
-    the spectrogram itself, so near-silence stays out. With peak_regions,
-    each slice of the bands keeps at most region_cap of a block's peaks, so a
-    loud noise in one range cannot take every slot. With neither, the same
-    peaks as find_peaks."""
+    the spectrogram itself, so near-silence stays out. With onset_frames,
+    they use each cell's rise over the most its band held in the preceding
+    onset_frames frames, so a reverberant tail decaying from earlier energy
+    ranks low and an onset high. With peak_regions, each slice of the bands
+    keeps at most region_cap of a block's peaks, so a loud noise in one range
+    cannot take every slot. With none, the same peaks as find_peaks."""
     if spec.size == 0:
         empty = np.empty(0, dtype=np.int64)
         return Peaks(empty, empty, np.empty(0, dtype=np.float64))
@@ -184,6 +192,8 @@ def robust_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
     if p.norm_frames > 0:
         floor = percentile_filter(spec, p.norm_pct, size=(p.norm_frames, 1), mode="nearest")
         rank = spec - floor
+    if p.onset_frames > 0:
+        rank = rank - _previous_max(rank, p.onset_frames)
     local_max = maximum_filter(rank, size=(p.nbhd_t, p.nbhd_f), mode="constant", cval=-np.inf)
     t, f = np.nonzero((rank == local_max) & (spec > p.floor_db))
     mag = rank[t, f]
@@ -205,9 +215,42 @@ def _strongest(idx: np.ndarray, group: np.ndarray, mag: np.ndarray, n: int) -> n
     return order[rank < n]
 
 
-def fingerprint(pcm: np.ndarray, p: Params = DEFAULT) -> Landmarks:
+def _previous_max(x: np.ndarray, n: int) -> np.ndarray:
+    """Each cell's band maximum over the n frames before it; the first
+    frames, with less history, compare with what there is (frame 0 with
+    itself)."""
+    out = np.full_like(x, -np.inf)
+    for j in range(1, n + 1):
+        out[j:] = np.maximum(out[j:], x[:-j])
+    out[0] = x[0]
+    return np.where(np.isfinite(out), out, x)
+
+
+def dereverb(spec: np.ndarray, p: Params = DEFAULT) -> np.ndarray:
+    """Late reverberation subtracted from a dB spectrogram (spectral
+    subtraction, after Lebart, Boucher, and Denbigh 2001): each cell's late
+    reverberant power is predicted as its band's power dereverb_delay frames
+    earlier, decayed at 60 dB per dereverb_rt60 seconds, and removed, no
+    cell losing more than dereverb_floor_db."""
+    d = p.dereverb_delay
+    if p.dereverb_rt60 <= 0 or len(spec) <= d:
+        return spec
+    power = 10.0 ** (spec / 10.0)
+    decay = 10.0 ** (-6.0 * d * p.hop / SAMPLE_RATE / p.dereverb_rt60)
+    late = np.zeros_like(power)
+    late[d:] = decay * power[:-d]
+    gain = np.maximum(1.0 - late / np.maximum(power, 1e-30), 10.0 ** (p.dereverb_floor_db / 10.0))
+    return spec + 10.0 * np.log10(gain)
+
+
+def fingerprint(pcm: np.ndarray, p: Params = DEFAULT, query: bool = False) -> Landmarks:
+    """Triplet landmarks of pcm. query: pcm is a recording to look up, which
+    the query-only options (dereverb_rt60) apply to; the index never sees
+    them."""
     spec = spectrogram(pcm, p)
-    if p.norm_frames > 0 or p.peak_regions > 1:
+    if query and p.dereverb_rt60 > 0:
+        spec = dereverb(spec, p)
+    if p.norm_frames > 0 or p.peak_regions > 1 or p.onset_frames > 0:
         pk = robust_peaks(spec, p)
     else:
         pk = find_peaks(spec, p)  # uses nbhd_t, nbhd_f, floor_db, block, per-block
@@ -228,7 +271,7 @@ def fingerprint_query(
     duplicate landmarks dropped. The index side uses fingerprint (p only)."""
     step = p.hop // n_shifts
     banks = [p, half_band(p)] if dual else [p]
-    parts = [fingerprint(pcm[k * step :], q) for q in banks for k in range(n_shifts)]
+    parts = [fingerprint(pcm[k * step :], q, query=True) for q in banks for k in range(n_shifts)]
     h = np.concatenate([x.hash for x in parts]).astype(np.uint64)
     t = np.concatenate([x.t for x in parts]).astype(np.uint64)
     span = np.concatenate([x.span for x in parts]).astype(np.uint64)

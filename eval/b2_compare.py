@@ -3,10 +3,13 @@
   python -m eval.b2_compare grid _tn_val_base _tn_val_b6x5 ...
   python -m eval.b2_compare pair _tn_base _tn_b6x5
 
-grid: the design's rule on val runs. The first tag is the baseline; a setting
-qualifies when its mean accuracy over clean and the tempo conditions is at
-most --margin points below the baseline's, and the best qualifying setting
-has the highest mean over the real-noise (DEMAND) conditions.
+grid: a design's rule on val runs (docs/design/triplet-noise.md, reverb.md).
+The first tag is the baseline; a setting qualifies when its mean accuracy
+over clean and the tempo conditions is at most --margin points below the
+baseline's (and, with --noise-margin, its mean over the real-noise
+conditions at most that far below), and the qualifying setting chosen has
+the highest mean over --target: the real-noise (demand_) or the
+reverberation (room_) conditions.
 
 pair: two runs on the same test excerpts, each at its own val-calibrated
 thresholds, with the exact McNemar test per condition and the test false
@@ -35,15 +38,17 @@ def group_means(conds: dict[str, dict]) -> dict[str, float]:
     """Mean accuracy (points) over the real-noise conditions and over clean
     plus tempo."""
     real = [c["accuracy"] for k, c in conds.items() if k.startswith("demand_")]
+    room = [c["accuracy"] for k, c in conds.items() if k.startswith("room_")]
     kept = [c["accuracy"] for k, c in conds.items() if k.startswith(("clean_", *TEMPO))]
-    return {"real": _mean(real), "kept": _mean(kept)}
+    return {"real": _mean(real), "room": _mean(room), "kept": _mean(kept)}
 
 
 def _mean(x: list[float]) -> float:
     return 100 * float(np.mean(x)) if x else float("nan")
 
 
-def grid(tags: list[str], seed: int, margin: float) -> list[dict[str, object]]:
+def grid(tags: list[str], seed: int, margin: float, target: str = "real",
+         noise_margin: float | None = None) -> list[dict[str, object]]:  # fmt: skip
     rows = []
     for tag in tags:
         m = _meta(tag, seed)
@@ -51,7 +56,12 @@ def grid(tags: list[str], seed: int, margin: float) -> list[dict[str, object]]:
                      **group_means(m["systems"]["b2"]["conditions"])})  # fmt: skip
     base = rows[0]
     for r in rows:
-        r["qualifies"] = r["kept"] >= base["kept"] - margin
+        r["qualifies"] = r["kept"] >= base["kept"] - margin and (
+            noise_margin is None or r["real"] >= base["real"] - noise_margin
+        )
+    best = max((r for r in rows[1:] if r["qualifies"]), key=lambda r: r[target], default=None)
+    for r in rows:
+        r["chosen"] = r is best
     return rows
 
 
@@ -116,15 +126,20 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("grid", help="the design's selection rule on val runs")
     g.add_argument("tags", nargs="+", help="baseline first")
-    g.add_argument("--margin", type=float, default=0.5)
+    g.add_argument("--margin", type=float, default=0.5, help="clean and tempo, points")
+    g.add_argument("--target", choices=["real", "room"], default="real",
+                   help="the group to maximize: real noise (D53) or reverberation")  # fmt: skip
+    g.add_argument("--noise-margin", type=float,
+                   help="real noise at most this many points below the baseline too")  # fmt: skip
     p = sub.add_parser("pair", help="two runs on the same test excerpts, McNemar")
     p.add_argument("a")
     p.add_argument("b")
     args = ap.parse_args()
     if args.cmd == "grid":
-        for r in grid(args.tags, args.seed, args.margin):
-            print(f"{r['tag']:24s} real {r['real']:6.2f} kept {r['kept']:6.2f} "
-                  f"qualifies {r['qualifies']!s:5s} {r['params']}")  # fmt: skip
+        for r in grid(args.tags, args.seed, args.margin, args.target, args.noise_margin):
+            print(f"{r['tag']:28s} real {r['real']:6.2f} room {r['room']:6.2f} "
+                  f"kept {r['kept']:6.2f} qualifies {r['qualifies']!s:5s} "
+                  f"chosen {r['chosen']!s:5s} {r['params']}")  # fmt: skip
         return
     r = pair(args.a, args.b, args.seed)
     stem = RES / f"b2_compare_seed{args.seed}{args.a}_vs{args.b}"

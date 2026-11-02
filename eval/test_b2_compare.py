@@ -55,3 +55,20 @@ def test_grid_rule_disqualifies_a_setting_that_costs_clean_or_tempo(tmp_path, mo
     assert [r["qualifies"] for r in rows] == [True, True, False]
     assert rows[1]["real"] == pytest.approx(80.0)
     assert rows[1]["kept"] == pytest.approx(99.6)
+
+
+def test_grid_targets_reverberation_and_guards_noise(tmp_path, monkeypatch):
+    monkeypatch.setattr(b2_compare, "RES", tmp_path)
+
+    def conds(room, noise):
+        return {"room_rt800_drr-5_clean_10s": {"accuracy": room}, "clean_10s": {"accuracy": 1.0},
+                "demand_tcar_snr0_10s": {"accuracy": noise}}  # fmt: skip
+
+    _run(tmp_path, "_base", [], 0, conds(0.60, 0.90))
+    _run(tmp_path, "_a", [], 0, conds(0.70, 0.895))  # noise 0.5 points down
+    _run(tmp_path, "_b", [], 0, conds(0.80, 0.85))  # noise 5 points down
+    rows = b2_compare.grid(["_base", "_a", "_b"], 0, 0.5, "room", 1.0)
+    assert [r["qualifies"] for r in rows] == [True, True, False]
+    assert [r["chosen"] for r in rows] == [False, True, False]
+    rows = b2_compare.grid(["_base", "_a", "_b"], 0, 0.5, "room")
+    assert [r["chosen"] for r in rows] == [False, False, True]

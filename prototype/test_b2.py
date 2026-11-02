@@ -221,3 +221,45 @@ def test_one_region_is_the_fingerprint_before_d53() -> None:
     np.testing.assert_array_equal(a.hash, b.hash)
     np.testing.assert_array_equal(a.t, b.t)
     assert not np.array_equal(b2.fingerprint(x).hash, a.hash)
+
+
+def test_dereverb_removes_a_tail_decaying_at_its_reverberation_time() -> None:
+    p = replace(b2.DEFAULT, dereverb_rt60=0.5)
+    frame_s = p.hop / SAMPLE_RATE
+    spec = np.full((60, b2.DEFAULT.n_bands), -40.0)
+    t = np.arange(40)
+    spec[10:50, 30] = 40 - 60 * t * frame_s / 0.5  # an onset, then its reverberant tail
+    out = b2.dereverb(spec, p)
+    assert out[10, 30] == pytest.approx(40.0)  # the onset has nothing before it to predict it
+    assert np.all(out[13:50, 30] <= spec[13:50, 30] - 9.9)  # the tail drops to the floor
+    assert np.allclose(b2.dereverb(spec, b2.DEFAULT), spec)
+
+
+def test_dereverb_applies_to_queries_only() -> None:
+    x = np.random.default_rng(2).standard_normal(SAMPLE_RATE * 12)
+    p = replace(b2.DEFAULT, dereverb_rt60=0.6)
+    np.testing.assert_array_equal(b2.fingerprint(x, p).hash, b2.fingerprint(x).hash)
+    assert not np.array_equal(b2.fingerprint(x, p, query=True).hash, b2.fingerprint(x).hash)
+
+
+def test_onset_rank_keeps_onsets_and_drops_tail_ripples() -> None:
+    spec = np.full((330, b2.DEFAULT.n_bands), -20.0)
+    onsets = (20, 120, 220)
+    for o in onsets:
+        tail = 30 - 0.3 * np.arange(80)
+        tail[9::9] += 3  # ripples in the tail: local maxima of their own
+        spec[o : o + 80, 50] = tail
+    # Over the last 8 frames an onset rises 50 dB; a ripple in a tail 0.6 dB.
+    onset = b2.robust_peaks(spec, replace(NO_CAP, onset_frames=8))
+    rise = dict(zip(onset.t.tolist(), onset.mag.tolist(), strict=True))
+    assert all(rise[o] > 40 for o in onsets)
+    assert all(m < 1 for t, m in rise.items() if t not in onsets)
+    # With one peak per block, each block holding an onset keeps the onset.
+    one = b2.robust_peaks(spec, replace(NO_CAP, onset_frames=8, peaks_per_block=1))
+    blocks = dict(zip((one.t // NO_CAP.block_frames).tolist(), one.t.tolist(), strict=True))
+    assert all(blocks[o // NO_CAP.block_frames] == o for o in onsets)
+
+
+def test_previous_max_looks_only_backwards() -> None:
+    x = np.array([[1.0], [5.0], [2.0], [0.0], [0.0]])
+    np.testing.assert_array_equal(b2._previous_max(x, 2)[:, 0], [1.0, 1.0, 5.0, 5.0, 2.0])
