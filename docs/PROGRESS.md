@@ -43,7 +43,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - Before milestones 2 and 3 (Sean, 2026-11-01): make the core hold up on real material. Every eval so far uses 30 s FMA clips, 40 s UnmixDB excerpts, mixes of a few minutes, and noise mixed in digitally; real sets (full-length songs, an hour or more, long blends) and over-the-air recording are untested.
   - Real sets: Sean's collection export, one to three recorded sets with their tracklists (History copied to a playlist), under data/mine/; score the tracklists, fix what breaks, and check the exported playlist imports into his Rekordbox.
   - Over the air: Sean records a few mixes played through speakers on his phone. The simulated room says reverberation is the main loss; next: the crowd-only run (stopped unfinished), a milder room (0.4 s, phone 5 dB above the reverb) to map where it breaks, the same conditions on single clips (`run_eval`, `b2_eval`, the `room_rt{ms}_drr{db}_` prefix), then options for Sean (a core change), e.g. subtracting estimated late reverberation from the query's spectrogram before peak picking (query only, no re-index).
-  - Re-measure after D53: B17 done (0.5% more time per live window); live capacity (B9) still to do, on an idle machine.
+  - Re-measured after D53: B17 (0.5% more time per live window) and live capacity (B9: 96 stations still kept up with, 3 of 11,787 windows dropped late; 104 slightly better than before).
 - Sean to review D55 (my call: how a tracklisted song is aligned).
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
