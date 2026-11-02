@@ -73,6 +73,7 @@ class Params:
     onset_frames: int = 0  # > 0: rank peaks by their rise over the band's last n frames
     gate_frames: int = 0  # > 0: a peak must rise gate_db over its band's last n frames
     gate_db: float = 0.0
+    gate_delay: int = 0  # frames skipped before those n: the front end smooths over 16
 
 
 DEFAULT = Params()
@@ -202,7 +203,7 @@ def robust_peaks(spec: np.ndarray, p: Params = DEFAULT) -> Peaks:
     local_max = maximum_filter(rank, size=(p.nbhd_t, p.nbhd_f), mode="constant", cval=-np.inf)
     candidate = (rank == local_max) & (spec > p.floor_db)
     if p.gate_frames > 0:
-        candidate &= spec - _previous_max(spec, p.gate_frames) >= p.gate_db
+        candidate &= spec - _previous_max(spec, p.gate_frames, p.gate_delay) >= p.gate_db
     t, f = np.nonzero(candidate)
     mag = rank[t, f]
     block = t // p.block_frames
@@ -223,14 +224,14 @@ def _strongest(idx: np.ndarray, group: np.ndarray, mag: np.ndarray, n: int) -> n
     return order[rank < n]
 
 
-def _previous_max(x: np.ndarray, n: int) -> np.ndarray:
-    """Each cell's band maximum over the n frames before it; the first
-    frames, with less history, compare with what there is (frame 0 with
-    itself)."""
+def _previous_max(x: np.ndarray, n: int, delay: int = 0) -> np.ndarray:
+    """Each cell's band maximum over the n frames ending delay frames before
+    it (frames t - delay - n to t - delay - 1); cells without that history
+    compare with themselves."""
     out = np.full_like(x, -np.inf)
-    for j in range(1, n + 1):
-        out[j:] = np.maximum(out[j:], x[:-j])
-    out[0] = x[0]
+    for j in range(delay + 1, delay + n + 1):
+        if j < len(x):
+            out[j:] = np.maximum(out[j:], x[:-j])
     return np.where(np.isfinite(out), out, x)
 
 

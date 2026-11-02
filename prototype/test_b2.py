@@ -279,3 +279,8 @@ def test_gate_drops_tail_ripples_and_keeps_magnitude_ranking() -> None:
     assert np.all(gated.mag[gated.f == 50] == 30.0)  # ranked by magnitude, not by rise
     plain = b2.robust_peaks(spec, NO_CAP)
     assert (plain.f == 50).sum() > len(onsets)
+
+
+def test_previous_max_can_skip_recent_frames() -> None:
+    x = np.array([[1.0], [5.0], [2.0], [0.0], [0.0]])
+    np.testing.assert_array_equal(b2._previous_max(x, 2, delay=1)[:, 0], [1.0, 5.0, 1.0, 5.0, 5.0])

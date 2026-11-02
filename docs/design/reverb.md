@@ -111,3 +111,20 @@ Build neither. Next, a variant that keeps what each does well, with its own rule
 ## Gated B: method (fixed before its runs, 2026-11-02)
 
 `gate_frames` and `gate_db` in `prototype.b2.Params`: a candidate peak must rise `gate_db` over the most its band held in the preceding `gate_frames` frames; peaks are still ranked by magnitude, with D53's region cap. A candidate is already the largest within 8 frames either side, so a 0 dB gate over 8 frames or fewer changes nothing. The same 14 conditions, splits, and rule as A and B above (`grid --target room --noise-margin 1`), on val at 500 and 500, with the baseline re-run in the same batch: 16 and 32 frames with a 0 dB gate; 8 and 16 frames with a 3 dB gate; 8 and 16 frames with a 6 dB gate. Then val and test in full for the chosen setting, against the baseline's runs above.
+
+### Gated B: results, and a design error
+
+`eval/results/b2_eval_seed0_gt_val_*` (commit 9c4a122). Mean val accuracy in points:
+
+| Setting | Six reverberant | Clean and five tempo | Two noise | Qualifies |
+|---|---|---|---|---|
+| Baseline | 56.73 | 99.37 | 87.30 | |
+| 16 frames, 0 dB | 55.37 | 99.27 | 85.50 | no (noise) |
+| 32 frames, 0 dB | 56.50 | 99.67 | 89.90 | yes, chosen, but below the baseline |
+| 8 or 16 frames, 3 or 6 dB | 0 | 0 | 0 | no: no peaks at all |
+
+The 3 and 6 dB gates passed no peak, so their indexes were empty. The cause is the triplets' front end: its 4,096-sample window spans 16 frames, so each frame overlaps the next by 94% and the spectrogram rises smoothly into a note; at a peak the frame before is nearly as loud. Over the 12,427 candidate peaks of 10 val tracks, the rise over the preceding 16 frames has a median of 0.18 dB and none reaches 3 dB; measured against the 16 frames before a delay of 8 frames, the median is 3.6 dB and 54.5% reach 3 dB (16 frames' delay: 3.1 dB, 50.8%). The gate as designed tests nothing, and B's ranking (above) mostly measured the last frame's slope too. The two 0 dB settings did nothing for reverberation.
+
+## Gated B with a delay: method (fixed before its runs, 2026-11-02)
+
+`gate_delay` frames are skipped before the `gate_frames` look-back: a candidate must rise `gate_db` over the most its band held from `gate_delay + gate_frames` to `gate_delay + 1` frames before it. Ranking unchanged (magnitude, D53's region cap). The same conditions, splits, and rule (`grid --target room --noise-margin 1`), the baseline from the batch above (`_gt_val_base`): a 16-frame look-back after a delay of 8 or 16 frames, with a 3 or 6 dB gate (4 settings). Then val and test in full for the chosen setting.
