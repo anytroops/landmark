@@ -1,10 +1,11 @@
-"""Query degradations: excerpting, additive noise, MP3 re-encode, speed change."""
+"""Query degradations: excerpting, additive noise, MP3 re-encode, speed change,
+and a simulated room and phone microphone."""
 
 from fractions import Fraction
 
 import librosa
 import numpy as np
-from scipy.signal import resample_poly
+from scipy.signal import butter, fftconvolve, resample_poly, sosfilt
 
 from prototype.audio import SAMPLE_RATE, encode_decode_mp3
 
@@ -111,3 +112,40 @@ def keylock(pcm: np.ndarray, factor: float, frame: int = 1024, tolerance: int = 
     n = min(out_len, len(y))
     out[:n] = y[:n]
     return out.astype(np.float32)
+
+
+# A phone's microphone, as a second-order high-pass: phone capsules and their
+# processing roll off the low end, where a club's sound has much of its power.
+PHONE_HIGHPASS_HZ = 150.0
+PREDELAY_S = 0.005  # direct sound to the first reflections
+
+
+def rir(rt60: float, drr_db: float, rng: np.random.Generator,
+        sample_rate: int = SAMPLE_RATE) -> np.ndarray:  # fmt: skip
+    """A synthetic room impulse response: the direct sound, then after
+    PREDELAY_S a tail of Gaussian noise decaying 60 dB in rt60 seconds, 1.5
+    rt60 long, scaled so the direct sound has drr_db more energy than the
+    tail (negative: farther from the speaker than the critical distance).
+    A statistical model (no early reflections, flat decay across frequency),
+    not a measured room."""
+    n = int(round(1.5 * rt60 * sample_rate))
+    t = np.arange(n) / sample_rate
+    h = rng.standard_normal(n) * 10.0 ** (-3.0 * t / rt60)
+    h[: int(round(PREDELAY_S * sample_rate))] = 0.0
+    h *= np.sqrt(10.0 ** (-drr_db / 10.0) / np.sum(h**2))
+    h[0] = 1.0
+    return h
+
+
+def room(pcm: np.ndarray, rt60: float, drr_db: float, rng: np.random.Generator,
+         sample_rate: int = SAMPLE_RATE) -> np.ndarray:  # fmt: skip
+    """pcm played into a room (rir) and heard by a phone (PHONE_HIGHPASS_HZ),
+    at its original RMS. Only the clip's own sound reverberates: the reverb
+    of what played just before it is not simulated."""
+    x = pcm.astype(np.float64)
+    y = fftconvolve(x, rir(rt60, drr_db, rng, sample_rate))[: len(x)]
+    y = sosfilt(butter(2, PHONE_HIGHPASS_HZ, "highpass", fs=sample_rate, output="sos"), y)
+    p_in, p_out = float(np.mean(x**2)), float(np.mean(y**2))
+    if p_out == 0:
+        return pcm.copy()
+    return (y * np.sqrt(p_in / p_out)).astype(np.float32)

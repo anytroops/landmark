@@ -27,7 +27,7 @@ import pandas as pd
 
 from eval import demand
 from eval.backends import LocalBackend, ShardBackend, dense_tables
-from eval.degrade import add_noise, excerpt, keylock, reencode, speed, stretch
+from eval.degrade import add_noise, excerpt, keylock, reencode, room, speed, stretch
 from prototype import fingerprint as fp
 from prototype.audio import DecodeError, decode
 from prototype.build_index import machine_spec
@@ -66,6 +66,11 @@ _TEMPO = {"speed": speed, "keylock": keylock, "stretch": stretch}
 # named conditions above are the same), demand_{environment}_snr{db}_{n}s a
 # DEMAND recording (eval.demand), from the split's half of it.
 _WHITE = re.compile(r"white_snr(-?\d+)_(\d+)s")
+# A simulated room and phone in front of any condition (degrade.room):
+# room_rt{ms}_drr{db}_{condition} plays the clip into a room with that
+# reverberation time and direct-to-reverberant ratio, then applies the
+# condition (noise is ambient at the phone, so it is added after the room).
+_ROOM = re.compile(r"room_rt(\d+)_drr(-?\d+)_(.+)")
 _DEMAND = re.compile(r"demand_([a-z]+)_snr(-?\d+)_(\d+)s")
 
 
@@ -74,6 +79,10 @@ def condition(name: str, split: str = "test") -> tuple[float, Degrade]:
     the half of a real-noise recording the degradation draws from."""
     if name in CONDITIONS:
         return CONDITIONS[name]
+    if m := _ROOM.fullmatch(name):
+        rt60, drr = int(m.group(1)) / 1000, float(m.group(2))
+        secs, inner = condition(m.group(3), split)
+        return secs, lambda x, r: inner(room(x, rt60, drr, r), r)
     if m := _WHITE.fullmatch(name):
         db = float(m.group(1))
         return float(m.group(2)), lambda x, r: add_noise(x, db, r)
