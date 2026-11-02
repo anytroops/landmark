@@ -14,5 +14,8 @@ def test_render_parses_room_and_noise(monkeypatch: pytest.MonkeyPatch) -> None:
     noisy = render(x, "room_rt400_drr5_demand_pcafeter_snr0", np.random.default_rng(1))
     assert dry.shape == noisy.shape == x.shape
     assert not np.allclose(dry, noisy)
-    with pytest.raises(SystemExit):
-        render(x, "hall", np.random.default_rng(1))
+    only_noise = render(x, "demand_pcafeter_snr0", np.random.default_rng(1))
+    assert only_noise.shape == x.shape and not np.allclose(only_noise, x)
+    for bad in ("hall", "", "_demand_pcafeter_snr0", "room_rt400_drr5_"):
+        with pytest.raises(SystemExit):
+            render(x, bad, np.random.default_rng(1))

@@ -33,14 +33,18 @@ from prototype.audio import SAMPLE_RATE, decode
 ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "eval" / "results" / "local"
 TEST_SETS = ("set044", "set123", "set230", "set281")
-_COND = re.compile(r"room_rt(\d+)_drr(-?\d+)(?:_demand_([a-z]+)_snr(-?\d+))?")
+_COND = re.compile(r"(?:room_rt(\d+)_drr(-?\d+))?_?(?:demand_([a-z]+)_snr(-?\d+))?")
 
 
 def render(pcm: np.ndarray, cond: str, rng: np.random.Generator) -> np.ndarray:
+    """The mix through the room (if named), then the noise (if named)."""
     m = _COND.fullmatch(cond)
-    if m is None:
-        raise SystemExit(f"condition {cond!r}: want room_rt<ms>_drr<db>[_demand_<env>_snr<db>]")
-    y = room(pcm, int(m.group(1)) / 1000, float(m.group(2)), rng)
+    if m is None or not cond or cond.startswith("_") or cond.endswith("_"):
+        raise SystemExit(f"condition {cond!r}: want room_rt<ms>_drr<db>, demand_<env>_snr<db>, "
+                         "or both joined by _")  # fmt: skip
+    y = pcm
+    if m.group(1):
+        y = room(y, int(m.group(1)) / 1000, float(m.group(2)), rng)
     if m.group(3):
         y = add_noise(y, float(m.group(4)), rng, demand.noise(m.group(3).upper(), "test"))
     return y
@@ -64,7 +68,7 @@ def score(runs: list[dict], gt: dict) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--condition", help="room_rt<ms>_drr<db>[_demand_<env>_snr<db>]")
+    ap.add_argument("--condition", help="room_rt<ms>_drr<db>, demand_<env>_snr<db>, or both")
     ap.add_argument("--score-runs", type=Path, help="only score existing runs (JSON lines)")
     ap.add_argument("--tag", default="")
     ap.add_argument("--seed", type=int, default=0)
