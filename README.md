@@ -25,7 +25,7 @@ Every component has a Python reference and a Go implementation tested for parity
 | Demo web page (D46) | Done: `make demo`. Identify a clip (a file, the microphone, or a test song sped up like a turntable or with keylock, pair and triplet answers side by side), tracklist a mix while its windows are searched (fades, turntable or keylock, BPM, the true tracklist beside it) and play it under its timeline, watch live stations; links reopen example results, and tracklists export as text or JSON |
 | Shared front end (D48) | Done and the default: each stream's spectrogram frames computed once for all its windows (2.5x less triplet fingerprinting per window, B14), windows every 27,520 samples; the test sets' tracklists are exactly per-window fingerprinting's at that hop (95.2% of songs, precision 98.6% since D53) |
 | Triplet peaks under noise (D53) | Done: at most 5 of each second's 30 peaks per sixth of the bands; real-noise accuracy up 8.3 points, DJ tracklisting unchanged or better |
-| Set reconstructor (D54) | Designed: a recorded set back as an editable session from your own Rekordbox library, exported to Rekordbox and DAWs; milestone 1 next |
+| Set reconstructor (D54) | Designed: a recorded set back as an editable session from your own Rekordbox library, exported to Rekordbox and DAWs. Milestone 1 started: `cmd/rekordbox extras` turns a collection export into the list `ingest -extra` indexes |
 | Live stream monitoring (D38-D40) | Done: registry (leases, epochs, event logs, subscriptions), workers, online decoder; live output equals offline on 96 test mixes; real-time capacity and worker failover measured |
 
 ## Architecture
