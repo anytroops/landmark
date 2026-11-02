@@ -57,19 +57,36 @@ def power_spectrogram(pcm: np.ndarray) -> np.ndarray:
     return 10 ** (b2.spectrogram(pcm) / 10)
 
 
+# Windows whose intercepts are this close (seconds) agree on the alignment.
+AGREE_S = 0.1
+
+
 def alignment(
-    rows: pd.DataFrame, track: int, start: float, end: float
+    rows: pd.DataFrame, track: int, start: float, end: float, method: str = "median"
 ) -> tuple[float, float] | None:
     """(a, rate) with reference seconds = a + rate * mix seconds, from the
     song's triplet rows (window as is) inside its entry: the median rate,
-    then the median intercept."""
+    then, by method, the median intercept, or the consensus: the windows
+    that agree (within AGREE_S) with the most others, ties to the larger
+    total score, and their median intercept. In a song that repeats itself a
+    window can match a repeat of its loop; the median of scattered wrong
+    intercepts can be wrong too, while the right one is shared."""
     near = (rows["t0"] >= start - WINDOW_S) & (rows["t0"] <= end)
     r = rows[(rows["mode"] == "b2") & (rows["top1_dense"] == track) & near]
     if len(r) == 0:
         return None
     rate = float(np.median(r["factor"]))
-    a = float(np.median(r["offset"] / FPS - rate * r["t0"]))
-    return a, rate
+    a = (r["offset"] / FPS - rate * r["t0"]).to_numpy()
+    if method == "median":
+        return float(np.median(a)), rate
+    score = r["score"].to_numpy()
+    best = None
+    for x in a:
+        agree = np.abs(a - x) <= AGREE_S
+        key = (int(agree.sum()), float(score[agree].sum()))
+        if best is None or key > best[0]:
+            best = (key, float(np.median(a[agree])))
+    return best[1], rate
 
 
 def warp(ref: np.ndarray, a: float, rate: float, n_frames: int, pitch: bool) -> np.ndarray:
@@ -156,8 +173,8 @@ def fade_out_from(c: tuple[float, float]) -> tuple[float, float]:
     return t90 - 0.1 * span, t10 + 0.1 * span
 
 
-def analyze(job: tuple[int, dict, pd.DataFrame, dict, dict]) -> list[dict]:
-    i, mix, rows, params, paths = job
+def analyze(job: tuple[int, dict, pd.DataFrame, dict, dict, str]) -> list[dict]:
+    i, mix, rows, params, paths, method = job
     entries = merge_repeats(
         decode_smooth(rows, WINDOW_S, params["t_abs"], params["t_ratio"], params["k"]), 2.5
     )
@@ -165,7 +182,7 @@ def analyze(job: tuple[int, dict, pd.DataFrame, dict, dict]) -> list[dict]:
     n = len(mixspec)
     songs = []
     for e in entries:
-        al = alignment(rows, e.track, e.start, e.end)
+        al = alignment(rows, e.track, e.start, e.end, method)
         if al is None or e.track not in paths:
             continue
         ref = power_spectrogram(decode(paths[e.track]))
@@ -327,6 +344,9 @@ def main() -> None:
     )
     ap.add_argument("--effects", nargs="+", help="only mixes with these effects (none, bass, ...)")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--alignment", choices=["median", "consensus"], default="median")
+    ap.add_argument("--rows", default="_b2dhp", help="triplet rows: windows_unmixdb_s8<rows>")
+    ap.add_argument("--pair-rows", default="_gridA2", help="pair window rows, likewise")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
@@ -337,13 +357,13 @@ def main() -> None:
         ap.error("--sets and --out, or --rescore")
     gt = json.loads((ROOT / "eval/mixes/unmixdb_s8.json").read_text())
     params = json.loads(CALIBRATION.read_text())["smooth"]["params"]
-    w = pd.read_csv(RES / "windows_unmixdb_s8_b2dhp.csv.gz")
-    pairs = pair_rows(pd.read_csv(RES / "windows_unmixdb_s8_gridA2.csv.gz"))
+    w = pd.read_csv(RES / f"windows_unmixdb_s8{args.rows}.csv.gz")
+    pairs = pair_rows(pd.read_csv(RES / f"windows_unmixdb_s8{args.pair_rows}.csv.gz"))
     idx = [i for i, m in enumerate(gt["mixes"]) if m["set"] in args.sets
            and (not args.effects or m["effect"] in args.effects)][: args.limit or None]  # fmt: skip
     rows = combine(w[w["mix"].isin(idx)], pairs[pairs["mix"].isin(idx)], params["alpha"])
     paths = ref_paths("data/segments/medium_unmixdb_b2")
-    jobs = [(i, gt["mixes"][i], rows[rows["mix"] == i], params, paths) for i in idx]
+    jobs = [(i, gt["mixes"][i], rows[rows["mix"] == i], params, paths, args.alignment) for i in idx]
     with Pool(args.workers) as pool:
         results = [r for rs in pool.map(analyze, jobs) for r in rs]
     args.out.mkdir(parents=True, exist_ok=True)
