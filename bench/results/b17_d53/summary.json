@@ -1,0 +1,50 @@
+{
+ "benchmark": "internal/hybrid BenchmarkLiveWindow",
+ "stream_seconds": 60,
+ "windows_per_op": 21,
+ "runs": "8 rounds alternating before and after, -benchtime 3x -count 1 each, -benchmem, -cpu 12",
+ "commits": {
+  "before": "8f9410d (before D53)",
+  "after": "fb7efc1 (D53)"
+ },
+ "before": {
+  "ms_per_window": [
+   133.4,
+   134.9,
+   136.6,
+   137.3,
+   137.7,
+   139.9,
+   138.4,
+   138.9
+  ],
+  "median_ms_per_window": 137.5,
+  "mb_allocated_per_window": 10.96,
+  "allocations_per_window": 660
+ },
+ "after": {
+  "ms_per_window": [
+   135.2,
+   136.3,
+   137.1,
+   138.3,
+   138.4,
+   139.3,
+   139.1,
+   139.4
+  ],
+  "median_ms_per_window": 138.35000000000002,
+  "mb_allocated_per_window": 10.85,
+  "allocations_per_window": 732
+ },
+ "after_over_before_per_round": [
+  1.0135,
+  1.0104,
+  1.0037,
+  1.0073,
+  1.0051,
+  0.9957,
+  1.0051,
+  1.0036
+ ]
+}

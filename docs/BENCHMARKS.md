@@ -460,3 +460,13 @@ B10's run again with `ingest -add` merging by D47's policy after each add (`benc
 - 10% less time on an idle machine: D51 took 0.893 to 0.900 of the time in every round, while both drifted up about 3% over the 2 minutes. Same landmarks (D51's tests, and the test sets' window rows byte for byte).
 - The time saved here is the cost of fresh memory when there is plenty of it. Under memory pressure each fresh page also has to be found, often by compressing another, which is what the worker profile showed past capacity (B9, "Why throughput collapses past capacity"); D51 removes 90% of that churn.
 - Noise, not music: the stream's landmark density differs from a mix's, so the absolute times are a guide; the before and after run the same samples.
+
+**D53 (triplet peaks capped per sixth of the bands).** The same benchmark at 8f9410d (before) and fb7efc1 (D53), 8 rounds alternating, AC power, battery "100%; charged", 2026-11-02 (`bench/results/b17_d53/`). The machine was just past long eval runs (5-minute load average 18 falling to 12), so both sides ran about 8% slower than the D51 run above; the comparison is the alternating pairs.
+
+| Per window | Before D53 | D53 |
+|---|---|---|
+| Time, median of 8 rounds | 137.5 ms | 138.4 ms |
+| Memory allocated | 10.96 MB | 10.85 MB |
+| Allocations | 660 | 732 |
+
+D53 took 0.996 to 1.013 of the time per round (slower in 7 of 8, by 0.5% at the median): the per-slice ranking is a second sort of each window's candidate peaks, and fewer peaks reach the triplets.
