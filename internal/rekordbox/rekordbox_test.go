@@ -29,7 +29,7 @@ func TestParseTracksGridsAndCues(t *testing.T) {
 	if a.ID != "101" || a.Name != "First Light" || a.Artist != "Test Artist" || a.AverageBPM != 124 || a.TotalTime != 372 {
 		t.Errorf("track 101 = %+v", a)
 	}
-	if len(a.Tempos) != 1 || a.Tempos[0] != (Tempo{Start: 0.025, BPM: 124, Meter: "4/4", Beat: 1}) {
+	if g := a.Tempos; len(g) != 1 || g[0].Start != 0.025 || g[0].BPM != 124 || g[0].Meter != "4/4" || g[0].Beat != 1 || g[0].Other != nil {
 		t.Errorf("tempos = %+v", a.Tempos)
 	}
 	if len(a.Marks) != 3 {

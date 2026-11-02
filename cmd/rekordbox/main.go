@@ -3,11 +3,20 @@
 //
 //	rekordbox extras -xml collection.xml > library.tsv
 //	ingest -manifest "" -extra library.tsv -fingerprint triplets -out data/segments/mine_b2
+//	ingest -manifest "" -extra library.tsv -out data/segments/mine
+//	tracklist -local -index data/segments/mine_b2 -pairs-index data/segments/mine -json set.wav > set.json
+//	rekordbox playlist -xml collection.xml -index data/segments/mine_b2 -tracklist set.json -cues > set.xml
 //
 // extras writes the collection's tracks (or one playlist's, -playlist
 // "Folder/Name") as the name<TAB>path list cmd/ingest -extra takes. Tracks
 // that are not local files, or whose files are missing, are skipped and
 // counted on stderr; a file in the collection twice is listed once.
+//
+// playlist turns a tracklist of a recorded set back into Rekordbox: a file
+// to import (the "rekordbox xml" view) holding one playlist of the set's
+// songs in order, each the collection's own track with everything it had,
+// and with -cues a memory cue where the set brought the song in and one
+// where it took it out (tracklist's source positions).
 package main
 
 import (
@@ -23,19 +32,29 @@ import (
 	"github.com/anytroops/landmark/internal/rekordbox"
 )
 
+const usage = `usage: rekordbox extras -xml collection.xml [-playlist Folder/Name]
+       rekordbox playlist -xml collection.xml -index dir -tracklist set.json [-name name] [-cues]`
+
 func main() {
 	log.SetFlags(0)
-	if len(os.Args) < 2 || os.Args[1] != "extras" {
-		log.Fatal("usage: rekordbox extras -xml collection.xml [-playlist Folder/Name]")
+	if len(os.Args) < 2 {
+		log.Fatal(usage)
 	}
-	fs := flag.NewFlagSet("extras", flag.ExitOnError)
-	xmlPath := fs.String("xml", "", "Rekordbox collection export (required)")
-	playlist := fs.String("playlist", "", "only this playlist's tracks, by folder path (default: the whole collection)")
-	_ = fs.Parse(os.Args[2:])
-	if *xmlPath == "" {
+	switch os.Args[1] {
+	case "extras":
+		extrasCmd(os.Args[2:])
+	case "playlist":
+		playlistCmd(os.Args[2:])
+	default:
+		log.Fatal(usage)
+	}
+}
+
+func load(path string) *rekordbox.Library {
+	if path == "" {
 		log.Fatal("-xml is required")
 	}
-	f, err := os.Open(*xmlPath)
+	f, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -44,6 +63,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	return lib
+}
+
+func extrasCmd(args []string) {
+	fs := flag.NewFlagSet("extras", flag.ExitOnError)
+	xmlPath := fs.String("xml", "", "Rekordbox collection export (required)")
+	playlist := fs.String("playlist", "", "only this playlist's tracks, by folder path (default: the whole collection)")
+	_ = fs.Parse(args)
+	lib := load(*xmlPath)
 	exists := func(p string) bool {
 		st, err := os.Stat(p)
 		return err == nil && st.Mode().IsRegular()

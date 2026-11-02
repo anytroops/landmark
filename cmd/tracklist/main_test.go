@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -188,5 +190,28 @@ func TestPlaceStarts(t *testing.T) {
 		if got := placeStarts(tt.starts, tt.offset, tt.grid, tt.dither, tt.last); !slices.Equal(got, tt.want) {
 			t.Errorf("placeStarts(%v, %d, %d, %d, %d) = %v, want %v", tt.starts, tt.offset, tt.grid, tt.dither, tt.last, got, tt.want)
 		}
+	}
+}
+
+func TestJSONEntriesGiveSourcePositions(t *testing.T) {
+	// Track 5 plays 2% fast from 12 s into its audio at mix time 0: every
+	// triplet row's offset is the reference frame at its window's start.
+	const a, rate = 12.0, 1.02
+	var rows []tracklist.Row
+	for t0 := 0.0; t0 <= 40; t0 += 2.5 {
+		rows = append(rows, tracklist.Row{T0: t0, Mode: "b2", Factor: rate, Track: 5, Score: 50,
+			Offset: (a + rate*t0) * analysis.FramesPerSecond})
+	}
+	entries := []tracklist.Entry{{Track: 5, Start: 2.5, End: 30, Factor: rate}, {Track: 9, Start: 30, End: 40, Factor: 1}}
+	got := jsonEntries(entries, rows, func(int) string { return "" }, nil)
+	if s, e := got[0].SourceStartS, got[0].SourceEndS; s == nil || e == nil || *s != 14.55 || *e != 42.6 {
+		t.Errorf("source positions = %v, %v; want 14.55, 42.6", s, e)
+	}
+	if got[1].SourceStartS != nil || got[1].SourceEndS != nil {
+		t.Error("an entry with no triplet rows got source positions")
+	}
+	b, err := json.Marshal(got[1])
+	if err != nil || strings.Contains(string(b), "source_") {
+		t.Errorf("absent positions are written: %s", b)
 	}
 }

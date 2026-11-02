@@ -195,7 +195,7 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 		}
 	}
 	if cfg.jsonOut {
-		return json.NewEncoder(w).Encode(jsonEntries(entries, cat.Name, an))
+		return json.NewEncoder(w).Encode(jsonEntries(entries, rows, cat.Name, an))
 	}
 	windows := len(windowStarts(len(pcm), int(cfg.window*audio.SampleRate), cfg.hopSamples()))
 	var b strings.Builder
@@ -336,6 +336,11 @@ type jsonEntry struct {
 	TempoPct   float64 `json:"tempo_pct"`
 	Evidence   float64 `json:"evidence"`
 	StartClock string  `json:"start"`
+	// Where the song was in its own audio at the entry's start and end
+	// (seconds; from the windows' triplet fits, analysis.Alignment): cue
+	// points for the set reconstructor (D54). Absent without triplet rows.
+	SourceStartS *float64 `json:"source_start_s,omitempty"`
+	SourceEndS   *float64 `json:"source_end_s,omitempty"`
 	// With -analyze (D43): fades as [start_s, end_s], whether the tempo
 	// change was a turntable's (pitch moved) or keylock, and the BPM in
 	// the set.
@@ -345,11 +350,15 @@ type jsonEntry struct {
 	BPM       float64   `json:"bpm,omitempty"`
 }
 
-func jsonEntries(entries []tracklist.Entry, names func(int) string, an map[int]analysis.SongReport) []jsonEntry {
+func jsonEntries(entries []tracklist.Entry, rows []tracklist.Row, names func(int) string, an map[int]analysis.SongReport) []jsonEntry {
 	out := make([]jsonEntry, len(entries))
 	for i, e := range entries {
 		out[i] = jsonEntry{Track: e.Track, Name: names(e.Track), StartS: e.Start, EndS: e.End,
 			TempoPct: 100 * (e.Factor - 1), Evidence: e.Evidence, StartClock: clock(e.Start)}
+		if a, rate, ok := analysis.Alignment(rows, e.Track, e.Start, e.End); ok {
+			in, end := round3(a+rate*e.Start), round3(a+rate*e.End)
+			out[i].SourceStartS, out[i].SourceEndS = &in, &end
+		}
 		if a, ok := an[i]; ok {
 			out[i].FadeIn, out[i].FadeOut, out[i].BPM = a.FadeIn, a.FadeOut, a.BPM
 			out[i].Turntable = &a.Turntable
@@ -401,3 +410,7 @@ func clock(s float64) string {
 	t := int(s + 0.5)
 	return fmt.Sprintf("%d:%02d", t/60, t%60)
 }
+
+// round3 rounds to the millisecond, the precision the other times are
+// printed with.
+func round3(x float64) float64 { return math.Round(x*1000) / 1000 }

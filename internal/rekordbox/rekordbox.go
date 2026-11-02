@@ -5,7 +5,8 @@
 // recorded set is matched against are the DJ's own.
 //
 // Attributes the package does not use (hot cue colours, ratings, and the
-// like) are ignored, so exports from newer Rekordbox versions still parse.
+// like) are kept as they were read, so exports from newer Rekordbox versions
+// parse and Export writes tracks back without losing anything.
 package rekordbox
 
 import (
@@ -25,26 +26,28 @@ type Library struct {
 
 // Track is one COLLECTION entry.
 type Track struct {
-	ID         string  `xml:"TrackID,attr"` // text: only playlists refer to it
-	Name       string  `xml:"Name,attr"`
-	Artist     string  `xml:"Artist,attr"`
-	Album      string  `xml:"Album,attr"`
-	Genre      string  `xml:"Genre,attr"`
-	Kind       string  `xml:"Kind,attr"`
-	TotalTime  float64 `xml:"TotalTime,attr"` // seconds
-	AverageBPM float64 `xml:"AverageBpm,attr"`
-	Tonality   string  `xml:"Tonality,attr"`
-	Location   string  `xml:"Location,attr"` // file URI, as exported
-	Tempos     []Tempo `xml:"TEMPO"`
-	Marks      []Mark  `xml:"POSITION_MARK"`
+	ID         string     `xml:"TrackID,attr"` // text: only playlists refer to it
+	Name       string     `xml:"Name,attr,omitempty"`
+	Artist     string     `xml:"Artist,attr,omitempty"`
+	Album      string     `xml:"Album,attr,omitempty"`
+	Genre      string     `xml:"Genre,attr,omitempty"`
+	Kind       string     `xml:"Kind,attr,omitempty"`
+	TotalTime  float64    `xml:"TotalTime,attr,omitempty"` // seconds
+	AverageBPM float64    `xml:"AverageBpm,attr,omitempty"`
+	Tonality   string     `xml:"Tonality,attr,omitempty"`
+	Location   string     `xml:"Location,attr"` // file URI, as exported
+	Other      []xml.Attr `xml:",any,attr"`     // every other attribute, as read
+	Tempos     []Tempo    `xml:"TEMPO"`
+	Marks      []Mark     `xml:"POSITION_MARK"`
 }
 
 // Tempo is one beat grid section.
 type Tempo struct {
-	Start float64 `xml:"Inizio,attr"` // seconds
-	BPM   float64 `xml:"Bpm,attr"`
-	Meter string  `xml:"Metro,attr"` // e.g. 4/4
-	Beat  int     `xml:"Battito,attr"`
+	Start float64    `xml:"Inizio,attr"` // seconds
+	BPM   float64    `xml:"Bpm,attr"`
+	Meter string     `xml:"Metro,attr"` // e.g. 4/4
+	Beat  int        `xml:"Battito,attr"`
+	Other []xml.Attr `xml:",any,attr"`
 }
 
 // MarkType is a POSITION_MARK's Type.
@@ -64,11 +67,12 @@ const MemoryCue = -1
 
 // Mark is a cue or loop.
 type Mark struct {
-	Name  string   `xml:"Name,attr"`
-	Type  MarkType `xml:"Type,attr"`
-	Start float64  `xml:"Start,attr"` // seconds
-	End   *float64 `xml:"End,attr"`   // seconds; loops only
-	Num   int      `xml:"Num,attr"`
+	Name  string     `xml:"Name,attr"`
+	Type  MarkType   `xml:"Type,attr"`
+	Start float64    `xml:"Start,attr"`         // seconds
+	End   *float64   `xml:"End,attr,omitempty"` // seconds; loops only
+	Num   int        `xml:"Num,attr"`
+	Other []xml.Attr `xml:",any,attr"` // e.g. a hot cue's Red, Green, Blue
 }
 
 // Node is a playlist folder or a playlist.
