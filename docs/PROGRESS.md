@@ -1,6 +1,6 @@
 # Progress
 
-## Current phase: roadmap complete; next direction open
+## Current phase: set reconstructor (D54), milestone 1
 Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to-head against audfprint and Panako (D41), adding songs while serving (D42), and DJ mix analysis (D43), each built, measured, and written up, then the demo web page (D46) and more stations per laptop (D44, D48 to D51: 32 to 96 in real time). Product direction to be discussed.
 
 ## Done
@@ -32,10 +32,12 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-10-29: D52, real background noise in the eval (Sean's go for the DEMAND download, 10 places, 1.1 GB, kept as 126 MB). At equal SNR most places are easier than white noise, as their power lies below 300 Hz (car 99.9% at -10 dB against white noise's 35.4%); a restaurant is harder at every SNR (89.0% against 97.1% at 0 dB). False accepts within 0.1% everywhere at the published thresholds; the published white-noise rows reproduce exactly.
 - 2026-10-31: the triplet fingerprint under the same real noise (`eval.b2_eval`, 3,000 tracks, D37 thresholds): significantly worse than the pairs in 36 of 44 noisy cells, better in none; at 0 dB a train station leaves it 60.6% (pairs 98.5%). Its worst places are the station and the cafeteria, not the restaurant; band shares do not explain why.
 - 2026-10-31, triplet noise options (docs/design/triplet-noise.md, Sean's pick of A, B, and both): on val, B (6 slices of the bands, at most 5 of each second's 30 peaks per slice) raises mean accuracy over the 20 real-noise conditions from 76.3 to 86.0 points at 0.1 points' cost on clean and tempo; every A (per-band normalization) setting is worse under noise and fails the rule. On test (rerun after a shutdown), B raises the real-noise mean from 76.8 to 85.1 points (train station at -5 dB 5.6% to 52.0%), significantly better in 12 of 20 real-noise conditions and worse in none, at a cost of 1.7 points in white noise at 0 dB; clean, tempo, and false accepts unchanged. A with B (exploratory) is worse than B alone. Why: noise pushes the peaks into the low bands, and B keeps them spread (`eval.peak_survival`).
+- 2026-11-01: D53 built (Sean's pick): triplet peaks capped at 5 per sixth of the bands in Python and Go (exact parity), the triplet index rebuilt, DJ tracklisting on the UnmixDB test sets 1,081 of 1,135 songs at 98.6% precision (1,082 at 98.2% before), live still equal to offline on all 384 test mixes. D54: Sean picked the set reconstructor as the next product (a recorded set back as an editable session from his own Rekordbox library), to fill the ML and cloud gaps on his resume.
 
 ## Next
 - Sean to review D44, D45, and D51, made while he was away: D44 and D51 are output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
-- Sean's pick on building triplet option B (docs/design/triplet-noise.md, a core component): Go port with parity tests, re-index the triplet index, rerun the DJ evals and the throughput benchmark.
+- B17 for D53 (one live window's time before and after), on an idle machine.
+- Set reconstructor milestone 1 (D54, docs/design/set-reconstructor.md): Rekordbox XML import, the user's library indexed, a set reconstructed and exported as a Rekordbox playlist with cues. Needs Sean's collection export and recorded sets with their History playlists.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers

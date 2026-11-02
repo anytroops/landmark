@@ -90,6 +90,11 @@ After each core component: 3 interview-style questions and Sean's answers.
 2. Why does a buffer kept for the next window have to be copied out before it is returned, and what bug would a test that only compares one call's output against a fresh fingerprinter miss?
 3. Why not a `sync.Pool`? When would a pool be the better choice?
 
+### Triplet peaks under noise (D53)
+1. Per-band normalization made every noise worse, white noise included, while capping peaks per slice of the bands helped. Explain both from where each puts a noisy query's peaks, and why normalization lost peaks even in clean audio.
+2. B costs 1.7 points in white noise at 0 dB but gains 46 points in a train station at -5 dB. Why does the same change cut both ways?
+3. Why must every triplet index be rebuilt, what happens when an old index is searched with new queries, and how would you make that mismatch impossible?
+
 ### DJ mix analysis (D43)
 1. How do you get a song's gain curve out of a mix when you only know which songs play and how they are aligned? Why do it in power, and why non-negative?
 2. A turntable change and a keylock change at the same tempo look identical to the triplet matcher. How does the analysis tell them apart, and what bug once made it always answer keylock?

@@ -1,6 +1,6 @@
 # Triplet fingerprint under real noise: options, measured before building
 
-Status: measured (2026-10-31). B wins on test; A failed on val, and A with B is worse than B alone. Building B in Go and re-indexing waits on Sean's pick. Sean's pick of what to test: A, B, and A with B.
+Status: built as D53 (2026-11-01). B won on test; A failed on val, and A with B was worse than B alone. Go matches Python exactly, the triplet index is rebuilt, and DJ tracklisting held (EVAL, "Since D53"). Sean's pick of what to test: A, B, and A with B.
 
 ## Problem
 
