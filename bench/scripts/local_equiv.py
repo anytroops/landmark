@@ -27,6 +27,11 @@ def main() -> None:
     ap.add_argument("--timeout", default="10s", help="per-search deadline, as the cluster run had")
     ap.add_argument("--parallel", type=int, default=2)
     ap.add_argument("--tag", default="")
+    ap.add_argument(
+        "--save",
+        action="store_true",
+        help="also write the entries to eval/results/local/runs<tag>.jsonl",
+    )
     args = ap.parse_args()
     ref = [json.loads(line) for line in args.runs.read_text().splitlines()]
 
@@ -41,11 +46,16 @@ def main() -> None:
         same = len(got) == len(want) and all(
             all(g.get(k) == v for k, v in w.items()) for g, w in zip(got, want, strict=True)
         )
-        return r["file"], same
+        return r["file"], same, got
 
     t0 = time.time()
     with concurrent.futures.ThreadPoolExecutor(args.parallel) as ex:
-        diff = [f for f, same in ex.map(one, ref) if not same]
+        done = list(ex.map(one, ref))
+    diff = [f for f, same, _ in done if not same]
+    if args.save:
+        runs = ROOT / "eval/results/local" / f"runs{args.tag}.jsonl"
+        runs.parent.mkdir(parents=True, exist_ok=True)
+        runs.write_text("".join(json.dumps({"file": f, "entries": e}) + "\n" for f, _, e in done))
     result = {"runs": str(args.runs), "mixes": len(ref), "differing": len(diff), "files": diff,
               **git_head(), "wall_s": round(time.time() - t0, 1)}  # fmt: skip
     out = ROOT / "eval/results/local" / f"equiv{args.tag}.json"
