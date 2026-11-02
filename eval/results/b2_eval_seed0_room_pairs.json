@@ -1,0 +1,96 @@
+{
+ "catalog_tracks": 3000,
+ "pair_postings": 12787984,
+ "b2_postings": 22019249,
+ "systems": {
+  "pairs": {
+   "t_abs": 2,
+   "t_ratio": 2.5,
+   "test_far": 0.0005714285714285715,
+   "conditions": {
+    "clean_10s": {
+     "n": 1000,
+     "accuracy": 0.999,
+     "ci": [
+      0.9943574413400738,
+      0.9998234536313233
+     ],
+     "raw_top1": 0.999,
+     "median_postings": 88659.0
+    },
+    "room_rt400_drr5_clean_10s": {
+     "n": 1000,
+     "accuracy": 0.999,
+     "ci": [
+      0.9943574413400738,
+      0.9998234536313233
+     ],
+     "raw_top1": 0.999,
+     "median_postings": 77568.5
+    },
+    "room_rt800_drr-5_clean_10s": {
+     "n": 1000,
+     "accuracy": 0.982,
+     "ci": [
+      0.9717267447311034,
+      0.9885842600308473
+     ],
+     "raw_top1": 0.998,
+     "median_postings": 74194.0
+    },
+    "room_rt1500_drr-10_clean_10s": {
+     "n": 1000,
+     "accuracy": 0.665,
+     "ci": [
+      0.6351640506008852,
+      0.6935731190790358
+     ],
+     "raw_top1": 0.985,
+     "median_postings": 77986.0
+    },
+    "room_rt800_drr-5_demand_pcafeter_snr5_10s": {
+     "n": 1000,
+     "accuracy": 0.888,
+     "ci": [
+      0.8669499761461334,
+      0.9060804592224079
+     ],
+     "raw_top1": 0.98,
+     "median_postings": 72007.0
+    },
+    "keylock_+8pct_10s": {
+     "n": 1000,
+     "accuracy": 0.997,
+     "ci": [
+      0.9912169858787878,
+      0.9989792161267923
+     ],
+     "raw_top1": 0.998,
+     "median_postings": 80312.0
+    },
+    "room_rt800_drr-5_keylock_+8pct_10s": {
+     "n": 1000,
+     "accuracy": 0.064,
+     "ci": [
+      0.050436200803323686,
+      0.08090073264852153
+     ],
+     "raw_top1": 0.805,
+     "median_postings": 69466.5
+    }
+   }
+  }
+ },
+ "b2_params": {},
+ "thresholds_from": "b2_eval_seed0_d37_demand.json",
+ "machine": {
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "cpu": "Apple M4 Pro",
+  "cores": 12,
+  "python": "3.13.5",
+  "commit": "ee2b6fe",
+  "power": "ac",
+  "dirty": false
+ },
+ "reported_split": "test"
+}

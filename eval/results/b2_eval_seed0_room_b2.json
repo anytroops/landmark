@@ -1,0 +1,96 @@
+{
+ "catalog_tracks": 3000,
+ "pair_postings": 0,
+ "b2_postings": 22019249,
+ "systems": {
+  "b2": {
+   "t_abs": 57,
+   "t_ratio": 2.0,
+   "test_far": 0.0008571428571428571,
+   "conditions": {
+    "clean_10s": {
+     "n": 1000,
+     "accuracy": 0.999,
+     "ci": [
+      0.9943574413400738,
+      0.9998234536313233
+     ],
+     "raw_top1": 0.999,
+     "median_postings": 246914.0
+    },
+    "room_rt400_drr5_clean_10s": {
+     "n": 1000,
+     "accuracy": 0.996,
+     "ci": [
+      0.9897604436522742,
+      0.9984434118703971
+     ],
+     "raw_top1": 0.999,
+     "median_postings": 216389.5
+    },
+    "room_rt800_drr-5_clean_10s": {
+     "n": 1000,
+     "accuracy": 0.683,
+     "ci": [
+      0.6535068961830985,
+      0.7110925101891774
+     ],
+     "raw_top1": 0.94,
+     "median_postings": 212034.0
+    },
+    "room_rt1500_drr-10_clean_10s": {
+     "n": 1000,
+     "accuracy": 0.143,
+     "ci": [
+      0.1226673173479936,
+      0.16606498825363195
+     ],
+     "raw_top1": 0.755,
+     "median_postings": 215149.5
+    },
+    "room_rt800_drr-5_demand_pcafeter_snr5_10s": {
+     "n": 1000,
+     "accuracy": 0.268,
+     "ci": [
+      0.24147419115675967,
+      0.2963014248084423
+     ],
+     "raw_top1": 0.696,
+     "median_postings": 217208.0
+    },
+    "keylock_+8pct_10s": {
+     "n": 1000,
+     "accuracy": 0.997,
+     "ci": [
+      0.9912169858787878,
+      0.9989792161267923
+     ],
+     "raw_top1": 0.999,
+     "median_postings": 211739.0
+    },
+    "room_rt800_drr-5_keylock_+8pct_10s": {
+     "n": 1000,
+     "accuracy": 0.354,
+     "ci": [
+      0.3249710301830372,
+      0.38414638331230533
+     ],
+     "raw_top1": 0.878,
+     "median_postings": 185076.0
+    }
+   }
+  }
+ },
+ "b2_params": {},
+ "thresholds_from": "b2_eval_seed0_tn_b6x5.json",
+ "machine": {
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "cpu": "Apple M4 Pro",
+  "cores": 12,
+  "python": "3.13.5",
+  "commit": "ee2b6fe",
+  "power": "ac",
+  "dirty": false
+ },
+ "reported_split": "test"
+}
