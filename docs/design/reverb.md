@@ -1,6 +1,6 @@
 # Reverberation: options, measured before building
 
-Status: A and B tested (Sean's go, 2026-11-02): A does not hold up on test, B trades noise for reverberation; build neither. Next: a gated B.
+Status: A, B, and gated B tested (2026-11-02): nothing worth building; B alone helps reverberation and costs noise. Next: check the simulation against a real phone recording.
 
 ## Problem
 
@@ -128,3 +128,23 @@ The 3 and 6 dB gates passed no peak, so their indexes were empty. The cause is t
 ## Gated B with a delay: method (fixed before its runs, 2026-11-02)
 
 `gate_delay` frames are skipped before the `gate_frames` look-back: a candidate must rise `gate_db` over the most its band held from `gate_delay + gate_frames` to `gate_delay + 1` frames before it. Ranking unchanged (magnitude, D53's region cap). The same conditions, splits, and rule (`grid --target room --noise-margin 1`), the baseline from the batch above (`_gt_val_base`): a 16-frame look-back after a delay of 8 or 16 frames, with a 3 or 6 dB gate (4 settings). Then val and test in full for the chosen setting.
+
+### Gated B with a delay: results
+
+`eval/results/b2_eval_seed0_gd_val_*` (commit 5cda978). Mean val accuracy in points, the baseline from the batch before:
+
+| Setting | Six reverberant | Clean and five tempo | Two noise | Triplet postings | Qualifies |
+|---|---|---|---|---|---|
+| Baseline | 56.73 | 99.37 | 87.30 | 22.0M | |
+| Delay 8, 3 dB | 55.03 | 99.37 | 82.90 | 12.7M | no (noise) |
+| Delay 8, 6 dB | 40.77 | 95.60 | 66.80 | 6.5M | no |
+| Delay 16, 3 dB | 56.17 | 99.53 | 83.70 | 12.1M | no (noise) |
+| Delay 16, 6 dB | 40.87 | 95.87 | 69.30 | 6.5M | no |
+
+Gated B fails: the gates take away 45 to 70% of the peaks without helping the reverberant conditions, and cost the noisy ones. So the hypothesis behind it, that reverberant tails take the peak slots, is not what limits the triplets here, or a gate cannot tell tails from sustained notes. B's ranking (16 frames, no delay) is still the only change that lifted the rooms, by a mechanism not identified.
+
+## Where this leaves reverberation
+
+- Nothing tested is worth building: A does not hold up, B trades noise for reverberation, gated B does nothing.
+- What remains untested: indexing both B's peaks and today's and searching both (each condition finds its matches in one set; about twice the postings and search cost); option C, longer windows; option D, a learned front end (milestone 3).
+- Before more of it: whether the simulation is right. A phone recording of a few mixes played through speakers would say whether real rooms cost the triplets this much.
