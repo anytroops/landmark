@@ -62,7 +62,7 @@ AGREE_S = 0.1
 
 
 def alignment(
-    rows: pd.DataFrame, track: int, start: float, end: float, method: str = "median"
+    rows: pd.DataFrame, track: int, start: float, end: float, method: str = "consensus"
 ) -> tuple[float, float] | None:
     """(a, rate) with reference seconds = a + rate * mix seconds, from the
     song's triplet rows (window as is) inside its entry: the median rate,
@@ -344,7 +344,8 @@ def main() -> None:
     )
     ap.add_argument("--effects", nargs="+", help="only mixes with these effects (none, bass, ...)")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--alignment", choices=["median", "consensus"], default="median")
+    ap.add_argument("--alignment", choices=["median", "consensus"], default="consensus",
+                    help="consensus (D55); median as D43 was measured")  # fmt: skip
     ap.add_argument("--rows", default="_b2dhp", help="triplet rows: windows_unmixdb_s8<rows>")
     ap.add_argument("--pair-rows", default="_gridA2", help="pair window rows, likewise")
     ap.add_argument("--workers", type=int, default=6)

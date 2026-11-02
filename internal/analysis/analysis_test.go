@@ -154,3 +154,33 @@ func TestAlignment(t *testing.T) {
 		t.Error("a track without rows: want not ok")
 	}
 }
+
+func TestAlignmentTakesTheInterceptMostWindowsShare(t *testing.T) {
+	// A song that repeats itself: three windows match it 2.4 s in, three
+	// others a different repeat each. The median intercept would be 6.2 s.
+	const rate = 1.0
+	var rows []tracklist.Row
+	for i, a := range []float64{30.0, 2.4, 18.6, 2.41, 6.2, 2.39} {
+		t0 := 2.5 * float64(i)
+		rows = append(rows, tracklist.Row{T0: t0, Mode: "b2", Factor: rate, Track: 7, Score: 100,
+			Offset: (a + rate*t0) * FramesPerSecond})
+	}
+	rows = append(rows, tracklist.Row{T0: 5, Mode: "pairs", Track: 7, Offset: 99}) // not a triplet row
+	a, r, ok := Alignment(rows, 7, 0, 20)
+	if !ok || r != rate || math.Abs(a-2.4) > 1e-9 {
+		t.Errorf("Alignment = %v, %v, %v; want 2.4", a, r, ok)
+	}
+	// Two groups of two: the one with more total score wins.
+	tie := []tracklist.Row{
+		{T0: 0, Mode: "b2", Factor: 1, Track: 7, Score: 50, Offset: 10 * FramesPerSecond},
+		{T0: 2.5, Mode: "b2", Factor: 1, Track: 7, Score: 50, Offset: 12.5 * FramesPerSecond},
+		{T0: 5, Mode: "b2", Factor: 1, Track: 7, Score: 90, Offset: 25 * FramesPerSecond},
+		{T0: 7.5, Mode: "b2", Factor: 1, Track: 7, Score: 90, Offset: 27.5 * FramesPerSecond},
+	}
+	if a, _, _ := Alignment(tie, 7, 0, 10); math.Abs(a-20) > 1e-9 {
+		t.Errorf("tie: Alignment = %v, want 20 (the higher-scoring pair)", a)
+	}
+	if _, _, ok := Alignment(rows, 8, 0, 20); ok {
+		t.Error("a track with no rows got an alignment")
+	}
+}

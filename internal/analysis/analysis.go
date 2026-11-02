@@ -36,6 +36,7 @@ const (
 	margin         = 8
 	bandsPerOctave = 36
 	window         = 10.0 // seconds per tracklist window
+	agreeS         = 0.1  // windows whose intercepts are this close (seconds) agree on the alignment
 	reach          = 10.0 // a song may play this long before or after its entry
 	silent         = 0.05 // fraction of a song's typical power below which it is not present
 	rampStep       = 0.1  // seconds, the ramp fit's grid
@@ -84,8 +85,12 @@ type Result struct {
 }
 
 // Alignment estimates a song's alignment from its triplet rows (the window
-// searched as is) inside its entry: the median rate, then the median
-// intercept. ok is false without such rows.
+// searched as is) inside its entry: the median rate, then the consensus
+// intercept (D55): the windows that agree (within agreeS) with the most
+// others, ties to the larger total score, and their median. In a song that
+// repeats itself a window can match a repeat of its loop; the median of
+// scattered wrong intercepts can be wrong too, while the right one is
+// shared. ok is false without such rows.
 func Alignment(rows []tracklist.Row, track int, start, end float64) (a, rate float64, ok bool) {
 	var rates []float64
 	var hits []tracklist.Row
@@ -102,7 +107,28 @@ func Alignment(rows []tracklist.Row, track int, start, end float64) (a, rate flo
 	for i, r := range hits {
 		as[i] = r.Offset/FramesPerSecond - rate*r.T0
 	}
-	return median(as), rate, true
+	bestN, bestScore := -1, 0.0
+	agree := make([]float64, 0, len(as))
+	for _, x := range as {
+		n, score := 0, 0.0
+		for i, y := range as {
+			if math.Abs(y-x) <= agreeS {
+				n++
+				score += hits[i].Score
+			}
+		}
+		if n > bestN || (n == bestN && score > bestScore) {
+			bestN, bestScore = n, score
+			agree = agree[:0]
+			for _, y := range as {
+				if math.Abs(y-x) <= agreeS {
+					agree = append(agree, y)
+				}
+			}
+			a = median(agree)
+		}
+	}
+	return a, rate, true
 }
 
 // warp returns the reference's band powers at each of n mix frames: time
