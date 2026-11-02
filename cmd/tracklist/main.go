@@ -8,6 +8,12 @@
 //	tracklist -coordinator localhost:7500 -index data/segments/medium_b2 \
 //	    -pairs-coordinator localhost:7600 -pairs-index data/segments/medium mix.mp3
 //
+// With -local there are no clusters: it serves -index and -pairs-index in
+// this process (internal/local, the code a cluster runs) with the 4% stop
+// lists, so a DJ's own library can be searched on one machine (D54):
+//
+//	tracklist -local -index data/segments/mine_b2 -pairs-index data/segments/mine mix.mp3
+//
 // Without -pairs-coordinator it searches the triplet index only. Each -index
 // is the index's directory, for catalog.json (and extras.json, the names of
 // non-FMA tracks); both must number tracks the same way. Decoder settings
@@ -38,11 +44,13 @@ import (
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/catalog"
 	"github.com/anytroops/landmark/internal/hybrid"
+	"github.com/anytroops/landmark/internal/local"
 	"github.com/anytroops/landmark/internal/tracklist"
 )
 
 type config struct {
 	coordinator, index           string
+	local                        bool // serve the indexes in process (internal/local)
 	pairsCoordinator, pairsIndex string
 	window, hop                  float64 // seconds; hop 0: the front end's default (hopSamples)
 	front                        string  // "shared" (D48) or "window"
@@ -70,7 +78,8 @@ func main() {
 	flag.StringVar(&cfg.coordinator, "coordinator", "", "coordinator of the triplet index (required)")
 	flag.StringVar(&cfg.index, "index", "", "triplet index directory, for catalog.json (required)")
 	flag.StringVar(&cfg.pairsCoordinator, "pairs-coordinator", "", "coordinator of the pair index (hybrid, D36)")
-	flag.StringVar(&cfg.pairsIndex, "pairs-index", "", "pair index directory (with -pairs-coordinator)")
+	flag.StringVar(&cfg.pairsIndex, "pairs-index", "", "pair index directory (with -pairs-coordinator, or -local)")
+	flag.BoolVar(&cfg.local, "local", false, "serve -index and -pairs-index in this process instead of asking coordinators (stop lists at 4%)")
 	flag.Float64Var(&cfg.window, "window", 10, "window length, seconds")
 	flag.Float64Var(&cfg.hop, "hop", 0, "window hop, seconds (0: 27,520 samples, 2.4961 s, with the shared front end; 2.5 s with -front window)")
 	flag.StringVar(&cfg.front, "front", "shared", "shared: compute each spectrogram frame once for all windows (D48); window: fingerprint every window on its own")
@@ -99,10 +108,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "tracklist:", err)
 		os.Exit(2)
 	}
-	if flag.NArg() != 1 || cfg.coordinator == "" || cfg.index == "" ||
-		(cfg.pairsCoordinator == "") != (cfg.pairsIndex == "") ||
+	clusters := !cfg.local && cfg.coordinator != "" && (cfg.pairsCoordinator == "") == (cfg.pairsIndex == "")
+	inProcess := cfg.local && cfg.coordinator == "" && cfg.pairsCoordinator == ""
+	if flag.NArg() != 1 || cfg.index == "" || !(clusters || inProcess) ||
 		(cfg.decoder != "align" && cfg.decoder != "smooth") || (cfg.front != "shared" && cfg.front != "window") {
 		fmt.Fprintln(os.Stderr, "usage: tracklist -coordinator addr -index dir [-pairs-coordinator addr -pairs-index dir] [flags] mix-file")
+		fmt.Fprintln(os.Stderr, "       tracklist -local -index dir [-pairs-index dir] [flags] mix-file")
 		os.Exit(2)
 	}
 	if err := run(context.Background(), cfg, flag.Arg(0), os.Stdout); err != nil {
@@ -111,6 +122,10 @@ func main() {
 	}
 }
 
+// localStopFraction is the stop list -local applies to both indexes: the
+// fraction the decoder's defaults were calibrated with (D30, D37).
+const localStopFraction = 0.04
+
 func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	cat, err := catalog.Load(cfg.index)
 	if err != nil {
@@ -118,16 +133,28 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	}
 	s := searcher{cfg: cfg, hybrid: &hybrid.Searcher{Cluster: cat.Cluster, Shifts: cfg.shifts,
 		Extra: cfg.extra, Alpha: cfg.alpha, Timeout: cfg.timeout}}
-	var closeFn func()
-	if s.hybrid.B2, closeFn, err = hybrid.Dial(cfg.coordinator); err != nil {
-		return err
-	}
-	defer closeFn()
-	if cfg.pairsCoordinator != "" {
+	if cfg.pairsIndex != "" {
 		if err := catalog.Same(cfg.index, cfg.pairsIndex); err != nil {
 			return err
 		}
-		if s.hybrid.Pairs, closeFn, err = hybrid.Dial(cfg.pairsCoordinator); err != nil {
+	}
+	open := func(coordinator, index string) (hybrid.IdentifyFunc, func(), error) {
+		if !cfg.local {
+			return hybrid.Dial(coordinator)
+		}
+		ix, err := local.Open(ctx, index, local.Options{StopFraction: localStopFraction, Deadline: cfg.timeout})
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", index, err)
+		}
+		return ix.Identify, ix.Close, nil
+	}
+	var closeFn func()
+	if s.hybrid.B2, closeFn, err = open(cfg.coordinator, cfg.index); err != nil {
+		return err
+	}
+	defer closeFn()
+	if cfg.pairsIndex != "" {
+		if s.hybrid.Pairs, closeFn, err = open(cfg.pairsCoordinator, cfg.pairsIndex); err != nil {
 			return err
 		}
 		defer closeFn()

@@ -88,6 +88,12 @@ func Load(path string) (*Cluster, error) {
 	if cfg.IndexDir != "" && !filepath.IsAbs(cfg.IndexDir) {
 		cfg.IndexDir = filepath.Join(filepath.Dir(path), cfg.IndexDir)
 	}
+	return New(cfg)
+}
+
+// New validates cfg against its index directory (index.json, catalog.json,
+// and the stop list) and returns the cluster, as Load does for a file.
+func New(cfg Config) (*Cluster, error) {
 	var man indexManifest
 	if err := readJSON(filepath.Join(cfg.IndexDir, "index.json"), &man); err != nil {
 		return nil, err
