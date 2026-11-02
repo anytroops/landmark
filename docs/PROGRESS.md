@@ -38,7 +38,10 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 ## Next
 - Sean to review D44, D45, and D51, made while he was away: D44 and D51 are output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
 - B17 for D53 (one live window's time before and after), on an idle machine.
-- Set reconstructor milestone 1 on Sean's data (D54): his collection export, one to three recorded sets with their tracklists (History copied to a playlist), under data/mine/; then import the exported playlist into his Rekordbox to confirm it reads it. Then milestone 2, the editor.
+- Before milestones 2 and 3 (Sean, 2026-11-01): make the core hold up on real material. Every eval so far uses 30 s FMA clips, 40 s UnmixDB excerpts, mixes of a few minutes, and noise mixed in digitally; real sets (full-length songs, an hour or more, long blends) and over-the-air recording are untested.
+  - Real sets: Sean's collection export, one to three recorded sets with their tracklists (History copied to a playlist), under data/mine/; score the tracklists, fix what breaks, and check the exported playlist imports into his Rekordbox.
+  - Over the air: Sean records a few mixes played through speakers on his phone; meanwhile a simulated room (synthetic reverberation and a phone microphone's response) in the eval.
+  - Re-measure after D53: B17 and live capacity (B9), on an idle machine.
 - The cue points 20 of 1,050 UnmixDB entries put more than 0.5 s off (mostly in distortion mixes, often near whole beats): look at whether the alignment locks onto a repeated loop.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
