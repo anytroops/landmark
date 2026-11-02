@@ -1,6 +1,6 @@
 # Reverberation: options, measured before building
 
-Status: problem measured; A and B being tested (Sean's go, 2026-11-02).
+Status: A and B tested (Sean's go, 2026-11-02): A does not hold up on test, B trades noise for reverberation; build neither. Next: a gated B.
 
 ## Problem
 
@@ -61,6 +61,49 @@ Each is measured as D53 was: settings chosen on val by a rule fixed before the r
 2. **Rule:** for each option, the setting with the highest mean val accuracy over the six reverberant conditions, among settings whose mean over clean and the five tempo conditions is at most 0.5 points below the baseline's and whose mean over the two noise conditions is at most 1 point below (`python -m eval.b2_compare grid --target room --noise-margin 1`). If none qualifies, the option fails. A with B uses the chosen settings, run on val too.
 3. **Then val and test in full** (1,000 positives and 500 negatives per split) for the baseline and each option that qualified, and A with B, with exact McNemar tests against the baseline on the same excerpts; then, for a winner, the DJ mixes in the simulated rooms once it is in Go.
 
+## Results
+
+### Settings on val
+
+`eval/results/b2_eval_seed0_rv_val_*` (commit 9198c82, clean tree), `python -m eval.b2_compare grid --target room --noise-margin 1`. Mean val accuracy in points:
+
+| Setting | Six reverberant conditions | Clean and five tempo | Two noise conditions | Qualifies |
+|---|---|---|---|---|
+| Baseline (D53) | 56.73 | 99.37 | 87.30 | |
+| A, 0.4 s | 57.53 | 99.60 | 89.80 | yes |
+| A, 0.8 s | 58.27 | 99.17 | 86.90 | yes, chosen |
+| A, 1.5 s | 55.50 | 97.87 | 80.20 | no |
+| B, 4 frames | 54.37 | 98.93 | 40.20 | no |
+| B, 8 frames | 62.33 | 98.83 | 41.70 | no |
+| B, 16 frames | 71.87 | 99.10 | 49.60 | no |
+
+A barely moves the reverberant conditions. B lifts them by up to 15 points and halves the noise conditions, so every B setting fails the noise guard: crowd noise is full of onsets (speech, clatter), which B ranks highest.
+
+### Test
+
+`eval/results/b2_eval_seed0_rv_{base,a800,b16}.*` (commit f44aa08; 1,000 positives and 500 negatives per split, each calibrated on its own val; B with 16 frames is exploratory, outside the rule), `python -m eval.b2_compare pair`:
+
+| Condition | Baseline | A, 0.8 s | B, 16 frames |
+|---|---|---|---|
+| Clean | 99.9 | 99.9 | 99.8 |
+| Mean of clean and five tempo | 99.50 | 99.27 | 99.20 |
+| Cafeteria, 0 dB | 86.9 | 83.1 (p 3e-6) | 44.6 (p 5e-124) |
+| Train station, 0 dB | 86.4 | 83.9 (p 8e-4) | 53.6 (p 2e-90) |
+| Room 0.4 s | 99.3 | 99.3 | 99.7 |
+| Room 0.8 s | 74.6 | 76.3 (p 0.15) | 93.0 (p 2e-35) |
+| Room 1.5 s | 27.4 | 31.0 (p 0.005) | 56.6 (p 3e-47) |
+| Room 0.8 s and crowd | 33.4 | 33.9 (p 0.75) | 41.5 (p 2e-5) |
+| Room 0.8 s and key lock +8% | 53.2 | 55.5 (p 0.08) | 64.8 (p 9e-10) |
+| Room 0.8 s and turntable +8% | 38.9 | 42.2 (p 0.01) | 71.4 (p 2e-58) |
+
+Test false accepts 0.16%, 0.10%, and 0.21% over all conditions.
+
+- **A does not hold up.** It passed the val guard (0.4 points of noise lost), but on test it loses 3.2 points of noise accuracy, significantly, for 2 to 4 points in the rooms: not worth building.
+- **B is a trade, not a fix.** It nearly doubles the triplets in reverberant rooms and halves them in crowd noise; built as is, it would undo D53.
+
 ## Recommendation
 
-Test A and B on the triplets first, where the loss is, in the prototype (`eval.b2_eval` builds its index in memory, so B costs a run, not a rebuild): A first, since it needs no new index if it wins. C and D later if neither is enough. Building a winner is a core change and waits on Sean's pick, as D53 did.
+Build neither. Next, a variant that keeps what each does well, with its own rule fixed before its runs:
+
+- **B gated:** peaks ranked by magnitude as today (with the region cap, D53), but a candidate must rise at least some threshold over its band's last frames to be a peak at all. A reverberant tail, decaying, never rises, so it gives up the slots it takes today; crowd onsets still have to outrank the music by magnitude, as today. Index and query, so a re-index if it wins.
+- Later, if the gate is not enough: index both peak sets (magnitude and onset) and search both, at about twice the postings.
