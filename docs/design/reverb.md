@@ -148,3 +148,19 @@ Gated B fails: the gates take away 45 to 70% of the peaks without helping the re
 - Nothing tested is worth building: A does not hold up, B trades noise for reverberation, gated B does nothing.
 - What remains untested: indexing both B's peaks and today's and searching both (each condition finds its matches in one set; about twice the postings and search cost); option C, longer windows; option D, a learned front end (milestone 3).
 - Before more of it: whether the simulation is right. A phone recording of a few mixes played through speakers would say whether real rooms cost the triplets this much.
+
+## A closer simulation, on real sets (2026-11-08)
+
+`eval.phone_sim` replaces the statistical room for this check: PA speakers (band limits, a soft limiter), a shoebox room (direct sound and early reflections by the image-source method, a late tail that decays faster at high frequencies, its level from the venue's size and reverberation time), crowd noise at +8 to +10 dB, and a phone (high-pass, automatic gain, AAC at 128 kbps). Four venues: a patio (0.3 s), a small club (0.6 s), a mid-size club (0.9 s), a warehouse (1.6 s).
+
+Run on two of Sean's own recorded sets (32 and 22 minutes, full-length songs, against the 791 songs of his USB library; the first test on real sets). There is no tracklist for either yet, so the reference is each set's own clean tracklist, and "strong" means an entry with evidence of at least 1,000 (`eval/results/local/phone_real_sets.json`, no song names):
+
+| | Clean | Patio | Small club | Mid club | Warehouse |
+|---|---|---|---|---|---|
+| Set A: strong songs kept (of 17) | | 14 | 15 | 11 | 13 |
+| Set A: share of the set covered | 81% | 41% | 32% | 27% | 28% |
+| Set B: strong songs kept (of 11) | | 11 | 10 | 10 | 8 |
+| Set B: share of the set covered | 75% | 35% | 30% | 26% | 18% |
+
+Most songs are still named somewhere, but in short pieces: coverage falls by half or more even on the patio, so a phone recording would give a usable list of songs and a poor timeline. Each venue also adds 1 to 6 entries on songs the clean tracklist does not have, which may be wrong or may be real songs it missed.
+
