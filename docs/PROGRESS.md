@@ -39,12 +39,10 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
 - 2026-11-02, reverberation (docs/design/reverb.md): the simulated rooms break the triplets (0.8 s room: 74.6% of single clips against the pairs' 98.2%), so tempo-changed songs in DJ mixes. Tested on the triplets, settings on val by rules fixed in advance: subtracting late reverb from queries (A) does not hold up on test; ranking peaks by their rise (B) lifts the 0.8 s room to 93.0% but halves crowd noise; gating peaks by their rise does nothing (a first design passed no peak: the 16-frame analysis window smooths every onset). Nothing built. B17 and live capacity re-measured after D53 (0.5% more per window; 96 stations still).
 
 ## Next
-- Sean to review D44, D45, and D51, made while he was away: D44 and D51 are output-identical (like D18 and D27); D45 changes how a worker handles a dropped live connection.
 - Before milestones 2 and 3 (Sean, 2026-11-01): make the core hold up on real material. Every eval so far uses 30 s FMA clips, 40 s UnmixDB excerpts, mixes of a few minutes, and noise mixed in digitally; real sets (full-length songs, an hour or more, long blends) and over-the-air recording are untested.
   - Real sets: Sean's collection export, one to three recorded sets with their tracklists (History copied to a playlist), under data/mine/; score the tracklists, fix what breaks, and check the exported playlist imports into his Rekordbox.
   - Over the air: Sean records two or three UnmixDB mixes played through speakers on his phone, to check the simulated rooms. Reverberation options tested so far are in docs/design/reverb.md: nothing worth building yet; indexing both peak sets is the one idea left untested.
   - Re-measured after D53: B17 (0.5% more time per live window) and live capacity (B9: 96 stations still kept up with, 3 of 11,787 windows dropped late; 104 slightly better than before).
-- Sean to review D55 (my call: how a tracklisted song is aligned).
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers
