@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	landmarkv1 "github.com/anytroops/landmark/gen/landmark/v1"
 	"github.com/anytroops/landmark/internal/analysis"
 	"github.com/anytroops/landmark/internal/audio"
+	"github.com/anytroops/landmark/internal/fingerprint"
 	"github.com/anytroops/landmark/internal/hybrid"
 	"github.com/anytroops/landmark/internal/tracklist"
 )
@@ -203,7 +206,7 @@ func TestJSONEntriesGiveSourcePositions(t *testing.T) {
 			Offset: (a + rate*t0) * analysis.FramesPerSecond})
 	}
 	entries := []tracklist.Entry{{Track: 5, Start: 2.5, End: 30, Factor: rate}, {Track: 9, Start: 30, End: 40, Factor: 1}}
-	got := jsonEntries(entries, rows, func(int) string { return "" }, nil)
+	got := jsonEntries(entries, rows, func(int) string { return "" }, nil, nil)
 	if s, e := got[0].SourceStartS, got[0].SourceEndS; s == nil || e == nil || *s != 14.55 || *e != 42.6 {
 		t.Errorf("source positions = %v, %v; want 14.55, 42.6", s, e)
 	}
@@ -213,5 +216,55 @@ func TestJSONEntriesGiveSourcePositions(t *testing.T) {
 	b, err := json.Marshal(got[1])
 	if err != nil || strings.Contains(string(b), "source_") {
 		t.Errorf("absent positions are written: %s", b)
+	}
+}
+
+func TestCheckEntriesDropsSongsTheAudioDoesNotHold(t *testing.T) {
+	// The mix is song 1's spectrogram from 20 s in; entries name song 1
+	// (right), song 2 (wrong), song 3 (no audio), and song 4 (no rows).
+	rng := rand.New(rand.NewPCG(9, 0))
+	spec := func(frames int) fingerprint.Spectrogram {
+		s := fingerprint.Spectrogram{Frames: frames, Bins: 234, Data: make([]float64, frames*234)}
+		for i := range s.Data {
+			s.Data[i] = 6 * rng.NormFloat64()
+		}
+		return s
+	}
+	songs := map[int]fingerprint.Spectrogram{}
+	for k := range 12 {
+		if k != 3 {
+			songs[k] = spec(4000)
+		}
+	}
+	const skip = 861
+	a := float64(skip) / analysis.FramesPerSecond
+	mix := fingerprint.Spectrogram{Frames: 2500, Bins: 234, Data: songs[1].Data[skip*234 : (skip+2500)*234]}
+	var rows []tracklist.Row
+	for t0 := 0.0; t0 <= 40; t0 += 2.5 {
+		for _, track := range []int{1, 2, 3} {
+			rows = append(rows, tracklist.Row{T0: t0, Mode: "b2", Factor: 1, Track: track, Score: 50,
+				Offset: (a + t0) * analysis.FramesPerSecond})
+		}
+	}
+	entries := []tracklist.Entry{
+		{Track: 1, Start: 0, End: 40}, {Track: 2, Start: 0, End: 40},
+		{Track: 3, Start: 0, End: 40}, {Track: 4, Start: 0, End: 40},
+	}
+	load := func(k int) (fingerprint.Spectrogram, bool, error) { s, ok := songs[k]; return s, ok, nil }
+	kept, checks, dropped, err := checkEntries(mix, rows, entries, 12, load, strconv.Itoa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 3 || kept[0].Track != 1 || kept[1].Track != 3 || kept[2].Track != 4 {
+		t.Fatalf("kept %+v, want songs 1, 3 (no audio), 4 (no rows)", kept)
+	}
+	if c, ok := checks[0]; !ok || !c.Passed() || c.Corr < 0.99 {
+		t.Errorf("song 1's check = %+v", checks[0])
+	}
+	if _, ok := checks[1]; ok {
+		t.Error("an unchecked entry has a check")
+	}
+	if len(dropped) != 1 || !strings.Contains(dropped[0], " 2 (corr") {
+		t.Errorf("dropped %q, want song 2", dropped)
 	}
 }

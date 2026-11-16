@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -43,9 +44,11 @@ import (
 	"github.com/anytroops/landmark/internal/analysis"
 	"github.com/anytroops/landmark/internal/audio"
 	"github.com/anytroops/landmark/internal/catalog"
+	"github.com/anytroops/landmark/internal/fingerprint"
 	"github.com/anytroops/landmark/internal/hybrid"
 	"github.com/anytroops/landmark/internal/local"
 	"github.com/anytroops/landmark/internal/tracklist"
+	"github.com/anytroops/landmark/internal/triplet"
 )
 
 type config struct {
@@ -63,6 +66,7 @@ type config struct {
 	k                            int
 	mergeGap                     float64
 	alignedGap                   float64 // join pieces of one play this far apart that share an alignment (D56)
+	verify                       bool    // drop entries the audio check fails (D57); needs the references' audio
 	timeout                      time.Duration
 	jsonOut                      bool
 	analyze                      bool   // D43: fades, turntable or keylock, BPM
@@ -99,6 +103,7 @@ func main() {
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
 	flag.BoolVar(&cfg.jsonOut, "json", false, "print entries as JSON")
 	flag.BoolVar(&cfg.analyze, "analyze", false, "also estimate each song's fades, turntable or keylock, and BPM in the set (needs the references' audio)")
+	flag.BoolVar(&cfg.verify, "verify", false, "check each entry against the audio and drop the ones that fail (needs the references' audio; dropped entries go to stderr)")
 	flag.IntVar(&cfg.snap, "snap", 0, "experiment (docs/design/throughput.md T1): start each window's audio at the next multiple of this many samples, keeping the hop (128 puts every speed's frames on one shared grid)")
 	flag.IntVar(&cfg.offset, "offset", 0, "experiment: start each window this many samples late (before -snap), to see how accuracy varies with window placement")
 	flag.IntVar(&cfg.dither, "dither", 0, "experiment: after -snap, start every other window this many samples later, so neighbors see two frame phases")
@@ -196,6 +201,16 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	if cfg.alignedGap >= 0 {
 		entries = analysis.Aligned(entries, rows, cfg.alignedGap, alignedTolS, alignedRateTol)
 	}
+	var checks map[int]analysis.Check
+	if cfg.verify {
+		var dropped []string
+		if entries, checks, dropped, err = verifyEntries(ctx, pcm, rows, entries, cat, cfg.fmaDir); err != nil {
+			return err
+		}
+		for _, d := range dropped {
+			fmt.Fprintln(os.Stderr, "tracklist: dropped", d)
+		}
+	}
 	var an map[int]analysis.SongReport
 	if cfg.analyze {
 		bpm, err := analysis.ReadBPM(cfg.index)
@@ -207,7 +222,7 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 		}
 	}
 	if cfg.jsonOut {
-		return json.NewEncoder(w).Encode(jsonEntries(entries, rows, cat.Name, an))
+		return json.NewEncoder(w).Encode(jsonEntries(entries, rows, cat.Name, an, checks))
 	}
 	windows := len(windowStarts(len(pcm), int(cfg.window*audio.SampleRate), cfg.hopSamples()))
 	var b strings.Builder
@@ -360,13 +375,21 @@ type jsonEntry struct {
 	FadeOut   []float64 `json:"fade_out,omitempty"`
 	Turntable *bool     `json:"turntable,omitempty"`
 	BPM       float64   `json:"bpm,omitempty"`
+	// With -verify (D57): the audio check's correlation and its Z against
+	// other songs; every entry written passed analysis.VerifyMark.
+	CheckCorr *float64 `json:"check_corr,omitempty"`
+	CheckZ    *float64 `json:"check_z,omitempty"`
 }
 
-func jsonEntries(entries []tracklist.Entry, rows []tracklist.Row, names func(int) string, an map[int]analysis.SongReport) []jsonEntry {
+func jsonEntries(entries []tracklist.Entry, rows []tracklist.Row, names func(int) string, an map[int]analysis.SongReport, checks map[int]analysis.Check) []jsonEntry {
 	out := make([]jsonEntry, len(entries))
 	for i, e := range entries {
 		out[i] = jsonEntry{Track: e.Track, Name: names(e.Track), StartS: e.Start, EndS: e.End,
 			TempoPct: 100 * (e.Factor - 1), Evidence: e.Evidence, StartClock: clock(e.Start)}
+		if c, ok := checks[i]; ok {
+			corr, z := round3(c.Corr), round3(c.Z)
+			out[i].CheckCorr, out[i].CheckZ = &corr, &z
+		}
 		if a, rate, ok := analysis.Alignment(rows, e.Track, e.Start, e.End); ok {
 			in, end := round3(a+rate*e.Start), round3(a+rate*e.End)
 			out[i].SourceStartS, out[i].SourceEndS = &in, &end
@@ -426,3 +449,97 @@ func clock(s float64) string {
 // round3 rounds to the millisecond, the precision the other times are
 // printed with.
 func round3(x float64) float64 { return math.Round(x*1000) / 1000 }
+
+// verifyPool is how many catalog songs the audio check draws its nulls from.
+const verifyPool = 60
+
+// verifyEntries runs the audio check (analysis.Verify, D57) on every entry
+// with the songs' audio from cat (FMA tracks under fmaDir).
+func verifyEntries(ctx context.Context, pcm []float32, rows []tracklist.Row, entries []tracklist.Entry,
+	cat *catalog.Catalog, fmaDir string) ([]tracklist.Entry, map[int]analysis.Check, []string, error) {
+	fp := triplet.New(triplet.DefaultParams())
+	load := func(track int) (fingerprint.Spectrogram, bool, error) {
+		path, ok := cat.Audio(track, fmaDir)
+		if !ok {
+			return fingerprint.Spectrogram{}, false, nil
+		}
+		x, err := audio.Decode(ctx, path, audio.SampleRate)
+		if errors.Is(err, audio.ErrDecode) {
+			return fingerprint.Spectrogram{}, false, nil
+		}
+		if err != nil {
+			return fingerprint.Spectrogram{}, false, fmt.Errorf("reference of track %d: %w", track, err)
+		}
+		return fp.Spectrogram(x), true, nil
+	}
+	return checkEntries(fp.Spectrogram(pcm), rows, entries, len(cat.Tracks), load, cat.Name)
+}
+
+// checkEntries keeps the entries that pass the audio check, with their
+// checks by new index, and describes each dropped one. load gives a song's
+// spectrogram (false: no audio for it); entries without an alignment or
+// without audio are kept unchecked. The nulls come from verifyPool songs of
+// the catalog's nTracks, drawn with a fixed seed.
+func checkEntries(mix fingerprint.Spectrogram, rows []tracklist.Row, entries []tracklist.Entry, nTracks int,
+	load func(int) (fingerprint.Spectrogram, bool, error), name func(int) string) ([]tracklist.Entry, map[int]analysis.Check, []string, error) {
+	cache := map[int]fingerprint.Spectrogram{}
+	missing := map[int]bool{}
+	ref := func(track int) (fingerprint.Spectrogram, bool, error) {
+		if s, ok := cache[track]; ok {
+			return s, true, nil
+		}
+		if missing[track] {
+			return fingerprint.Spectrogram{}, false, nil
+		}
+		s, ok, err := load(track)
+		if err != nil {
+			return fingerprint.Spectrogram{}, false, err
+		}
+		if !ok {
+			missing[track] = true
+			return s, false, nil
+		}
+		cache[track] = s
+		return s, true, nil
+	}
+	rng := rand.New(rand.NewPCG(1, 0))
+	var pool []fingerprint.Spectrogram
+	for _, i := range rng.Perm(nTracks) {
+		if len(pool) == verifyPool {
+			break
+		}
+		s, ok, err := ref(i)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if ok {
+			pool = append(pool, s)
+		}
+	}
+	var kept []tracklist.Entry
+	checks := map[int]analysis.Check{}
+	var dropped []string
+	for i, e := range entries {
+		a, rate, ok := analysis.Alignment(rows, e.Track, e.Start, e.End)
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		s, ok, err := ref(e.Track)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		c := analysis.Verify(mix, s, pool, a, rate, e.Start, e.End, rand.New(rand.NewPCG(uint64(i), 0)))
+		if !c.Passed() {
+			dropped = append(dropped, fmt.Sprintf("%s %s (corr %.3f, z %.1f)", clock(e.Start), name(e.Track), c.Corr, c.Z))
+			continue
+		}
+		checks[len(kept)] = c
+		kept = append(kept, e)
+	}
+	return kept, checks, dropped, nil
+}
