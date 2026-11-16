@@ -47,6 +47,7 @@ Sean's 2026-10-21 roadmap is done: live stream monitoring (D38-D40), the head-to
   - Re-measured after D53: B17 (0.5% more time per live window) and live capacity (B9: 96 stations still kept up with, 3 of 11,787 windows dropped late; 104 slightly better than before).
 - Next on real sets (no human tracklist needed): merge pieces of one play that share an alignment, drop entries that fail the audio check, then look for the three gap songs in the rest of Sean's music folders.
 - ML (milestone 3, D54 R2): the mixer-moves model, trained on labeled mixes and, without labels, on Sean's sets (reconstruction error against the recording).
+- Backlog (Sean, 2026-11-15): lights and visuals that follow the set, researched in docs/design/light-show.md; after the reconstructor's milestones and the real-set work.
 - When the DJ work is retired: delete fma_medium, UnmixDB, the medium indexes, data/queries.
 
 ## Blockers
