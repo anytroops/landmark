@@ -422,6 +422,15 @@ The pipeline: `cmd/rekordbox extras` turns a Rekordbox collection export into th
 
   25 right entries and 8 of 15 wrong ones are dropped. The 7 wrong entries kept pass with z 4.9 to 16, all in tempo-changed mixes where a third song comes in: another club track held on the mix's beat by its fitted alignment correlates with the beat, which the null (songs at random positions, off the beat) does not. On Sean's sets the check drops one of 27 entries and two of 14, one of them a -50% tempo entry that only the alignment fallback (`analysis.AnyAlignment`) lets it check. Go equals the prototype on Sean's Pitch set (correlations to 5 decimals, 29 of 29 verdicts; `bench/results/verifyparity_pitch.json`). Off by default: on labelled mixes it costs more recall than it buys precision.
 
+## Mixer moves (D58, the reconstructor's milestone 3)
+
+Three EQ band gains (low below 250 Hz, mid to 2.5 kHz, high) per song per frame, learned from rendered mixes whose moves are exact (`eval.mixsim`: six songs a mix, crossfades, cuts, bass swaps, sweeps, mid dips, trims, then a limiter, room noise, and MP3 on half; alignment jittered). Method fixed before training in `docs/design/mixer-moves.md`, where the full tables are. B0 is D43's broadband fit, B1 the same fit per band, M the learned model (`prototype/mixer_model.py`, `eval/mixer_train.py`).
+
+- **Synthetic test** (150 mixes, 1.16M frames, run once; `eval/results/mixer/test_lr1e-3.json`): mean absolute error per band, dB, low / mid / high: B0 4.30 / 4.50 / 4.71, B1 3.93 / 2.86 / 3.88, M 1.50 / 1.17 / 1.19; inside transitions B1 5.51 / 3.78 / 5.43, M 2.07 / 1.53 / 1.57. Bass-swap points within 1 s: B0 75.2%, B1 85.6%, M 98.2% of 222.
+- **UnmixDB's real fades** (the D43 test above, the same rows and alignments; `eval/results/mixer/fades_lr1e-3.json`): median fade-edge errors 0.76 / 1.71 / 1.54 / 1.60 s for D43, 0.94 / 2.38 / 1.89 / 1.90 for B1, 0.84 / 2.34 / 1.88 / 1.49 for M (fade-in start and end, fade-out start and end; 1,051 songs). UnmixDB's transitions are fader crossfades, which one broadband gain fits; the per-band methods read them worse, M less so than B1.
+- **Sean's sets, no labels** (`eval/results/mixer/sets_lr1e-3.json`): reconstruction error of the set from its verified tracklist B0 0.819 and 0.458, B1 0.594 and 0.348, M 0.588 and 0.355.
+- **Adopted** (D58): M for the EQ lanes, D43 for the fades.
+
 ## Go system parity (Phase 2 done criterion)
 
 The test split was rerun end to end through the Go stack: `cmd/ingest` segment (P=1, varint), `cmd/shard` over gRPC, Go matcher, with Python fingerprints (Go fingerprints are identical by D17 parity). Of 21,978 query rows, **0 differ** from the Python run (`queries_test_seed0_f64.csv.gz` vs `queries_test_seed0_goshard.csv.gz`) in top-1 track, score, runner-up, offset, postings scanned, or correctness, so every accuracy and FAR figure above holds for the Go system unchanged.

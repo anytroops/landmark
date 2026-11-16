@@ -62,7 +62,11 @@ AGREE_S = 0.1
 
 
 def alignment(
-    rows: pd.DataFrame, track: int, start: float, end: float, method: str = "consensus",
+    rows: pd.DataFrame,
+    track: int,
+    start: float,
+    end: float,
+    method: str = "consensus",
     modes: tuple[str, ...] | None = ("b2",),
 ) -> tuple[float, float] | None:
     """(a, rate) with reference seconds = a + rate * mix seconds, from the
@@ -207,8 +211,42 @@ def fade_out_from(c: tuple[float, float]) -> tuple[float, float]:
     return t90 - 0.1 * span, t10 + 0.1 * span
 
 
-def analyze(job: tuple[int, dict, pd.DataFrame, dict, dict, str]) -> list[dict]:
-    i, mix, rows, params, paths, method = job
+_MODELS: dict = {}
+
+
+def band_gains(
+    mix: np.ndarray, specs: list[np.ndarray], active: np.ndarray, how: str
+) -> np.ndarray:
+    """Broadband gains (frames x songs) from per-band ones (the mixer-moves
+    milestone, docs/design/mixer-moves.md): B1's per-band NNLS ("b1") or the
+    learned model's ("model:<tag>"), each song's three bands weighted by its
+    power in them. Smoothed already (B1 as D43; the model is trained on
+    smoothed input)."""
+    from prototype import mixer
+
+    sources = [np.where(active[:, k : k + 1], s, 0.0) for k, s in enumerate(specs)]
+    gb = mixer.fit_b1(mix, sources)
+    if how.startswith("model:"):
+        import torch
+
+        from eval.mixer_train import load_model
+        from prototype.mixer_model import song_gains
+
+        tag = how.split(":", 1)[1]
+        if tag not in _MODELS:
+            torch.set_num_threads(1)
+            _MODELS[tag] = load_model(tag)
+        gb = song_gains(_MODELS[tag], mix, sources, gb)
+    g = np.zeros((len(mix), len(specs)))
+    for k, s in enumerate(sources):
+        p = np.stack([s[:, sl].sum(axis=1) for sl in mixer.band_slices()], axis=1)
+        g[:, k] = np.sqrt((gb[k] ** 2 * p).sum(axis=1) / np.maximum(p.sum(axis=1), 1e-30))
+    return g
+
+
+def analyze(job: tuple) -> list[dict]:
+    i, mix, rows, params, paths, method = job[:6]
+    how = job[6] if len(job) > 6 else "d43"
     entries = merge_repeats(
         decode_smooth(rows, WINDOW_S, params["t_abs"], params["t_ratio"], params["k"]), 2.5
     )
@@ -255,8 +293,11 @@ def analyze(job: tuple[int, dict, pd.DataFrame, dict, dict, str]) -> list[dict]:
         return inside & (power > 0.05 * typical)
 
     active = np.stack([present(s) for s in songs], axis=1)
-    g = gains(mixspec, [s["spec"] for s in songs], active)
-    g = uniform_filter1d(median_filter(g, size=(int(FPS * 0.5) | 1, 1)), size=int(FPS), axis=0)
+    if how == "d43":
+        g = gains(mixspec, [s["spec"] for s in songs], active)
+        g = uniform_filter1d(median_filter(g, size=(int(FPS * 0.5) | 1, 1)), size=int(FPS), axis=0)
+    else:
+        g = band_gains(mixspec, [s["spec"] for s in songs], active, how)
 
     out = []
     truth = {seg["dense"]: seg for seg in mix["segments"] if seg["known"]}
@@ -382,6 +423,8 @@ def main() -> None:
                     help="consensus (D55); median as D43 was measured")  # fmt: skip
     ap.add_argument("--rows", default="_b2dhp", help="triplet rows: windows_unmixdb_s8<rows>")
     ap.add_argument("--pair-rows", default="_gridA2", help="pair window rows, likewise")
+    ap.add_argument("--gains", default="d43",
+                    help="d43 (broadband NNLS), b1 (per band), or model:<tag>")  # fmt: skip
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
@@ -398,7 +441,8 @@ def main() -> None:
            and (not args.effects or m["effect"] in args.effects)][: args.limit or None]  # fmt: skip
     rows = combine(w[w["mix"].isin(idx)], pairs[pairs["mix"].isin(idx)], params["alpha"])
     paths = ref_paths("data/segments/medium_unmixdb_b2")
-    jobs = [(i, gt["mixes"][i], rows[rows["mix"] == i], params, paths, args.alignment) for i in idx]
+    jobs = [(i, gt["mixes"][i], rows[rows["mix"] == i], params, paths, args.alignment, args.gains)
+            for i in idx]  # fmt: skip
     with Pool(args.workers) as pool:
         results = [r for rs in pool.map(analyze, jobs) for r in rs]
     args.out.mkdir(parents=True, exist_ok=True)
