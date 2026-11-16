@@ -135,10 +135,22 @@ func Aligned(entries []tracklist.Entry, rows []tracklist.Row, gap, tol, rateTol 
 // scattered wrong intercepts can be wrong too, while the right one is
 // shared. ok is false without such rows.
 func Alignment(rows []tracklist.Row, track int, start, end float64) (a, rate float64, ok bool) {
+	return alignment(rows, track, start, end, func(m string) bool { return m == "b2" })
+}
+
+// AnyAlignment is Alignment from the song's rows of any search (the
+// triplets as is, the half- and double-time ones, and the pairs), for an
+// entry that only those found: the audio check (D57) then tests it at the
+// tempo that search assumed.
+func AnyAlignment(rows []tracklist.Row, track int, start, end float64) (a, rate float64, ok bool) {
+	return alignment(rows, track, start, end, func(string) bool { return true })
+}
+
+func alignment(rows []tracklist.Row, track int, start, end float64, use func(string) bool) (a, rate float64, ok bool) {
 	var rates []float64
 	var hits []tracklist.Row
 	for _, r := range rows {
-		if r.Mode == "b2" && r.Track == track && r.T0 >= start-window && r.T0 <= end {
+		if use(r.Mode) && r.Track == track && r.T0 >= start-window && r.T0 <= end {
 			rates, hits = append(rates, r.Factor), append(hits, r)
 		}
 	}

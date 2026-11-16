@@ -227,3 +227,19 @@ func TestAlignedJoinsPiecesOfOnePlayAcrossALayeredSong(t *testing.T) {
 		t.Errorf("without rows: %d entries, want 6", len(got))
 	}
 }
+
+func TestAnyAlignmentUsesTheSearchThatFoundTheSong(t *testing.T) {
+	// Only the half-time pair search found track 5: no triplet rows.
+	var rows []tracklist.Row
+	for t0 := 0.0; t0 <= 20; t0 += 2.5 {
+		rows = append(rows, tracklist.Row{T0: t0, Mode: "keylock", Factor: 0.5, Track: 5, Score: 18,
+			Offset: (30 + 0.5*t0) * FramesPerSecond})
+	}
+	if _, _, ok := Alignment(rows, 5, 0, 20); ok {
+		t.Fatal("Alignment used rows that are not the triplets'")
+	}
+	a, rate, ok := AnyAlignment(rows, 5, 0, 20)
+	if !ok || rate != 0.5 || math.Abs(a-30) > 1e-9 {
+		t.Errorf("AnyAlignment = %v, %v, %v; want 30, 0.5", a, rate, ok)
+	}
+}

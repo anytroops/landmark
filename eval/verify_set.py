@@ -90,6 +90,8 @@ def verify_entries(mix: np.ndarray, entries: list[dict], rows: pd.DataFrame,
     for e in entries:
         res = {**e, "corr": None, "z": None, "null_mean": None, "null_std": None}
         al = alignment(rows, e["track"], e["start_s"], e["end_s"])
+        if al is None:  # found only by another search: check it at that search's tempo
+            al = alignment(rows, e["track"], e["start_s"], e["end_s"], modes=None)
         windows = starts(e["start_s"], e["end_s"], len(mix))
         if al is not None:
             a, rate = al

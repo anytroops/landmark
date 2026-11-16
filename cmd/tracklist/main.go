@@ -477,8 +477,9 @@ func verifyEntries(ctx context.Context, pcm []float32, rows []tracklist.Row, ent
 
 // checkEntries keeps the entries that pass the audio check, with their
 // checks by new index, and describes each dropped one. load gives a song's
-// spectrogram (false: no audio for it); entries without an alignment or
-// without audio are kept unchecked. The nulls come from verifyPool songs of
+// spectrogram (false: no audio for it). An entry no triplet row aligns is
+// aligned by the rows of the search that found it (analysis.AnyAlignment);
+// entries without any alignment or without audio are kept unchecked. The nulls come from verifyPool songs of
 // the catalog's nTracks, drawn with a fixed seed.
 func checkEntries(mix fingerprint.Spectrogram, rows []tracklist.Row, entries []tracklist.Entry, nTracks int,
 	load func(int) (fingerprint.Spectrogram, bool, error), name func(int) string) ([]tracklist.Entry, map[int]analysis.Check, []string, error) {
@@ -521,6 +522,9 @@ func checkEntries(mix fingerprint.Spectrogram, rows []tracklist.Row, entries []t
 	var dropped []string
 	for i, e := range entries {
 		a, rate, ok := analysis.Alignment(rows, e.Track, e.Start, e.End)
+		if !ok {
+			a, rate, ok = analysis.AnyAlignment(rows, e.Track, e.Start, e.End)
+		}
 		if !ok {
 			kept = append(kept, e)
 			continue

@@ -62,7 +62,8 @@ AGREE_S = 0.1
 
 
 def alignment(
-    rows: pd.DataFrame, track: int, start: float, end: float, method: str = "consensus"
+    rows: pd.DataFrame, track: int, start: float, end: float, method: str = "consensus",
+    modes: tuple[str, ...] | None = ("b2",),
 ) -> tuple[float, float] | None:
     """(a, rate) with reference seconds = a + rate * mix seconds, from the
     song's triplet rows (window as is) inside its entry: the median rate,
@@ -72,7 +73,8 @@ def alignment(
     window can match a repeat of its loop; the median of scattered wrong
     intercepts can be wrong too, while the right one is shared."""
     near = (rows["t0"] >= start - WINDOW_S) & (rows["t0"] <= end)
-    r = rows[(rows["mode"] == "b2") & (rows["top1_dense"] == track) & near]
+    use = rows["mode"].isin(modes) if modes is not None else np.ones(len(rows), bool)
+    r = rows[use & (rows["top1_dense"] == track) & near]
     if len(r) == 0:
         return None
     rate = float(np.median(r["factor"]))
