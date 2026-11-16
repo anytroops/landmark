@@ -420,7 +420,7 @@ The pipeline: `cmd/rekordbox extras` turns a Rekordbox collection export into th
   | D56 | 1,099 | 98.6% | 1,081 (95.2%) | 0.969 |
   | D57, `-verify` | 1,066 | 99.3% | 1,058 (93.2%) | 0.962 |
 
-  25 right entries and 8 of 15 wrong ones are dropped. The 7 wrong entries kept pass with z 4.9 to 16, all in tempo-changed mixes where a third song comes in: another club track held on the mix's beat by its fitted alignment correlates with the beat, which the null (songs at random positions, off the beat) does not. On Sean's sets the check drops one of 27 entries and two of 14, one of them a -50% tempo entry that only the alignment fallback (`analysis.AnyAlignment`) lets it check. Go equals the prototype on Sean's Pitch set (correlations to 5 decimals, 29 of 29 verdicts; `bench/results/verifyparity_pitch.json`). Off by default: on labelled mixes it costs more recall than it buys precision.
+  25 right entries and 8 of 15 wrong ones are dropped. The 7 wrong entries kept pass with z 4.9 to 16, all in tempo-changed mixes where a third song comes in: another club track held on the mix's beat by its fitted alignment correlates with the beat, which the null (songs at random positions, off the beat) does not. On Sean's sets the check drops one of 27 entries and two of 14, one of them a -50% tempo entry that only the alignment fallback (`analysis.AnyAlignment`) lets it check. Go equals the prototype on Sean's set A (correlations to 5 decimals, 29 of 29 verdicts; `bench/results/verifyparity_set_a.json`). Off by default: on labelled mixes it costs more recall than it buys precision.
 
 ## Mixer moves (D58, the reconstructor's milestone 3)
 
@@ -430,6 +430,21 @@ Three EQ band gains (low below 250 Hz, mid to 2.5 kHz, high) per song per frame,
 - **UnmixDB's real fades** (the D43 test above, the same rows and alignments; `eval/results/mixer/fades_lr1e-3.json`): median fade-edge errors 0.76 / 1.71 / 1.54 / 1.60 s for D43, 0.94 / 2.38 / 1.89 / 1.90 for B1, 0.84 / 2.34 / 1.88 / 1.49 for M (fade-in start and end, fade-out start and end; 1,051 songs). UnmixDB's transitions are fader crossfades, which one broadband gain fits; the per-band methods read them worse, M less so than B1.
 - **Sean's sets, no labels** (`eval/results/mixer/sets_lr1e-3.json`): reconstruction error of the set from its verified tracklist B0 0.819 and 0.458, B1 0.594 and 0.348, M 0.588 and 0.355.
 - **Adopted** (D58): M for the EQ lanes, D43 for the fades.
+
+## Lights that follow the set (D59)
+
+Each song's beats and phrases from the DJ's Rekordbox analysis, placed in a recorded set by the verified tracklist's alignment (docs/design/light-show.md). Sean's library and sets; aggregates only.
+
+- **Reading Rekordbox's analysis.** Go (`internal/rekordbox/anlz.go`) and Python (`prototype/anlz.py`) give the same beat grids and phrases for all 1,171 songs of Sean's USB export (542,462 beats; 361 songs with phrases; `bench/anlzparity`, `bench/results/anlzparity.json`).
+- **Beat timing in the set** (`eval.beat_align`; `eval/results/lights/beat_align_set_{a,b}.json`). Each song's grid against its own audio first (offsets of -88 to -18 ms on set A, -54 to -22 ms on set B: Rekordbox's decoder and ours disagree about where a file starts), then the corrected grid mapped into the set and lined up with the set's onsets:
+
+  | Set | Songs (beats) | Median error | Within 20 ms | Within 40 ms | Uncorrected median |
+  |---|---|---|---|---|---|
+  | A (32 min) | 25 (3,175) | 10 ms | 84% | 100% | 34 ms |
+  | B (22 min) | 12 (2,039) | 7 ms | 83% | 92% | 35 ms |
+
+- **Song structure** (docs/design/structure.md; `eval/results/structure/`). Rekordbox's phrases learned from the audio on the corrected grid, for songs it did not analyse: on 40 held-out songs (4,326 bars, 91 drops), phrase starts within a bar F1 0.72 (novelty-and-energy baseline 0.50), phrase kind per bar 71.5% (49.8%), drops found 54% at 48% precision (22% at 36%).
+- **A set's show** (`eval.lightshow --structure h128_lr1e-3`, from the D57 tracklists): set A, 26 songs on a corrected grid, 25 drops, 77,863 DMX frames over 32.4 minutes; set B, 12 songs, 18 drops. Rekordbox has phrases for none of these songs, so all phrases are predicted.
 
 ## Go system parity (Phase 2 done criterion)
 

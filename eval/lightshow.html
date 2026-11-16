@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landmark light show</title>
+<style>
+  :root { --bg: #07070b; --fg: #e8e8f0; --muted: #8a8aa0; --panel: #12121a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  header { padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #status { color: var(--muted); }
+  canvas { display: block; width: 100%; height: auto; background: #000; }
+  .bar { padding: 8px 16px; background: var(--panel); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  audio { width: min(100%, 520px); }
+  #phrase { min-width: 16ch; }
+  #timeline { height: 56px; cursor: pointer; }
+  .legend { color: var(--muted); font-size: 12px; padding: 4px 16px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Landmark light show</h1>
+  <span id="status">loading</span>
+</header>
+<canvas id="rig" width="1200" height="520"></canvas>
+<canvas id="timeline" width="1200" height="56"></canvas>
+<div class="bar">
+  <audio id="audio" controls preload="auto"></audio>
+  <span id="phrase"></span>
+</div>
+<div class="legend">Timeline: each song's phrases (Rekordbox's, or the structure model's where Rekordbox has none; grey is beats only), white ticks the drops. Click to jump.</div>
+<script>
+// The show's DMX frames (prototype/lights.py) drawn in step with the set's
+// audio. Layout per frame: each wash R G B dimmer; each head pan tilt
+// dimmer R G B; the strobe dimmer and rate.
+const base = location.pathname.replace(/\.html$/, "");
+const canvas = document.getElementById("rig"), ctx = canvas.getContext("2d");
+const audio = document.getElementById("audio"), status = document.getElementById("status");
+const phraseEl = document.getElementById("phrase");
+const tl = document.getElementById("timeline"), tctx = tl.getContext("2d");
+const HUE = {intro: 0.70, verse: 0.52, up: 0.08, chorus: 0.90, down: 0.62, bridge: 0.35, outro: 0.75};
+let meta, frames, duration;
+
+Promise.all([fetch(base + ".cues.json").then(r => r.json()),
+             fetch(base + ".dmx").then(r => r.arrayBuffer())]).then(([m, buf]) => {
+  meta = m; frames = new Uint8Array(buf); duration = meta.frames / meta.fps;
+  audio.src = meta.audio;
+  const n = k => meta.entries.filter(e => e.phrases_from === k).length;
+  status.textContent = `${meta.entries.length} songs on the grid: ${n("rekordbox")} with Rekordbox phrases, ` +
+    `${n("model")} predicted, ${n(null)} beats only; ${meta.no_analysis.length} not in the library`;
+  requestAnimationFrame(draw);
+}).catch(e => { status.textContent = "could not load the show: " + e; });
+
+function currentPhrase(t) {
+  for (const e of meta.entries) {
+    if (t < e.start_s || t > e.end_s) continue;
+    let kind = e.phrases.length ? e.phrases[0][1] : "beats only";
+    for (const [when, k] of e.phrases) if (when <= t) kind = k;
+    const drop = e.drops.some(d => t >= d && t < d + 2);
+    const from = e.phrases_from === "model" ? " (predicted)" : "";
+    return (drop ? "DROP" : kind) + from;
+  }
+  return "";
+}
+
+function draw() {
+  const t = audio.currentTime, W = canvas.width, H = canvas.height;
+  const f = Math.min(Math.floor(t * meta.fps), meta.frames - 1);
+  const d = frames.subarray(f * meta.channels, (f + 1) * meta.channels);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = "lighter";
+  const strobe = d[meta.washes * 4 + meta.heads * 6], rate = d[meta.washes * 4 + meta.heads * 6 + 1];
+  if (strobe > 0 && rate > 0 && Math.floor(t * (2 + rate / 16)) % 2 === 0) {
+    ctx.fillStyle = `rgba(255,255,255,${strobe / 255 * 0.85})`; ctx.fillRect(0, 0, W, H);
+  }
+  for (let k = 0; k < meta.washes; k++) {      // washes along the floor
+    const [r, g, b, dim] = d.subarray(4 * k, 4 * k + 4), x = (k + 0.5) * W / meta.washes;
+    const grad = ctx.createRadialGradient(x, H * 0.92, 4, x, H * 0.7, H * 0.55);
+    const a = dim / 255;
+    grad.addColorStop(0, `rgba(${r},${g},${b},${a})`); grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+  }
+  for (let k = 0; k < meta.heads; k++) {       // moving heads from the truss
+    const o = meta.washes * 4 + 6 * k, [pan, tilt, dim, r, g, b] = d.subarray(o, o + 6);
+    const x0 = (k + 0.5) * W / meta.heads, y0 = 18;
+    const ang = (pan - 127) / 127 * 0.9, len = H * (0.6 + 0.35 * tilt / 255);
+    const x1 = x0 + Math.sin(ang) * len, y1 = y0 + Math.cos(ang) * len;
+    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${dim / 255})`); grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.strokeStyle = grad; ctx.lineWidth = 26; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  }
+  phraseEl.textContent = currentPhrase(t);
+  drawTimeline(t);
+  requestAnimationFrame(draw);
+}
+
+function drawTimeline(t) {
+  const W = tl.width, H = tl.height, x = s => s / duration * W;
+  tctx.fillStyle = "#12121a"; tctx.fillRect(0, 0, W, H);
+  meta.entries.forEach((e, i) => {
+    const y = i % 2 ? H * 0.5 : H * 0.1, h = H * 0.38;
+    if (!e.phrases.length) {
+      tctx.fillStyle = "#444"; tctx.fillRect(x(e.start_s), y, x(e.end_s) - x(e.start_s), h);
+    }
+    e.phrases.forEach(([when, k], j) => {
+      const a = Math.max(when, e.start_s), b = Math.min(j + 1 < e.phrases.length ? e.phrases[j + 1][0] : e.end_s, e.end_s);
+      if (b <= a) return;
+      tctx.fillStyle = `hsl(${(HUE[k] ?? 0.58) * 360}, 70%, ${k === "chorus" ? 55 : 35}%)`;
+      tctx.fillRect(x(a), y, x(b) - x(a), h);
+    });
+    tctx.fillStyle = "#fff";
+    for (const d of e.drops) tctx.fillRect(x(d) - 1, 0, 2, H);
+  });
+  tctx.fillStyle = "#ff0"; tctx.fillRect(x(t) - 1, 0, 2, H);
+}
+
+tl.addEventListener("click", ev => {
+  const r = tl.getBoundingClientRect();
+  audio.currentTime = (ev.clientX - r.left) / r.width * duration;
+});
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Lights and visuals that follow the set: market, prior work, and what Landmark would add
 
-Status: research only (2026-11-15), for Sean's backlog. Nothing built, nothing decided. Comes after the reconstructor's milestones and the real-set work.
+Status: researched 2026-11-15; Sean's go the same day to build it after the mixer-moves milestone, fitted to Landmark as I saw fit. The plan as built so far is the last section; the research comes first.
 
 ## The idea
 
@@ -55,7 +55,7 @@ What it would not solve: the aesthetic design (what a "look" is for this rig and
 - Visuals are where the funded startup (Freebeat) is, and where generative AI makes the output itself new; latency of 3 to 5 s is the weakness anticipation would fix.
 - The likeliest business shapes: (a) a venue box or software that works off the booth feed, sold on "no prep, any DJ, hits the drop"; (b) the identification-and-anticipation engine licensed to a lighting or visuals company (SoundSwitch's parent inMusic, Chauvet, Freebeat); (c) a feature of the reconstructor (a lighting and visuals timeline for recorded sets). None is venture-scale on its own; (b) has the best fit with the rights-side business already noted in docs/design/set-reconstructor.md, since both sell the same engine.
 
-## If it is built: the first version
+## The first sketch (superseded by the plan below)
 
 1. A cue track per song from offline analysis (beats and downbeats, sections and drops, energy), stored beside the fingerprints; a learned part (Skip-BART's data and code are public) for the look sequence, measured against rule-based looks on their dataset: this is a second ML milestone.
 2. The live monitor's song, position, and rate feeding a cue player that emits DMX over Art-Net or sACN, first into a virtual rig (a browser render of a few fixtures), hardware after.
@@ -63,3 +63,24 @@ What it would not solve: the aesthetic design (what a "look" is for this rig and
 4. Visuals the same way, with Resolume or TouchDesigner as the renderer and Landmark as the clock and cue source, before any generative model.
 
 Open questions for Sean: whether to aim at venues (a box), DJs (software), or licensing; whether this comes before or after the reconstructor's editor and ML milestones; and whether the lighting rig for a demo exists (a few DMX fixtures and a US$30 to 100 USB interface, or a software rig only).
+
+## The plan, fitted to Landmark (2026-11-15)
+
+Sean's go (2026-11-15) to build it after the mixer-moves milestone, adapted as I saw fit. What changed from the first version above, and why:
+
+- **The DJ's own analysis first.** Sean prepares his library in Rekordbox, and the reconstructor already imports it. Rekordbox's analysis files (`ANLZ0000.DAT` and `.EXT` on a USB export) hold every song's beat grid (all 1,171 songs of Sean's export) and, for the songs it was asked to analyse, its phrases (intro, up, chorus, down, outro in the high mood; verse, bridge, chorus in the others): 361 of the 1,171. Read in Python and Go (`prototype/anlz.py`, `internal/rekordbox/anlz.go`, equal on all 1,171 files). So the cue track is not computed from scratch: it is the DJ's own grid and phrases, the same ones SoundSwitch and rekordbox's Lighting mode use, but placed in the set by Landmark instead of by the DJ software.
+- **Grids checked against the audio.** A Rekordbox grid is in the song's own time as Rekordbox decoded it; ours decodes the same file a few tens of milliseconds differently. Each song's grid offset is measured once against its own audio (onset strength cross-correlated with the grid's beats, `eval.beat_align`); after that, mapped into the set by each entry's alignment, the grid's beats land on the recorded set's onsets within a median of 10 ms on Sean's set A (25 songs, 3,175 beats; 84% of songs within 20 ms, all within 40 ms) and 7 ms on his set B (12 songs, 2,039 beats; 83% within 20 ms, 11 of 12 within 40 ms); 34 and 35 ms without the correction (`eval/results/lights/beat_align_*.json`). A crowd notices 20 to 40 ms.
+- **Structure from the audio where Rekordbox has none.** None of the 38 songs of Sean's two recorded sets has phrase analysis, so a show from Rekordbox's phrases alone has no drops. The second ML piece (docs/design/structure.md) learns Rekordbox's phrases from the audio on the corrected grid: a novelty-and-energy baseline (R0) and a bidirectional GRU over bars (R1), trained on the 263 labelled songs with audio, used only for songs Rekordbox did not label. On 40 held-out songs, against Rekordbox's own analysis: phrase starts within a bar F1 0.72 (R0 0.50), kind per bar 71.5% (R0 49.8%), drops found 54% at 48% precision (R0 22% at 36%). With it every song of both sets gets phrases: 25 drops in set A, 18 in set B.
+- **Rules for looks, not a generative model, first.** Skip-BART's generation is trained on general stage-lighting footage and outputs hue and intensity per frame; a DJ show is structured by phrases and drops, which we have exactly. A look per phrase kind (color, intensity, beat pulse, head motion), a white flash and strobe on the drop, a strobe ramp at the end of a build, and each song's share of the mix (its fade) crossfading the looks: `prototype/lights.py`. A learned look model stays a later option, measured against these rules.
+- **A virtual rig before hardware.** One DMX universe, 58 channels (8 RGB washes, 4 moving heads, a strobe), 40 frames a second, rendered in a browser page that plays the set and draws the rig in step (`eval/lightshow.py`, `eval/lightshow.html`). Art-Net out (one UDP packet per universe per frame) is a small step after that, and lets any real fixture or a visualizer (QLC+, a DMX node) take the same frames.
+- **Offline first, then live.** Offline, a recorded set's verified tracklist (D57) gives every song's alignment, so the whole show is computed in one pass: the reconstructor's session gets a lighting timeline. Live, the monitor already reports song, position, and rate about 12 s into each song (D38); the same cue engine, ported to Go, runs ahead of the audio by the output's latency, with the first seconds of each song and unknown songs falling back to the beat alone.
+- **Visuals through the same cues.** Beat, bar, phrase, and drop events out over OSC (Resolume and TouchDesigner both take it) instead of rendering visuals here.
+
+Measured before any claim (to EVAL.md as each is run):
+
+1. Beat timing: grid beats against the set's onsets, per song (done for both sets: above).
+2. Structure: phrase-start F1 within a bar, kind accuracy, drop precision and recall, on 40 held-out songs against Rekordbox's own analysis (docs/design/structure.md; done: above).
+3. Coverage on Sean's sets: the share of each set's time under a known song with a grid, and with phrases (Rekordbox's or predicted).
+4. Live: the share of each song's time under anticipated cues (after detection) against beat-only fallback, from the monitor's log.
+
+Not in this plan: fixture libraries and patching for real venues; video generation; a hardware product.

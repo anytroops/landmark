@@ -6,7 +6,7 @@
 // distribution only, so the pass or fail at analysis.VerifyMark is what is
 // compared there.
 //
-//	go run ./bench/verifyparity -verify data/mine/pitch.verify.json \
+//	go run ./bench/verifyparity -verify data/mine/set.verify.json \
 //	    -audio set.wav -index data/segments/mine_b2
 package main
 

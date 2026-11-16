@@ -3,7 +3,7 @@
 explain the set's audio.
 
   python -m eval.mixer_sets --tag lr1e-3 --index data/segments/mine_b2 \\
-      --set pitch:data/mine/pitch.d57.json:"$HOME/Desktop/DJ Sets/...wav" ...
+      --set a:data/mine/set.d57.json:"$HOME/Desktop/DJ Sets/...wav" ...
 
 For every entry of a set's verified tracklist (cmd/tracklist -json -verify),
 its reference is warped onto the set by the entry's alignment (from its
