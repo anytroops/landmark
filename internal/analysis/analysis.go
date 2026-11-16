@@ -84,6 +84,49 @@ type Result struct {
 	Gain                []float64 // normalized gain per frame (1: its level playing alone)
 }
 
+// Aligned joins entries of the same track that share an alignment (D56):
+// the song kept playing on its deck while another was layered over it, or
+// the decoder lost it for a while, so its pieces sit in the same place in
+// the song's own time (Alignment intercepts within tol seconds, rates
+// within rateTol). Pieces more than gap seconds apart stay apart; entries
+// of other tracks between joined pieces are kept. The joined entry keeps
+// the larger evidence and its factor, as MergeRepeats does. entries must be
+// in start order.
+func Aligned(entries []tracklist.Entry, rows []tracklist.Row, gap, tol, rateTol float64) []tracklist.Entry {
+	type fit struct {
+		a, rate float64
+		ok      bool
+	}
+	fits := make([]fit, len(entries))
+	for i, e := range entries {
+		a, r, ok := Alignment(rows, e.Track, e.Start, e.End)
+		fits[i] = fit{a, r, ok}
+	}
+	joined := make([]bool, len(entries))
+	var out []tracklist.Entry
+	for i, e := range entries {
+		if joined[i] {
+			continue
+		}
+		for j := i + 1; j < len(entries); j++ {
+			if entries[j].Start > e.End+gap {
+				break
+			}
+			if joined[j] || entries[j].Track != e.Track || !fits[i].ok || !fits[j].ok ||
+				math.Abs(fits[i].a-fits[j].a) > tol || math.Abs(fits[i].rate-fits[j].rate) > rateTol {
+				continue
+			}
+			e.End = math.Max(e.End, entries[j].End)
+			if entries[j].Evidence > e.Evidence {
+				e.Evidence, e.Factor = entries[j].Evidence, entries[j].Factor
+			}
+			joined[j] = true
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // Alignment estimates a song's alignment from its triplet rows (the window
 // searched as is) inside its entry: the median rate, then the consensus
 // intercept (D55): the windows that agree (within agreeS) with the most

@@ -89,6 +89,38 @@ def alignment(
     return best[1], rate
 
 
+def merge_aligned(entries: list, rows: pd.DataFrame, gap: float = 30.0, tol: float = 1.0,
+                  rate_tol: float = 0.005) -> list:  # fmt: skip
+    """Join entries of the same track whose alignments agree (intercepts
+    within tol seconds, rates within rate_tol) and whose starts are at most
+    gap seconds past the earlier piece's end: pieces of one play, with
+    other tracks' entries between them kept. As internal/analysis.Aligned
+    (D56), which cmd/tracklist applies after its merge gap."""
+    from eval.tracklist_score import Entry
+
+    fits = [alignment(rows, e.track, e.start, e.end) for e in entries]
+    joined = [False] * len(entries)
+    out = []
+    for i, e in enumerate(entries):
+        if joined[i]:
+            continue
+        e = Entry(e.track, e.start, e.end, e.factor, e.evidence)
+        for j in range(i + 1, len(entries)):
+            o = entries[j]
+            if o.start > e.end + gap:
+                break
+            if joined[j] or o.track != e.track or fits[i] is None or fits[j] is None:
+                continue
+            if abs(fits[i][0] - fits[j][0]) > tol or abs(fits[i][1] - fits[j][1]) > rate_tol:
+                continue
+            e.end = max(e.end, o.end)
+            if o.evidence > e.evidence:
+                e.evidence, e.factor = o.evidence, o.factor
+            joined[j] = True
+        out.append(e)
+    return out
+
+
 def warp(ref: np.ndarray, a: float, rate: float, n_frames: int, pitch: bool) -> np.ndarray:
     """The reference's band powers at each mix frame: time warped by the
     alignment (linear interpolation; zero outside the reference) and, if

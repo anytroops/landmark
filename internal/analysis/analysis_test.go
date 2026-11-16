@@ -184,3 +184,46 @@ func TestAlignmentTakesTheInterceptMostWindowsShare(t *testing.T) {
 		t.Error("a track with no rows got an alignment")
 	}
 }
+
+func TestAlignedJoinsPiecesOfOnePlayAcrossALayeredSong(t *testing.T) {
+	// Track 1 plays 0 to 120 s at rate 0.93 from 8 s into itself; track 2 is
+	// layered over it at 40 to 50 s; the decoder gives track 1 in three
+	// pieces. Track 3 plays twice at different positions (a cue jump).
+	const a1, r1 = 8.0, 0.93
+	var rows []tracklist.Row
+	for t0 := 0.0; t0 < 120; t0 += 2.5 {
+		rows = append(rows, tracklist.Row{T0: t0, Mode: "b2", Factor: r1, Track: 1, Score: 50,
+			Offset: (a1 + r1*t0) * FramesPerSecond})
+	}
+	for t0, a := range map[float64]float64{130: 20, 132.5: 20, 150: 70, 152.5: 70} {
+		rows = append(rows, tracklist.Row{T0: t0, Mode: "b2", Factor: 1, Track: 3, Score: 50,
+			Offset: (a + t0) * FramesPerSecond})
+	}
+	entries := []tracklist.Entry{
+		{Track: 1, Start: 0, End: 38, Evidence: 100, Factor: r1},
+		{Track: 2, Start: 40, End: 50, Evidence: 20, Factor: 1},
+		{Track: 1, Start: 52, End: 80, Evidence: 300, Factor: r1 + 0.001},
+		{Track: 1, Start: 95, End: 120, Evidence: 200, Factor: r1},
+		{Track: 3, Start: 128, End: 140, Evidence: 40, Factor: 1},
+		{Track: 3, Start: 148, End: 160, Evidence: 40, Factor: 1},
+	}
+	got := Aligned(entries, rows, 30, 1, 0.005)
+	want := []tracklist.Entry{
+		{Track: 1, Start: 0, End: 120, Evidence: 300, Factor: r1 + 0.001},
+		{Track: 2, Start: 40, End: 50, Evidence: 20, Factor: 1},
+		{Track: 3, Start: 128, End: 140, Evidence: 40, Factor: 1},
+		{Track: 3, Start: 148, End: 160, Evidence: 40, Factor: 1},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Aligned = %+v\nwant %+v", got, want)
+	}
+	// Pieces farther apart than the gap stay apart: with 14 s the first two
+	// pieces join (52 is 14 past 38) and the third does not (95 is 15 past 80).
+	if got := Aligned(entries, rows, 14, 1, 0.005); len(got) != 5 {
+		t.Errorf("with gap 14: %d entries, want 5", len(got))
+	}
+	// Entries without triplet rows are never joined.
+	if got := Aligned(entries, nil, 30, 1, 0.005); len(got) != 6 {
+		t.Errorf("without rows: %d entries, want 6", len(got))
+	}
+}

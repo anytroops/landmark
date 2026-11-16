@@ -62,6 +62,7 @@ type config struct {
 	tAbs, tRatio                 float64
 	k                            int
 	mergeGap                     float64
+	alignedGap                   float64 // join pieces of one play this far apart that share an alignment (D56)
 	timeout                      time.Duration
 	jsonOut                      bool
 	analyze                      bool   // D43: fades, turntable or keylock, BPM
@@ -94,6 +95,7 @@ func main() {
 	flag.Float64Var(&cfg.tRatio, "t-ratio", 2, "smooth: minimum top / runner-up ratio")
 	flag.IntVar(&cfg.k, "k", 1, "smooth: neighbors on each side in the majority vote")
 	flag.Float64Var(&cfg.mergeGap, "merge-gap", 2.5, "join consecutive entries of one track this close, seconds (-1: off)")
+	flag.Float64Var(&cfg.alignedGap, "aligned-gap", 30, "join pieces of one song this far apart, seconds, when they sit in the same place in the song's own time, even across another song layered over it (-1: off)")
 	flag.DurationVar(&cfg.timeout, "timeout", 5*time.Second, "deadline per window")
 	flag.BoolVar(&cfg.jsonOut, "json", false, "print entries as JSON")
 	flag.BoolVar(&cfg.analyze, "analyze", false, "also estimate each song's fades, turntable or keylock, and BPM in the set (needs the references' audio)")
@@ -125,6 +127,13 @@ func main() {
 // localStopFraction is the stop list -local applies to both indexes: the
 // fraction the decoder's defaults were calibrated with (D30, D37).
 const localStopFraction = 0.04
+
+// Pieces of one play share an alignment within these (D56): a second in
+// the song's own time, half a percent in rate.
+const (
+	alignedTolS    = 1.0
+	alignedRateTol = 0.005
+)
 
 func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	cat, err := catalog.Load(cfg.index)
@@ -183,6 +192,9 @@ func run(ctx context.Context, cfg config, file string, w io.Writer) error {
 	}
 	if cfg.mergeGap >= 0 {
 		entries = tracklist.MergeRepeats(entries, cfg.mergeGap)
+	}
+	if cfg.alignedGap >= 0 {
+		entries = analysis.Aligned(entries, rows, cfg.alignedGap, alignedTolS, alignedRateTol)
 	}
 	var an map[int]analysis.SongReport
 	if cfg.analyze {

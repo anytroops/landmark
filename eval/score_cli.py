@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from eval.dj_analysis import merge_aligned
 from eval.tracklist import cluster_table
 from eval.tracklist_score import (
     RES,
@@ -49,6 +50,8 @@ def main() -> None:
     ap.add_argument("--catalog", required=True)
     ap.add_argument("--params", type=Path, required=True)
     ap.add_argument("--merge-gap", type=float, default=2.5)
+    ap.add_argument("--aligned-gap", type=float, default=30.0,
+                    help="cmd/tracklist -aligned-gap (D56); -1 for runs before it")  # fmt: skip
     args = ap.parse_args()
     gt = json.loads((ROOT / "eval" / "mixes" / f"{args.mixes}.json").read_text())
     cluster = cluster_table("", args.catalog)
@@ -72,6 +75,8 @@ def main() -> None:
         wi = rows[rows["mix"] == i]
         e = merge_repeats(decode_smooth(wi, meta["window_s"], p["t_abs"], p["t_ratio"], p["k"]),
                           args.merge_gap)  # fmt: skip
+        if args.aligned_gap >= 0:
+            e = merge_aligned(e, w[w["mix"] == i], args.aligned_gap)
         ev.append(score_mix(e, segments[i], cluster))
         got = runs[gt["mixes"][i]["file"]]
         differ += len(got) != len(e) or any(
