@@ -13,6 +13,7 @@ eval/results/local/equiv<tag>.json.
 import argparse
 import concurrent.futures
 import json
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -27,8 +28,8 @@ def main() -> None:
     ap.add_argument("--timeout", default="10s", help="per-search deadline, as the cluster run had")
     ap.add_argument("--parallel", type=int, default=2)
     ap.add_argument("--tag", default="")
-    ap.add_argument("--flags", nargs="*", default=[],
-                    help="more cmd/tracklist flags, e.g. -verify")  # fmt: skip
+    ap.add_argument("--flags", default="",
+                    help='more cmd/tracklist flags in one string, e.g. "-verify"')  # fmt: skip
     ap.add_argument(
         "--save",
         action="store_true",
@@ -41,7 +42,7 @@ def main() -> None:
         out = subprocess.run(
             [str(BIN / "tracklist"), "-local", "-index", str(B2_INDEX),
              "-pairs-index", str(PAIR_INDEX), "-timeout", args.timeout, "-json",
-             *args.flags, str(ROOT / r["file"])],
+             *shlex.split(args.flags), str(ROOT / r["file"])],
             capture_output=True, text=True, check=True,
         ).stdout  # fmt: skip
         got, want = json.loads(out), r["entries"]
