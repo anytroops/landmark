@@ -12,7 +12,8 @@ gave no phrases get the structure model's (eval.structure_train,
 docs/design/structure.md). Writes <out>.dmx (frames x channels,
 uint8, prototype.lights.FPS a second), <out>.cues.json (each entry's phrases
 and drops in set seconds, and which entries had no analysis), and
-<out>.html, a page that plays the set and draws the rig in step with it.
+<out>.html, a page that plays the set and draws the rig in step with it
+(serve the folder with `python -m eval.serve data/mine/lights`).
 Everything under data/ stays out of git.
 """
 
